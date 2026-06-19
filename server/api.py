@@ -32,6 +32,11 @@ CODE_RE = re.compile(r"^\d{6}$")
 _rate_limits: dict[str, list[tuple[float, str]]] = defaultdict(list)
 _rate_lock = threading.Lock()
 RATE_LIMITS = {"create": (10, 3600), "pick": (600, 3600), "load": (600, 3600)}
+
+_sync_tokens: dict[str, tuple[str, float]] = {}
+_sync_lock = threading.Lock()
+SYNC_TOKEN_TTL = 300
+SYNC_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,32}$")
 logger = logging.getLogger(__name__)
 
 
@@ -48,10 +53,14 @@ def _check_rate(ip: str, key: str) -> None:
     now = time.monotonic()
     with _rate_lock:
         entries = _rate_limits[ip]
-        _rate_limits[ip] = [(t, k) for t, k in entries if now - t < RATE_LIMITS.get(k, (0, 3600))[1]]
+        _rate_limits[ip] = [
+            (t, k) for t, k in entries if now - t < RATE_LIMITS.get(k, (0, 3600))[1]
+        ]
         count = sum(1 for t, k in _rate_limits[ip] if k == key)
         if count >= limit:
-            raise HTTPException(429, "Rate limit exceeded", headers={"Retry-After": "60"})
+            raise HTTPException(
+                429, "Rate limit exceeded", headers={"Retry-After": "60"}
+            )
         _rate_limits[ip].append((now, key))
 
 
@@ -103,7 +112,9 @@ async def _broadcast(
     edit_code: str, picks: list, exclude: WebSocket | None = None
 ) -> None:
     msg = json.dumps({"picks": picks})
-    clients = [ws for ws in list(_ws_clients.get(edit_code, set())) if ws is not exclude]
+    clients = [
+        ws for ws in list(_ws_clients.get(edit_code, set())) if ws is not exclude
+    ]
     if not clients:
         return
 
@@ -139,6 +150,10 @@ async def _prune_rate_limits() -> None:
                 ]
                 for ip in stale:
                     del _rate_limits[ip]
+            with _sync_lock:
+                expired = [t for t, (_, exp) in _sync_tokens.items() if now >= exp]
+                for t in expired:
+                    del _sync_tokens[t]
         except Exception:
             logger.exception("Failed to prune rate limits")
 
@@ -215,6 +230,49 @@ def create_session(request: Request):
     return {"edit_code": edit_code, "share_code": share_code}
 
 
+@app.post("/api/session/{code}/sync-token", status_code=201)
+def create_sync_token(code: str, request: Request):
+    if not CODE_RE.match(code):
+        raise HTTPException(422, "Invalid code format")
+    _check_rate(_get_client_ip(request), "create")
+    db = _get_db()
+    try:
+        edit_code, _, _, readonly = _find_session(db, code)
+        if readonly:
+            raise HTTPException(403, "Read-only session")
+    finally:
+        db.close()
+    token = secrets.token_urlsafe(16)
+    with _sync_lock:
+        _sync_tokens[token] = (edit_code, time.monotonic() + SYNC_TOKEN_TTL)
+    return {"token": token}
+
+
+@app.post("/api/sync/{token}")
+def exchange_sync_token(token: str, request: Request):
+    if not SYNC_TOKEN_RE.match(token):
+        raise HTTPException(422, "Invalid token format")
+    _check_rate(_get_client_ip(request), "load")
+    with _sync_lock:
+        entry = _sync_tokens.pop(token, None)
+    if not entry:
+        raise HTTPException(404, "Token not found or expired")
+    edit_code, expiry = entry
+    if time.monotonic() >= expiry:
+        raise HTTPException(404, "Token not found or expired")
+    db = _get_db()
+    try:
+        _, share_code, picks_json, _ = _find_session(db, edit_code)
+        return {
+            "picks": json.loads(picks_json),
+            "readonly": False,
+            "edit_code": edit_code,
+            "share_code": share_code,
+        }
+    finally:
+        db.close()
+
+
 @app.get("/api/session/{code}")
 def load_session(code: str, request: Request):
     if not CODE_RE.match(code):
@@ -234,7 +292,9 @@ def load_session(code: str, request: Request):
 
 
 @app.post("/api/session/{code}/pick/{artist_id}", status_code=204)
-def add_pick(code: str, artist_id: str, request: Request, background_tasks: BackgroundTasks):
+def add_pick(
+    code: str, artist_id: str, request: Request, background_tasks: BackgroundTasks
+):
     if not CODE_RE.match(code):
         raise HTTPException(422, "Invalid code format")
     if not UUID_RE.match(artist_id):
@@ -268,7 +328,9 @@ def add_pick(code: str, artist_id: str, request: Request, background_tasks: Back
 
 
 @app.delete("/api/session/{code}/pick/{artist_id}", status_code=204)
-def remove_pick(code: str, artist_id: str, request: Request, background_tasks: BackgroundTasks):
+def remove_pick(
+    code: str, artist_id: str, request: Request, background_tasks: BackgroundTasks
+):
     if not CODE_RE.match(code):
         raise HTTPException(422, "Invalid code format")
     if not UUID_RE.match(artist_id):

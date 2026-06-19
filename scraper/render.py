@@ -699,7 +699,13 @@ def render_output_html(
       const d = document.getElementById('pin-display');
       d.innerHTML = '';
       for (const ch of editCode) { const s = document.createElement('span'); s.textContent = ch; d.appendChild(s); }
-      loadQR('sync-qr', location.origin + '/?code=' + editCode);
+      try {
+        const res = await fetch(API + '/session/' + editCode + '/sync-token', {method: 'POST'});
+        if (res.ok) {
+          const data = await res.json();
+          loadQR('sync-qr', location.origin + '/?sync=' + data.token);
+        }
+      } catch {}
       openDialog('m-sync');
     }
     function syncTab(t, btn) {
@@ -737,11 +743,34 @@ def render_output_html(
       syncPinDisplay();
     }
 
+    async function exchangeSyncToken(token) {
+      try {
+        const res = await fetch(API + '/sync/' + token, {method: 'POST'});
+        if (!res.ok) return;
+        const data = await res.json();
+        localPicks = new Set(data.picks);
+        readOnly = data.readonly;
+        if (!readOnly) {
+          editCode = data.edit_code || null;
+          shareCode = data.share_code || null;
+          if (editCode) localStorage.setItem('stc_edit_code', editCode); else localStorage.removeItem('stc_edit_code');
+          if (shareCode) localStorage.setItem('stc_share_code', shareCode); else localStorage.removeItem('stc_share_code');
+          saveLocal();
+        }
+        applyHearts();
+        if (editCode) connectWS(editCode);
+      } catch {}
+    }
+
     // Init
     (async () => {
       const p = new URLSearchParams(location.search);
+      const syncToken = p.get('sync');
       const c = p.get('code');
-      if (c) {
+      if (syncToken) {
+        history.replaceState(null, '', location.pathname);
+        await exchangeSyncToken(syncToken);
+      } else if (c) {
         history.replaceState(null, '', location.pathname);
         await loadFromServer(c); connectWS(c);
       }
