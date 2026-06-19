@@ -239,9 +239,18 @@ def render_output_html(
     parts.append("      </div>")
     parts.append('      <div class="pane on" id="p-send">')
     parts.append('        <div class="qr-wrap">')
+    parts.append('          <p class="lbl">Scan this QR with your other device:</p>')
     parts.append(
         '          <canvas id="sync-qr" width="360" height="360" style="width:120px;height:120px"></canvas>'
     )
+    parts.append('          <div class="or-line"><hr><span>or</span><hr></div>')
+    parts.append("        </div>")
+    parts.append('        <p class="lbl">On your other device:</p>')
+    parts.append('        <div class="steps">')
+    parts.append("          <p>Open <strong>stonetechno.deftlab.dev</strong></p>")
+    parts.append("          <p>Click <strong>Sync</strong></p>")
+    parts.append("          <p>Click <strong>Receive from another device</strong></p>")
+    parts.append("          <p>Enter the code shown below</p>")
     parts.append("        </div>")
     parts.append('        <div class="pin" id="pin-display"></div>')
     parts.append('        <p class="sync-expiry" id="sync-expiry"></p>')
