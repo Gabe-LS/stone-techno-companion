@@ -423,10 +423,18 @@ app.mount("/photos", StaticFiles(directory=str(STATIC_DIR / "photos")), name="ph
 
 
 @app.get("/favicon.svg")
-async def serve_favicon():
+async def serve_favicon_svg():
     file_path = STATIC_DIR / "favicon.svg"
     if file_path.exists():
         return FileResponse(file_path, media_type="image/svg+xml")
+    raise HTTPException(404, "Not found")
+
+
+@app.get("/favicon.png")
+async def serve_favicon_png():
+    file_path = STATIC_DIR / "favicon.png"
+    if file_path.exists():
+        return FileResponse(file_path, media_type="image/png")
     raise HTTPException(404, "Not found")
 
 

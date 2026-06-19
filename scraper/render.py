@@ -96,13 +96,13 @@ def render_output_html(
         '  <meta property="og:url" content="https://stonetechno.deftlab.dev/">'
     )
     parts.append(
-        '  <meta property="og:image" content="https://stonetechno.deftlab.dev/favicon.svg">'
+        '  <meta property="og:image" content="https://stonetechno.deftlab.dev/favicon.png">'
     )
     parts.append('  <meta name="twitter:card" content="summary">')
     parts.append(f'  <meta name="twitter:title" content="{esc(title)}">')
     parts.append(f'  <meta name="twitter:description" content="{esc(description)}">')
     parts.append(
-        '  <meta name="twitter:image" content="https://stonetechno.deftlab.dev/favicon.svg">'
+        '  <meta name="twitter:image" content="https://stonetechno.deftlab.dev/favicon.png">'
     )
     import base64 as _b64
 

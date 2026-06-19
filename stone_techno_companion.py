@@ -45,11 +45,11 @@ def deploy_to_vps(output_dir: Path, output_path: Path) -> None:
     with tempfile.TemporaryDirectory() as staging:
         staging_path = Path(staging)
         shutil.copy2(output_path, staging_path / "index.html")
-        favicon_src = (
-            Path(__file__).resolve().parent / "scraper" / "icons" / "favicon.svg"
-        )
-        if favicon_src.exists():
-            shutil.copy2(favicon_src, staging_path / "favicon.svg")
+        icons_dir = Path(__file__).resolve().parent / "scraper" / "icons"
+        for fname in ("favicon.svg", "favicon.png"):
+            src = icons_dir / fname
+            if src.exists():
+                shutil.copy2(src, staging_path / fname)
         photos_src = output_dir / "photos"
         if photos_src.is_dir():
             shutil.copytree(photos_src, staging_path / "photos")
