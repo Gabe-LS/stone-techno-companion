@@ -75,6 +75,13 @@ def _get_db() -> sqlite3.Connection:
 def _init_db() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     db = _get_db()
+    # Migrate from old 6-digit code schema (must run before index creation)
+    try:
+        db.execute("ALTER TABLE sessions RENAME COLUMN edit_code TO session_id")
+        db.execute("ALTER TABLE sessions RENAME COLUMN share_code TO share_token")
+        db.commit()
+    except sqlite3.OperationalError:
+        pass
     db.executescript("""
         CREATE TABLE IF NOT EXISTS sessions (
             session_id   TEXT PRIMARY KEY,
@@ -85,13 +92,6 @@ def _init_db() -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_share_token ON sessions(share_token);
     """)
-    # Migrate from old 6-digit code schema
-    try:
-        db.execute("ALTER TABLE sessions RENAME COLUMN edit_code TO session_id")
-        db.execute("ALTER TABLE sessions RENAME COLUMN share_code TO share_token")
-        db.commit()
-    except sqlite3.OperationalError:
-        pass
     pruned = db.execute(
         "DELETE FROM sessions WHERE updated_at < datetime('now', '-90 days')"
     ).rowcount
