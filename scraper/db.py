@@ -245,6 +245,7 @@ def load_assignments_from_db(db: sqlite3.Connection) -> dict[str, list[dict]]:
                 "sc_followers": row[8],
                 "spotify_listeners": row[9],
                 "location_id": row[11],
+                "overlay_id": row[12],
                 "all_slots": all_slots.get(row[12], []),
             }
         )

@@ -1,0 +1,19 @@
+services:
+  stone-techno:
+    build: .
+    container_name: stone-techno
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - ./static:/app/static
+    networks:
+      - apps
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  apps:
+    external: true

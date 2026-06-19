@@ -1,0 +1,21 @@
+name: Deploy server
+on:
+  push:
+    branches: [main]
+    paths: [server/**]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: 209.38.244.136
+          username: root
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /root/services/stone-techno
+            git pull origin main
+            cd server
+            docker compose up -d --build

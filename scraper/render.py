@@ -13,11 +13,13 @@ def _load_icon(name: str) -> str:
     path = ICONS_DIR / f"{name}-square-round.svg"
     if path.exists():
         svg = path.read_text(encoding="utf-8").strip()
+        if "<?xml" in svg:
+            svg = svg[svg.index("<svg") :]
         svg = svg.replace('width="24"', 'width="18"').replace(
             'height="24"', 'height="18"'
         )
-        if "<?xml" in svg:
-            svg = svg[svg.index("<svg") :]
+        if "width=" not in svg:
+            svg = svg.replace("<svg", '<svg width="18" height="18"', 1)
         return svg
     return ""
 
@@ -119,12 +121,48 @@ def render_output_html(
       .links { column-gap: 8px; row-gap: 0; }
       .links a { font-size: 0.68em; min-width: 72px; gap: 3px; }
       .links a svg { width: 14px; height: 14px; }
+      .heart-btn svg { width: 18px; height: 18px; }
+      .share-bar { font-size: 0.8em; padding: 8px 12px; }
     }
+    .heart-btn { background: none; border: none; cursor: pointer; padding: 6px; flex-shrink: 0; align-self: flex-start; margin-top: 2px; }
+    .heart-btn svg { fill: none; stroke: #ccc; stroke-width: 2; transition: fill 0.15s, stroke 0.15s; width: 22px; height: 22px; }
+    .heart-btn:hover svg { stroke: #e53e3e; }
+    .heart-btn.active svg { fill: #e53e3e; stroke: #e53e3e; }
+    .heart-counter { font-size: 0.5em; font-weight: normal; color: #e53e3e; vertical-align: middle; }
+    .share-bar { display: none; background: #f7f7f7; padding: 10px 16px; border-radius: 8px; font-size: 0.85em; margin-bottom: 16px; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .share-bar.visible { display: flex; }
+    .share-bar code { background: #fff; padding: 4px 10px; border-radius: 4px; font-size: 1.2em; font-weight: 700; letter-spacing: 0.1em; border: 1px solid #ddd; }
+    .share-bar button { background: #222; color: #fff; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 0.9em; }
+    .share-bar button:hover { background: #444; }
+    .qr-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center; }
+    .qr-modal.visible { display: flex; }
+    .qr-modal-content { background: #fff; padding: 24px; border-radius: 12px; text-align: center; max-width: 300px; }
+    .qr-modal-content canvas { margin: 16px auto; display: block; }
+    .qr-modal-content button { background: #222; color: #fff; border: none; padding: 8px 20px; border-radius: 4px; cursor: pointer; margin-top: 12px; }
     """)
     parts.append("  </style>")
     parts.append("</head>")
     parts.append("<body>")
-    parts.append(f"  <h1>{esc(title)}</h1>")
+    parts.append(
+        f'  <h1>{esc(title)} <span class="heart-counter" id="heart-counter"></span></h1>'
+    )
+    parts.append('  <div class="share-bar" id="share-bar">')
+    parts.append('    <span>Your picks code:</span> <code id="share-code"></code>')
+    parts.append('    <button onclick="copyShareCode()">Copy</button>')
+    parts.append('    <button onclick="showQR()">QR Code</button>')
+    parts.append('    <button onclick="enterCode()">Enter Code</button>')
+    parts.append("  </div>")
+    parts.append(
+        '  <div class="qr-modal" id="qr-modal" onclick="this.classList.remove(\'visible\')">'
+    )
+    parts.append('    <div class="qr-modal-content" onclick="event.stopPropagation()">')
+    parts.append("      <p>Scan to share your picks</p>")
+    parts.append('      <canvas id="qr-canvas"></canvas>')
+    parts.append(
+        "      <button onclick=\"document.getElementById('qr-modal').classList.remove('visible')\">Close</button>"
+    )
+    parts.append("    </div>")
+    parts.append("  </div>")
 
     def _link(href: str, svg: str, label: str = "") -> str:
         txt = f"{svg} {esc(label)}" if label else svg
@@ -143,7 +181,10 @@ def render_output_html(
         sp_l = format_followers(a.get("spotify_listeners"))
         schedule = _format_other_slots(a.get("all_slots", []), cur_date, cur_period)
 
-        parts.append('      <li class="artist-item">')
+        artist_id = a.get("overlay_id", "")
+        parts.append(
+            f'      <li class="artist-item" data-artist-id="{esc(artist_id)}">'
+        )
         if photo_local:
             parts.append(
                 f'        <img class="artist-photo" src="photos/{esc(photo_local)}" alt="{esc(name)}" width="120" height="120" loading="lazy">'
@@ -171,6 +212,9 @@ def render_output_html(
             parts.append('          <span class="missing">No links</span>')
         parts.append("        </div>")
         parts.append("        </div>")
+        parts.append(
+            '        <button class="heart-btn" onclick="toggleHeart(this)" aria-label="Add to favorites" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg></button>'
+        )
         parts.append("      </li>")
 
     dates_seen: list[str] = []
@@ -228,7 +272,9 @@ def render_output_html(
         parts.append("  </section>")
 
     parts.append("  <script>")
-    parts.append("""document.querySelectorAll('.fade-after').forEach(el => {
+    parts.append("""
+    // Sticky gradient observer
+    document.querySelectorAll('.fade-after').forEach(el => {
       const top = parseFloat(getComputedStyle(el).top) || 0;
       const s = document.createElement('div');
       s.style.cssText = 'height:1px;width:0;pointer-events:none;visibility:hidden;margin-bottom:-1px;position:relative;top:-' + top + 'px';
@@ -236,7 +282,183 @@ def render_output_html(
       new IntersectionObserver(([e]) => {
         el.classList.toggle('stuck', e.intersectionRatio === 0);
       }, {threshold: 0}).observe(s);
-    });""")
+    });
+
+    // Hearts
+    const API = '/api';
+    let editCode = localStorage.getItem('stc_edit_code');
+    let shareCode = localStorage.getItem('stc_share_code');
+    let localPicks = new Set(JSON.parse(localStorage.getItem('stc_picks') || '[]'));
+    let readOnly = false;
+
+    function savePicsLocal() {
+      localStorage.setItem('stc_picks', JSON.stringify([...localPicks]));
+      updateCounter();
+    }
+
+    function updateCounter() {
+      const el = document.getElementById('heart-counter');
+      el.textContent = localPicks.size ? '\\u2764 ' + localPicks.size : '';
+    }
+
+    function updateShareBar() {
+      const bar = document.getElementById('share-bar');
+      if (shareCode && localPicks.size > 0) {
+        document.getElementById('share-code').textContent = shareCode;
+        bar.classList.add('visible');
+      } else {
+        bar.classList.remove('visible');
+      }
+    }
+
+    function applyHearts() {
+      document.querySelectorAll('.heart-btn').forEach(btn => {
+        const id = btn.closest('[data-artist-id]').dataset.artistId;
+        const active = localPicks.has(id);
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-pressed', active);
+      });
+      updateCounter();
+      updateShareBar();
+    }
+
+    async function ensureSession() {
+      if (editCode) return;
+      try {
+        const res = await fetch(API + '/session', {method: 'POST'});
+        if (!res.ok) return;
+        const data = await res.json();
+        editCode = data.edit_code;
+        shareCode = data.share_code;
+        localStorage.setItem('stc_edit_code', editCode);
+        localStorage.setItem('stc_share_code', shareCode);
+      } catch {}
+    }
+
+    async function toggleHeart(btn) {
+      if (readOnly) return;
+      const li = btn.closest('[data-artist-id]');
+      const id = li.dataset.artistId;
+      const adding = !localPicks.has(id);
+
+      // Optimistic UI
+      if (adding) localPicks.add(id); else localPicks.delete(id);
+      btn.classList.toggle('active', adding);
+      btn.setAttribute('aria-pressed', adding);
+      savePicsLocal();
+      updateShareBar();
+
+      await ensureSession();
+      if (!editCode) return;
+
+      try {
+        const method = adding ? 'POST' : 'DELETE';
+        const res = await fetch(API + '/session/' + editCode + '/pick/' + id, {method});
+        if (!res.ok && res.status !== 204) throw new Error();
+      } catch {
+        // Rollback
+        if (adding) localPicks.delete(id); else localPicks.add(id);
+        btn.classList.toggle('active', !adding);
+        btn.setAttribute('aria-pressed', !adding);
+        savePicsLocal();
+        updateShareBar();
+      }
+    }
+
+    async function loadFromServer(code) {
+      try {
+        const res = await fetch(API + '/session/' + code);
+        if (!res.ok) return;
+        const data = await res.json();
+        localPicks = new Set(data.picks);
+        readOnly = data.readonly;
+        if (data.edit_code) {
+          editCode = data.edit_code;
+          localStorage.setItem('stc_edit_code', editCode);
+        }
+        if (data.share_code) {
+          shareCode = data.share_code;
+          localStorage.setItem('stc_share_code', shareCode);
+        }
+        savePicsLocal();
+        applyHearts();
+        if (readOnly) {
+          document.querySelectorAll('.heart-btn').forEach(b => b.style.display = 'none');
+        }
+      } catch {}
+    }
+
+    async function reconcile() {
+      if (!editCode || readOnly) return;
+      try {
+        const res = await fetch(API + '/session/' + editCode);
+        if (!res.ok) return;
+        const data = await res.json();
+        const serverPicks = new Set(data.picks);
+        // Push local-only picks
+        for (const id of localPicks) {
+          if (!serverPicks.has(id)) {
+            fetch(API + '/session/' + editCode + '/pick/' + id, {method: 'POST'}).catch(() => {});
+          }
+        }
+        // Pull server-only picks
+        for (const id of serverPicks) {
+          localPicks.add(id);
+        }
+        savePicsLocal();
+        applyHearts();
+      } catch {}
+    }
+
+    function copyShareCode() {
+      navigator.clipboard.writeText('https://stonetechno.deftlab.dev/?code=' + shareCode);
+      const btn = document.querySelector('.share-bar button');
+      const orig = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => btn.textContent = orig, 1500);
+    }
+
+    function enterCode() {
+      const code = prompt('Enter a picks code:');
+      if (code && code.trim()) {
+        loadFromServer(code.trim());
+      }
+    }
+
+    // QR code generator (minimal, alphanumeric)
+    function showQR() {
+      const url = 'https://stonetechno.deftlab.dev/?code=' + shareCode;
+      const canvas = document.getElementById('qr-canvas');
+      const size = 200;
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      // Simple QR via external image fallback
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => { ctx.drawImage(img, 0, 0, size, size); };
+      img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(url);
+      document.getElementById('qr-modal').classList.add('visible');
+    }
+
+    // Init
+    (async () => {
+      const params = new URLSearchParams(location.search);
+      const urlCode = params.get('code');
+      if (urlCode) {
+        await loadFromServer(urlCode);
+      } else if (editCode) {
+        await reconcile();
+      }
+      applyHearts();
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && editCode && !readOnly) {
+          reconcile();
+        }
+      });
+    })();
+    """)
     parts.append("  </script>")
     parts.append("</body>")
     parts.append("</html>")
