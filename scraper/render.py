@@ -86,14 +86,14 @@ def render_output_html(
     parts.append(f"  <title>{esc(title)}</title>")
     parts.append("  <style>")
     parts.append("""
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; line-height: 1.5; max-width: 960px; margin: 40px auto; padding: 0 24px; color: #111; background: #fff; }
-    h1 { margin-bottom: 32px; font-size: 2em; position: sticky; top: 0; background: #fff; z-index: 30; padding: 12px 0 8px; border-bottom: 2px solid #222; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; line-height: 1.5; max-width: 960px; margin: 0 auto; padding: 0 24px; color: #111; background: #fff; }
+    h1 { margin-bottom: 32px; font-size: 2em; position: sticky; top: 28px; background: #fff; z-index: 30; padding: 12px 0 8px; border-bottom: 2px solid #222; }
     section.date-section { margin-bottom: 48px; }
-    h2 { position: sticky; top: 68px; background: #fff; z-index: 20; padding: 10px 0 8px; margin-bottom: 8px; font-size: 1.5em; border-bottom: 1px solid #ccc; }
-    h3.period-heading { position: sticky; top: 122px; background: #fff; z-index: 10; padding: 8px 0 6px; margin: 24px 0 12px; font-size: 1.15em; color: #333; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: none; }
+    h2 { position: sticky; top: 96px; background: #fff; z-index: 20; padding: 10px 0 8px; margin-bottom: 8px; font-size: 1.5em; border-bottom: 1px solid #ccc; }
+    h3.period-heading { position: sticky; top: 150px; background: #fff; z-index: 10; padding: 8px 0 6px; margin: 24px 0 12px; font-size: 1.15em; color: #333; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: none; }
     .fade-after::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 36px; background: linear-gradient(to bottom, rgba(255,255,255,1) 0%, rgba(255,255,255,0.9) 20%, rgba(255,255,255,0.75) 35%, rgba(255,255,255,0.5) 55%, rgba(255,255,255,0.15) 78%, rgba(255,255,255,0) 100%); pointer-events: none; opacity: 0; transition: opacity 0.15s; }
     .fade-after.stuck::after { opacity: 1; }
-    h4.location-heading { position: sticky; top: 162px; background: #fff; z-index: 10; font-size: 1em; padding: 6px 0 4px; margin: 16px 0 8px; color: #555; border-bottom: 1px solid #eee; }
+    h4.location-heading { position: sticky; top: 190px; background: #fff; z-index: 10; font-size: 1em; padding: 6px 0 4px; margin: 16px 0 8px; color: #555; border-bottom: 1px solid #eee; }
     h4.location-heading small { font-weight: normal; color: #999; }
     ul.artist-list { list-style: none; padding: 0; margin: 0; }
     li.artist-item { display: flex; align-items: center; gap: 16px; padding: 12px; margin-bottom: 8px; background: #f9f9f9; border-radius: 8px; border: 1px solid #eee; }
@@ -109,10 +109,11 @@ def render_output_html(
     .missing { color: #aaa; font-size: 0.8em; }
     @media (max-width: 480px) {
       body { padding: 0 12px; }
-      h1 { font-size: 1.5em; padding: 8px 0 6px; }
-      h2 { font-size: 1.2em; padding: 6px 0; top: 52px; }
-      h3.period-heading { font-size: 1em; padding: 6px 0 4px; top: 94px; margin: 16px 0 8px; }
-      h4.location-heading { top: 126px; }
+      .cmd-bar { font-size: 0.7em; }
+      h1 { font-size: 1.5em; padding: 8px 0 6px; top: 28px; }
+      h2 { font-size: 1.2em; padding: 6px 0; top: 78px; }
+      h3.period-heading { font-size: 1em; padding: 6px 0 4px; top: 120px; margin: 16px 0 8px; }
+      h4.location-heading { top: 152px; }
       li.artist-item { gap: 10px; padding: 10px; }
       .artist-photo { width: 72px; height: 72px; border-radius: 4px; }
       .photo-placeholder { width: 72px; height: 72px; }
@@ -128,39 +129,115 @@ def render_output_html(
     .heart-btn svg { fill: none; stroke: #ccc; stroke-width: 2; transition: fill 0.15s, stroke 0.15s; width: 22px; height: 22px; }
     .heart-btn:hover svg { stroke: #e53e3e; }
     .heart-btn.active svg { fill: #e53e3e; stroke: #e53e3e; }
-    .heart-counter { font-size: 0.5em; font-weight: normal; color: #e53e3e; vertical-align: middle; }
-    .share-bar { display: none; background: #f7f7f7; padding: 10px 16px; border-radius: 8px; font-size: 0.85em; margin-bottom: 16px; align-items: center; gap: 12px; flex-wrap: wrap; }
-    .share-bar.visible { display: flex; }
-    .share-bar code { background: #fff; padding: 4px 10px; border-radius: 4px; font-size: 1.2em; font-weight: 700; letter-spacing: 0.1em; border: 1px solid #ddd; }
-    .share-bar button { background: #222; color: #fff; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 0.9em; }
-    .share-bar button:hover { background: #444; }
-    .qr-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center; }
-    .qr-modal.visible { display: flex; }
-    .qr-modal-content { background: #fff; padding: 24px; border-radius: 12px; text-align: center; max-width: 300px; }
-    .qr-modal-content canvas { margin: 16px auto; display: block; }
-    .qr-modal-content button { background: #222; color: #fff; border: none; padding: 8px 20px; border-radius: 4px; cursor: pointer; margin-top: 12px; }
+    .cmd-bar { position: sticky; top: 0; z-index: 40; background: #111; color: #fff; display: flex; align-items: stretch; height: 28px; font-size: 0.75em; }
+    .cmd-bar button { background: none; color: #999; border: none; cursor: pointer; padding: 0; font-size: 1em; white-space: nowrap; flex: 1; text-align: center; transition: color 0.1s; letter-spacing: 0.03em; }
+    .cmd-bar button:hover { color: #fff; }
+    .cmd-bar button:focus { outline: none; }
+    .cmd-bar button.active { color: #e53e3e; }
+    .cmd-bar .sep { color: #333; margin: 0; display: flex; align-items: center; }
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100; align-items: center; justify-content: center; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+    .modal-overlay.visible { display: flex; }
+    .modal-content { background: #fff; padding: 28px; border-radius: 16px; text-align: center; max-width: 400px; width: 90%; color: #111; box-shadow: 0 8px 30px rgba(0,0,0,0.15); }
+    .modal-content h3 { margin: 0 0 8px; font-size: 1.05em; font-weight: 600; }
+    .modal-content p { font-size: 0.82em; color: #999; margin: 0 0 16px; line-height: 1.4; }
+    .modal-content code { display: block; background: #f8f8f8; padding: 12px; border-radius: 8px; font-size: 1.3em; font-weight: 700; letter-spacing: 0.15em; border: none; margin: 12px 0; color: #111; }
+    .modal-content code.share-link { font-size: 0.85em; font-weight: 500; letter-spacing: 0; word-break: break-all; padding: 14px 16px; color: #333; margin-bottom: 0; }
+    .modal-content canvas { margin: 12px auto; display: block; border-radius: 8px; }
+    .modal-content button { background: #111; color: #fff; border: none; padding: 8px 20px; border-radius: 6px; cursor: pointer; margin: 4px 3px 0; font-size: 0.85em; transition: background 0.1s; }
+    .modal-content button:hover { background: #333; }
+    .modal-content button:focus { outline: none; }
+    .filter-active .artist-item:not(.hearted) { display: none; }
+    .modal-close { position: absolute; top: 10px; right: 10px; background: #f0f0f0; border: none; font-size: 0.9em; color: #bbb; cursor: pointer; width: 24px; height: 24px; line-height: 24px; text-align: center; padding: 0; margin: 0; border-radius: 4px; }
+    .modal-close:hover { background: #e0e0e0; color: #888; }
+    .modal-content { position: relative; }
+    .copyable { cursor: pointer; transition: background 0.15s; }
+    .copyable:hover { background: #eee; }
+    .copyable.copied { background: #d4edda; }
+    .modal-tabs { display: flex; gap: 0; margin-bottom: 16px; border-radius: 8px; overflow: hidden; border: 1px solid #e0e0e0; }
+    .modal-tabs button { flex: 1; background: #f8f8f8; border: none; padding: 9px; cursor: pointer; font-size: 0.82em; color: #888; transition: all 0.1s; }
+    .modal-tabs button:focus { outline: none; }
+    .modal-tabs button.active { background: #111; color: #fff; }
+    .modal-panel { display: none; }
+    .modal-panel.active { display: block; }
+    .modal-content input[type="text"] { width: 100%; padding: 12px; font-size: 1.2em; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; letter-spacing: 0.15em; box-sizing: border-box; margin: 8px 0; font-weight: 600; }
+    .modal-content input[type="text"]:focus { outline: none; border-color: #111; }
+    .modal-content .step { text-align: left; font-size: 0.8em; color: #888; margin: 6px 0; padding-left: 18px; }
+    .modal-content .step::before { content: counter(step) ". "; counter-increment: step; font-weight: 600; color: #111; }
+    .modal-content .steps { counter-reset: step; }
     """)
     parts.append("  </style>")
     parts.append("</head>")
     parts.append("<body>")
+    parts.append('  <div class="cmd-bar" id="cmd-bar">')
+    parts.append('    <button onclick="openShareModal()">Share</button>')
+    parts.append('    <span class="sep">|</span>')
+    parts.append('    <button onclick="openSyncModal()">Sync</button>')
+    parts.append('    <span class="sep">|</span>')
     parts.append(
-        f'  <h1>{esc(title)} <span class="heart-counter" id="heart-counter"></span></h1>'
+        '    <button onclick="toggleFilter(this)" id="btn-filter">My Picks</button>'
     )
-    parts.append('  <div class="share-bar" id="share-bar">')
-    parts.append('    <span>Your picks code:</span> <code id="share-code"></code>')
-    parts.append('    <button onclick="copyShareCode()">Copy</button>')
-    parts.append('    <button onclick="showQR()">QR Code</button>')
-    parts.append('    <button onclick="enterCode()">Enter Code</button>')
     parts.append("  </div>")
+    parts.append(f"  <h1>{esc(title)}</h1>")
+
+    # Share modal (read-only link for friends)
     parts.append(
-        '  <div class="qr-modal" id="qr-modal" onclick="this.classList.remove(\'visible\')">'
+        '  <div class="modal-overlay" id="share-modal" onclick="closeModal(\'share-modal\')">'
     )
-    parts.append('    <div class="qr-modal-content" onclick="event.stopPropagation()">')
-    parts.append("      <p>Scan to share your picks</p>")
-    parts.append('      <canvas id="qr-canvas"></canvas>')
+    parts.append('    <div class="modal-content" onclick="event.stopPropagation()">')
+    parts.append("")
+    parts.append("      <h3>Share With Friends</h3>")
+    parts.append("      <p>Friends can view your picks. Click the link to copy it.</p>")
     parts.append(
-        "      <button onclick=\"document.getElementById('qr-modal').classList.remove('visible')\">Close</button>"
+        '      <code class="share-link copyable" id="share-link" onclick="copyShareLink(this)"></code>'
     )
+    parts.append("    </div>")
+    parts.append("  </div>")
+
+    # Sync modal (read-write code for own devices)
+    parts.append(
+        '  <div class="modal-overlay" id="sync-modal" onclick="closeModal(\'sync-modal\')">'
+    )
+    parts.append('    <div class="modal-content" onclick="event.stopPropagation()">')
+    parts.append("")
+    parts.append("      <h3>Sync Your Devices</h3>")
+    parts.append('      <div class="modal-tabs">')
+    parts.append(
+        '        <button class="active" onclick="switchSyncTab(\'send\', this)">Send to another device</button>'
+    )
+    parts.append(
+        "        <button onclick=\"switchSyncTab('receive', this)\">Receive from another device</button>"
+    )
+    parts.append("      </div>")
+    parts.append('      <div class="modal-panel active" id="sync-send">')
+    parts.append('        <div class="steps">')
+    parts.append(
+        '          <p class="step">Open the lineup page on your other device</p>'
+    )
+    parts.append(
+        '          <p class="step">Tap <strong>Sync</strong> then <strong>Receive</strong></p>'
+    )
+    parts.append('          <p class="step">Enter this code or scan the QR:</p>')
+    parts.append("        </div>")
+    parts.append('        <code id="sync-code"></code>')
+    parts.append('        <canvas id="sync-qr"></canvas>')
+    parts.append("        <div>")
+    parts.append("          <button onclick=\"copyLink('sync')\">Copy Link</button>")
+    parts.append("        </div>")
+    parts.append("      </div>")
+    parts.append('      <div class="modal-panel" id="sync-receive">')
+    parts.append('        <div class="steps">')
+    parts.append(
+        '          <p class="step">On your other device, tap <strong>Sync</strong> then <strong>Send</strong></p>'
+    )
+    parts.append('          <p class="step">Enter the code shown on that device:</p>')
+    parts.append("        </div>")
+    parts.append(
+        '        <input type="text" id="sync-input" placeholder="Enter sync code" maxlength="12" autocomplete="off" />'
+    )
+    parts.append("        <div>")
+    parts.append('          <button onclick="applySyncCode()">Connect</button>')
+    parts.append("        </div>")
+    parts.append("      </div>")
     parts.append("    </div>")
     parts.append("  </div>")
 
@@ -290,25 +367,27 @@ def render_output_html(
     let shareCode = localStorage.getItem('stc_share_code');
     let localPicks = new Set(JSON.parse(localStorage.getItem('stc_picks') || '[]'));
     let readOnly = false;
+    let filterActive = false;
 
-    function savePicsLocal() {
+    // Blur buttons after click, ESC to close modals
+    document.addEventListener('click', e => { if (e.target.matches('button')) e.target.blur(); });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.visible').forEach(m => m.classList.remove('visible'));
+    });
+
+    function saveLocal() {
       localStorage.setItem('stc_picks', JSON.stringify([...localPicks]));
-      updateCounter();
+      updateUI();
     }
 
-    function updateCounter() {
-      const el = document.getElementById('heart-counter');
-      el.textContent = localPicks.size ? '\\u2764 ' + localPicks.size : '';
-    }
-
-    function updateShareBar() {
-      const bar = document.getElementById('share-bar');
-      if (shareCode && localPicks.size > 0) {
-        document.getElementById('share-code').textContent = shareCode;
-        bar.classList.add('visible');
-      } else {
-        bar.classList.remove('visible');
-      }
+    function updateUI() {
+      const btn = document.getElementById('btn-filter');
+      const n = localPicks.size;
+      const label = filterActive ? 'Show All' : 'My Picks';
+      btn.textContent = n ? label + ' (' + n + ')' : label;
+      document.querySelectorAll('.artist-item').forEach(li => {
+        li.classList.toggle('hearted', localPicks.has(li.dataset.artistId));
+      });
     }
 
     function applyHearts() {
@@ -318,8 +397,44 @@ def render_output_html(
         btn.classList.toggle('active', active);
         btn.setAttribute('aria-pressed', active);
       });
-      updateCounter();
-      updateShareBar();
+      updateUI();
+    }
+
+    function toggleFilter(btn) {
+      filterActive = !filterActive;
+      document.body.classList.toggle('filter-active', filterActive);
+      btn.classList.toggle('active', filterActive);
+      updateUI();
+      updateGroupVisibility();
+    }
+
+    function updateGroupVisibility() {
+      document.querySelectorAll('ul.artist-list').forEach(ul => {
+        const hasVisible = filterActive
+          ? ul.querySelector('.artist-item.hearted') !== null
+          : true;
+        ul.style.display = hasVisible ? '' : 'none';
+        const prev = ul.previousElementSibling;
+        if (prev && (prev.matches('h3') || prev.matches('h4'))) {
+          prev.style.display = hasVisible ? '' : 'none';
+        }
+      });
+      document.querySelectorAll('section.date-section').forEach(sec => {
+        const hasVisible = filterActive
+          ? sec.querySelector('.artist-item.hearted') !== null
+          : true;
+        sec.style.display = hasVisible ? '' : 'none';
+      });
+      document.querySelectorAll('h3.period-heading').forEach(h3 => {
+        if (!filterActive) { h3.style.display = ''; return; }
+        let el = h3.nextElementSibling;
+        let found = false;
+        while (el && !el.matches('h3') && !el.matches('h2')) {
+          if (el.querySelector && el.querySelector('.artist-item.hearted')) { found = true; break; }
+          el = el.nextElementSibling;
+        }
+        h3.style.display = found ? '' : 'none';
+      });
     }
 
     async function ensureSession() {
@@ -341,12 +456,11 @@ def render_output_html(
       const id = li.dataset.artistId;
       const adding = !localPicks.has(id);
 
-      // Optimistic UI
       if (adding) localPicks.add(id); else localPicks.delete(id);
       btn.classList.toggle('active', adding);
       btn.setAttribute('aria-pressed', adding);
-      savePicsLocal();
-      updateShareBar();
+      li.classList.toggle('hearted', adding);
+      saveLocal();
 
       await ensureSession();
       if (!editCode) return;
@@ -356,12 +470,11 @@ def render_output_html(
         const res = await fetch(API + '/session/' + editCode + '/pick/' + id, {method});
         if (!res.ok && res.status !== 204) throw new Error();
       } catch {
-        // Rollback
         if (adding) localPicks.delete(id); else localPicks.add(id);
         btn.classList.toggle('active', !adding);
         btn.setAttribute('aria-pressed', !adding);
-        savePicsLocal();
-        updateShareBar();
+        li.classList.toggle('hearted', !adding);
+        saveLocal();
       }
     }
 
@@ -372,19 +485,11 @@ def render_output_html(
         const data = await res.json();
         localPicks = new Set(data.picks);
         readOnly = data.readonly;
-        if (data.edit_code) {
-          editCode = data.edit_code;
-          localStorage.setItem('stc_edit_code', editCode);
-        }
-        if (data.share_code) {
-          shareCode = data.share_code;
-          localStorage.setItem('stc_share_code', shareCode);
-        }
-        savePicsLocal();
+        if (data.edit_code) { editCode = data.edit_code; localStorage.setItem('stc_edit_code', editCode); }
+        if (data.share_code) { shareCode = data.share_code; localStorage.setItem('stc_share_code', shareCode); }
+        saveLocal();
         applyHearts();
-        if (readOnly) {
-          document.querySelectorAll('.heart-btn').forEach(b => b.style.display = 'none');
-        }
+        if (readOnly) document.querySelectorAll('.heart-btn').forEach(b => b.style.display = 'none');
       } catch {}
     }
 
@@ -395,67 +500,83 @@ def render_output_html(
         if (!res.ok) return;
         const data = await res.json();
         const serverPicks = new Set(data.picks);
-        // Push local-only picks
         for (const id of localPicks) {
-          if (!serverPicks.has(id)) {
-            fetch(API + '/session/' + editCode + '/pick/' + id, {method: 'POST'}).catch(() => {});
-          }
+          if (!serverPicks.has(id)) fetch(API + '/session/' + editCode + '/pick/' + id, {method: 'POST'}).catch(() => {});
         }
-        // Pull server-only picks
-        for (const id of serverPicks) {
-          localPicks.add(id);
-        }
-        savePicsLocal();
+        for (const id of serverPicks) localPicks.add(id);
+        saveLocal();
         applyHearts();
       } catch {}
     }
 
-    function copyShareCode() {
-      navigator.clipboard.writeText('https://stonetechno.deftlab.dev/?code=' + shareCode);
-      const btn = document.querySelector('.share-bar button');
-      const orig = btn.textContent;
-      btn.textContent = 'Copied!';
-      setTimeout(() => btn.textContent = orig, 1500);
-    }
+    function closeModal(id) { document.getElementById(id).classList.remove('visible'); }
 
-    function enterCode() {
-      const code = prompt('Enter a picks code:');
-      if (code && code.trim()) {
-        loadFromServer(code.trim());
-      }
-    }
-
-    // QR code generator (minimal, alphanumeric)
-    function showQR() {
-      const url = 'https://stonetechno.deftlab.dev/?code=' + shareCode;
-      const canvas = document.getElementById('qr-canvas');
-      const size = 200;
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext('2d');
-      // Simple QR via external image fallback
+    function loadQR(canvasId, url) {
+      const canvas = document.getElementById(canvasId);
+      canvas.width = 200; canvas.height = 200;
       const img = new Image();
       img.crossOrigin = 'anonymous';
-      img.onload = () => { ctx.drawImage(img, 0, 0, size, size); };
+      img.onload = () => { canvas.getContext('2d').drawImage(img, 0, 0, 200, 200); };
       img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(url);
-      document.getElementById('qr-modal').classList.add('visible');
     }
 
-    // Init
+    function openShareModal() {
+      if (!shareCode) { alert('Heart an artist first to create your picks list.'); return; }
+      const url = 'https://stonetechno.deftlab.dev/?code=' + shareCode;
+      document.getElementById('share-link').textContent = url;
+      document.getElementById('share-modal').classList.add('visible');
+    }
+
+    function copyShareLink(el) {
+      navigator.clipboard.writeText(el.textContent);
+      el.classList.add('copied');
+      const orig = el.textContent;
+      el.textContent = 'Copied!';
+      setTimeout(() => { el.textContent = orig; el.classList.remove('copied'); }, 1500);
+    }
+
+    async function openSyncModal() {
+      await ensureSession();
+      if (!editCode) { alert('Heart an artist first to create your picks list.'); return; }
+      const url = 'https://stonetechno.deftlab.dev/?code=' + editCode;
+      document.getElementById('sync-code').textContent = editCode;
+      loadQR('sync-qr', url);
+      document.getElementById('sync-modal').classList.add('visible');
+    }
+
+    function switchSyncTab(tab, btn) {
+      document.querySelectorAll('#sync-modal .modal-tabs button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('sync-send').classList.toggle('active', tab === 'send');
+      document.getElementById('sync-receive').classList.toggle('active', tab === 'receive');
+      if (tab === 'receive') document.getElementById('sync-input').focus();
+    }
+
+    function applySyncCode() {
+      const input = document.getElementById('sync-input');
+      const code = input.value.trim();
+      if (!code) return;
+      loadFromServer(code);
+      closeModal('sync-modal');
+      input.value = '';
+    }
+
+    function copyLink(type) {
+      const code = type === 'share' ? shareCode : editCode;
+      const url = 'https://stonetechno.deftlab.dev/?code=' + code;
+      navigator.clipboard.writeText(url);
+      event.target.textContent = 'Copied!';
+      setTimeout(() => event.target.textContent = 'Copy Link', 1500);
+    }
+
     (async () => {
       const params = new URLSearchParams(location.search);
       const urlCode = params.get('code');
-      if (urlCode) {
-        await loadFromServer(urlCode);
-      } else if (editCode) {
-        await reconcile();
-      }
+      if (urlCode) { await loadFromServer(urlCode); }
+      else if (editCode) { await reconcile(); }
       applyHearts();
-
       document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible' && editCode && !readOnly) {
-          reconcile();
-        }
+        if (document.visibilityState === 'visible' && editCode && !readOnly) reconcile();
       });
     })();
     """)

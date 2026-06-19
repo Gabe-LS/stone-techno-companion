@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 DB_PATH = Path(__file__).resolve().parent / "data" / "hearts.db"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 UUID_RE = re.compile(r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$")
-CODE_RE = re.compile(r"^[A-Za-z0-9_-]{6,8}$")
+CODE_RE = re.compile(r"^\d{6}$")
 
 # Rate limiting: {ip: [(timestamp, endpoint_key), ...]}
 _rate_limits: dict[str, list[tuple[float, str]]] = defaultdict(list)
@@ -92,10 +92,19 @@ app = FastAPI(lifespan=lifespan)
 @app.post("/api/session", status_code=201)
 async def create_session(request: Request):
     _check_rate(request.client.host, "create")
-    edit_code = secrets.token_urlsafe(6)[:8]
-    share_code = secrets.token_urlsafe(4)[:6]
     db = _get_db()
     try:
+        while True:
+            edit_code = f"{secrets.randbelow(1000000):06d}"
+            share_code = f"{secrets.randbelow(1000000):06d}"
+            if edit_code == share_code:
+                continue
+            existing = db.execute(
+                "SELECT 1 FROM sessions WHERE edit_code IN (?,?) OR share_code IN (?,?)",
+                (edit_code, share_code, edit_code, share_code),
+            ).fetchone()
+            if not existing:
+                break
         db.execute(
             "INSERT INTO sessions (edit_code, share_code) VALUES (?, ?)",
             (edit_code, share_code),
