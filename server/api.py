@@ -227,7 +227,7 @@ def create_session(request: Request):
 def create_sync_pin(code: str, request: Request):
     if not TOKEN_RE.match(code):
         raise HTTPException(422, "Invalid code format")
-    _check_rate(_get_client_ip(request), "create")
+    _check_rate(_get_client_ip(request), "load")
     db = _get_db()
     try:
         session_id, _, _, readonly = _find_session(db, code)
