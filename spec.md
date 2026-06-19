@@ -336,33 +336,83 @@ stonetechno.deftlab.dev {
 Caddy auto-provisions the SSL certificate via Let's Encrypt.
 Compression and caching headers are set at the reverse proxy level.
 
-### 3.4 Deploy Flow (`--deploy`)
+### 3.4 Deploy Strategy
+
+Two separate deploy mechanisms for two types of changes:
+
+#### Content deploys (HTML + photos)
+
+Triggered by: running the scraper locally after lineup changes.
 
 The `--deploy` flag in `stone_techno_companion.py`:
 
-1. Copies `output/lineup.html` → `output/index.html`
-2. Rsyncs `output/index.html` and `output/photos/` to VPS:
-   `rsync -avz --delete output/index.html output/photos/ root@209.38.244.136:/root/services/stone-techno/static/`
-3. Prints the live URL
+1. Rsyncs `output/lineup.html` and `output/photos/` to VPS:
+   `rsync -avz --delete output/lineup.html output/photos/ root@209.38.244.136:/root/services/stone-techno/static/`
+2. Prints the live URL
 
 No container restart needed — static files are volume-mounted.
+
+#### Code deploys (server/, Dockerfile, api.py)
+
+Triggered by: `git push` to `main` with changes in `server/`.
+
+GitHub Actions workflow (`.github/workflows/deploy.yml`):
+
+```yaml
+name: Deploy server
+on:
+  push:
+    branches: [main]
+    paths: [server/**]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: 209.38.244.136
+          username: root
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /root/services/stone-techno
+            git pull origin main
+            docker compose up -d --build
+```
+
+Requires one GitHub secret:
+- `VPS_SSH_KEY`: private SSH key with access to root@209.38.244.136
+
+The VPS has a clone of the repo at `/root/services/stone-techno`.
+GH Actions SSHs in, pulls the latest server code, and rebuilds
+the container. Static files are not affected (volume-mounted
+separately, updated by `--deploy`).
 
 ### 3.5 First-time Setup (manual, once)
 
 1. Add Cloudflare DNS A record: `stonetechno` → `209.38.244.136`
-2. Copy service files to VPS:
+2. Clone the repo on the VPS:
    ```bash
-   scp -r docker-compose.yml Dockerfile api.py requirements.txt \
-       root@209.38.244.136:/root/services/stone-techno/
+   ssh root@209.38.244.136 "cd /root/services && git clone git@github.com:Gabe-LS/stone-techno-companion.git stone-techno"
    ```
-3. Deploy static files: `python3 stone_techno_companion.py --render-only --no-photos --deploy`
+3. Deploy static files:
+   ```bash
+   python3 stone_techno_companion.py --render-only --no-photos --deploy
+   ```
 4. Start the container:
    ```bash
-   ssh root@209.38.244.136 "cd /root/services/stone-techno && docker compose up -d"
+   ssh root@209.38.244.136 "cd /root/services/stone-techno/server && docker compose up -d"
    ```
 5. Add Caddy block and reload:
    ```bash
    ssh root@209.38.244.136 "docker exec caddy caddy reload --config /etc/caddy/Caddyfile"
+   ```
+6. Add `VPS_SSH_KEY` secret to the GitHub repo:
+   ```bash
+   gh secret set VPS_SSH_KEY < ~/.ssh/id_ed25519
    ```
 
 ---
@@ -574,30 +624,50 @@ Key implementation details:
 
 ## 7. File Inventory
 
-### Local (development machine)
+### Repository (tracked in git)
 
-| File | Purpose | Tracked in git |
-|---|---|---|
-| `stone_techno_companion.py` | Main script (scraper + renderer) | Yes |
-| `overrides.toml` | Manual link corrections | Yes |
-| `icons/*.svg` | Platform icons (IG, SC, Spotify, LT, YT) | Yes |
-| `spec.md` | This document | Yes |
-| `.gitignore` | Git ignore rules | Yes |
-| `lineup.db` | SQLite cache (artists, sections, followers) | No |
-| `output/lineup.html` | Generated HTML | No |
-| `output/photos/*.avif` | Processed artist photos | No |
+```
+stone-techno-companion/
+├── stone_techno_companion.py     # CLI entry point
+├── scraper/
+│   ├── __init__.py
+│   ├── db.py                     # database layer
+│   ├── scrape.py                 # SC, IG, Spotify scrapers
+│   ├── images.py                 # photo processing (vips, ssimulacra2)
+│   ├── render.py                 # HTML generation
+│   ├── overrides.toml            # manual link corrections
+│   └── icons/*.svg               # platform icons
+├── server/
+│   ├── api.py                    # hearts API (FastAPI)
+│   ├── Dockerfile
+│   ├── docker-compose.yml
+│   └── requirements.txt
+├── .github/workflows/
+│   └── deploy.yml                # deploy server/ to VPS on push
+├── spec.md
+└── .gitignore
+```
+
+### Not tracked (gitignored)
+
+| File | Purpose |
+|---|---|
+| `lineup.db` | SQLite cache (artists, sections, followers) |
+| `output/lineup.html` | Generated HTML |
+| `output/photos/*.avif` | Processed artist photos |
 
 ### VPS (`/root/services/stone-techno/`)
 
-| File | Purpose | Persists across rebuild |
+The VPS has a clone of the repo. Server code (`server/`) is
+deployed via GH Actions (git pull + docker rebuild). Static
+content (`static/`) is deployed via `--deploy` (rsync).
+
+| Path | Source | Deploy method |
 |---|---|---|
-| `docker-compose.yml` | Container definition | Yes (on disk) |
-| `Dockerfile` | Build instructions | Yes (on disk) |
-| `api.py` | Hearts API (FastAPI) | Yes (on disk) |
-| `requirements.txt` | Python dependencies | Yes (on disk) |
-| `static/index.html` | The lineup page | Yes (volume-mounted) |
-| `static/photos/*.avif` | Artist photos | Yes (volume-mounted) |
-| `data/hearts.db` | User favorites database | Yes (volume-mounted) |
+| `server/*` | git repo | GH Actions (auto on push) |
+| `static/lineup.html` | local `output/` | `--deploy` (rsync) |
+| `static/photos/*.avif` | local `output/` | `--deploy` (rsync) |
+| `data/hearts.db` | auto-created | volume-mounted, persists |
 
 ---
 
