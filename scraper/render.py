@@ -264,9 +264,7 @@ def render_output_html(
     parts.append(
         '          <svg viewBox="0 0 52 52" width="52" height="52"><circle cx="26" cy="26" r="24" fill="none" stroke="#4caf50" stroke-width="3"/><path fill="none" stroke="#4caf50" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M15 27l7 7 15-15"/></svg>'
     )
-    parts.append(
-        '          <p style="margin:12px 0 0;color:#333">Device synced successfully</p>'
-    )
+    parts.append('          <p style="margin:12px 0 0">Device synced successfully</p>')
     parts.append("        </div>")
     parts.append("      </div>")
     parts.append('      <div class="pane" id="p-recv">')
