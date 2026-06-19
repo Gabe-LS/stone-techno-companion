@@ -29,6 +29,11 @@ CODE_RE = re.compile(r"^\d{6}$")
 _rate_limits: dict[str, list[tuple[float, str]]] = defaultdict(list)
 RATE_LIMITS = {"create": (10, 3600), "pick": (600, 3600), "load": (600, 3600)}
 
+
+def _get_client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
 # WebSocket connections: edit_code -> set of websockets
 _ws_clients: dict[str, set[WebSocket]] = defaultdict(set)
 
@@ -114,7 +119,7 @@ app = FastAPI(lifespan=lifespan)
 
 @app.post("/api/session", status_code=201)
 async def create_session(request: Request):
-    _check_rate(request.client.host, "create")
+    _check_rate(_get_client_ip(request), "create")
     db = _get_db()
     try:
         while True:
@@ -142,7 +147,7 @@ async def create_session(request: Request):
 async def load_session(code: str, request: Request):
     if not CODE_RE.match(code):
         raise HTTPException(422, "Invalid code format")
-    _check_rate(request.client.host, "load")
+    _check_rate(_get_client_ip(request), "load")
     db = _get_db()
     try:
         edit_code, share_code, picks_json, readonly = _find_session(db, code)
@@ -162,7 +167,7 @@ async def add_pick(code: str, artist_id: str, request: Request):
         raise HTTPException(422, "Invalid code format")
     if not UUID_RE.match(artist_id):
         raise HTTPException(422, "Invalid artist ID format")
-    _check_rate(request.client.host, "pick")
+    _check_rate(_get_client_ip(request), "pick")
     db = _get_db()
     try:
         edit_code, _, _, readonly = _find_session(db, code)

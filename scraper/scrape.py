@@ -99,10 +99,12 @@ def _parse_timestamp_key(ts_key: str) -> tuple[str, str] | None:
 
 def scrape_lineup(ctx: BrowserContext, url: str) -> dict:
     page = ctx.new_page()
-    page.goto(url, wait_until="domcontentloaded", timeout=60000)
-    page.wait_for_selector("li.tab-list__list-item.lineup-name", timeout=30000)
-    source_html = page.content()
-    page.close()
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=60000)
+        page.wait_for_selector("li.tab-list__list-item.lineup-name", timeout=30000)
+        source_html = page.content()
+    finally:
+        page.close()
 
     soup = BeautifulSoup(source_html, "html.parser")
 
@@ -209,6 +211,7 @@ def fetch_sc_profile(ctx: BrowserContext, url: str) -> dict:
         "linktree": None,
         "youtube": None,
     }
+    page = None
     try:
         page = ctx.new_page()
         page.goto(url, wait_until="domcontentloaded", timeout=15000)
@@ -236,10 +239,11 @@ def fetch_sc_profile(ctx: BrowserContext, url: str) -> dict:
             elif not result["youtube"] and is_youtube_channel(real_url):
                 result["youtube"] = real_url
     except Exception:
-        try:
-            page.close()
-        except Exception:
-            pass
+        if page:
+            try:
+                page.close()
+            except Exception:
+                pass
     return result
 
 
