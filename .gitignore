@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# Ruff
+.ruff_cache/
+
+# Claude Code
+.claude/
+
+# Database (regenerable cache)
+lineup.db
+
+# Generated output
+output/

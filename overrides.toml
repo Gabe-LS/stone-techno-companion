@@ -1,0 +1,38 @@
+# Manual overrides for artist data.
+# These are applied after scraping and take priority over scraped values.
+# When a link (instagram, soundcloud, spotify) is changed, its follower
+# count is automatically cleared and re-fetched on the next run.
+#
+# Supported fields: instagram, soundcloud, spotify, linktree, youtube, photo
+#
+# Template — copy and fill in:
+#
+#   [Artist Name]
+#   instagram = "https://www.instagram.com/handle/"
+#   soundcloud = "https://soundcloud.com/handle"
+#   spotify = "https://open.spotify.com/artist/id"
+#   linktree = "https://linktr.ee/handle"
+#   youtube = "https://www.youtube.com/@handle"
+#   photo = "https://example.com/photo.jpg"
+
+[Amoral]
+instagram = "https://www.instagram.com/amoral___dj/"
+
+["Alba Heidari"]
+instagram = "https://www.instagram.com/alba.heidari/"
+
+[Barker]
+instagram = "https://www.instagram.com/barker_volteklabs/"
+
+[Upsammy]
+instagram = "https://www.instagram.com/upsammy_/"
+
+["Rødhåd"]
+instagram = "https://www.instagram.com/rodhad_wsnwg/"
+
+[Serge]
+soundcloud = "https://soundcloud.com/sergeclone"
+
+[ROD]
+soundcloud = "https://soundcloud.com/bennyrodrigues"
+photo = "https://cdn.amsterdam-dance-event.nl/images/images/transforms/artists-speakers/_1802xAUTO_crop_center-center_none/19883/Benny1_57553-1739374845.webp"
