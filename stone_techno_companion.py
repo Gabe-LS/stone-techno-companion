@@ -39,18 +39,25 @@ VPS_STATIC_DIR = "/root/services/stone-techno/static/"
 
 
 def deploy_to_vps(output_dir: Path, output_path: Path) -> None:
+    import tempfile
+
     print("Deploying to VPS ...")
-    subprocess.run(
-        [
-            "rsync",
-            "-avz",
-            "--delete",
-            str(output_path),
-            str(output_dir / "photos"),
-            f"{VPS_HOST}:{VPS_STATIC_DIR}",
-        ],
-        check=True,
-    )
+    with tempfile.TemporaryDirectory() as staging:
+        staging_path = Path(staging)
+        shutil.copy2(output_path, staging_path / "index.html")
+        photos_src = output_dir / "photos"
+        if photos_src.is_dir():
+            shutil.copytree(photos_src, staging_path / "photos")
+        subprocess.run(
+            [
+                "rsync",
+                "-avz",
+                "--delete",
+                f"{staging}/",
+                f"{VPS_HOST}:{VPS_STATIC_DIR}",
+            ],
+            check=True,
+        )
     print("Deployed to https://stonetechno.deftlab.dev/")
 
 
