@@ -105,7 +105,7 @@ def render_output_html(
         '  <meta name="twitter:image" content="https://stonetechno.deftlab.dev/favicon.png">'
     )
     parts.append(
-        '  <script defer src="https://analytics.deftlab.dev/script.js" data-website-id="3ca133b8-9f1b-405f-9b29-04d615d9d08a"></script>'
+        '  <script defer src="https://analytics.deftlab.dev/script.js" data-website-id="8f79ad80-e080-421d-91c6-45b7bfc460d2"></script>'
     )
     import base64 as _b64
 
