@@ -104,6 +104,9 @@ def render_output_html(
     parts.append(
         '  <meta name="twitter:image" content="https://stonetechno.deftlab.dev/favicon.png">'
     )
+    parts.append(
+        '  <script defer src="https://analytics.deftlab.dev/script.js" data-website-id="3ca133b8-9f1b-405f-9b29-04d615d9d08a"></script>'
+    )
     import base64 as _b64
 
     favicon_b64 = _b64.b64encode((ICONS_DIR / "favicon.svg").read_bytes()).decode()
