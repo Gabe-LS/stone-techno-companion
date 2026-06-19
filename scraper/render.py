@@ -561,14 +561,14 @@ def render_output_html(
           await ensureSession();
           return;
         }
-        if (!res.ok && res.status !== 204) throw new Error();
-      } catch {
-        if (adding) localPicks.delete(id); else localPicks.add(id);
-        btn.classList.toggle('active', !adding);
-        btn.setAttribute('aria-pressed', !adding);
-        li.classList.toggle('hearted', !adding);
-        saveLocal();
-      }
+        if (!res.ok && res.status !== 204) {
+          if (adding) localPicks.delete(id); else localPicks.add(id);
+          btn.classList.toggle('active', !adding);
+          btn.setAttribute('aria-pressed', !adding);
+          li.classList.toggle('hearted', !adding);
+          saveLocal();
+        }
+      } catch {}
     }
 
     async function loadFromServer(code) {
