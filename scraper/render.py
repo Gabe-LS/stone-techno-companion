@@ -152,9 +152,9 @@ def render_output_html(
     .modal-box { background:#fff; border-radius:14px; padding:24px; width:420px; max-width:100%; text-align:center; color:#111; box-shadow:0 8px 24px rgba(0,0,0,.12); }
     .modal-box h3 { margin:0 0 6px; font-size:1em; font-weight:600; }
     .modal-box .sub { font-size:.8em; color:#999; margin:0 0 14px; }
-    .modal-link { display:block; width:100%; background:#f5f5f5; padding:12px 14px; border-radius:8px; font-size:.82em; font-family:inherit; word-break:break-all; color:#333; cursor:pointer; transition:background .15s; margin:0; border:none; text-align:center; }
+    .modal-link { display:block; width:100%; background:#f5f5f5; padding:12px 14px; border-radius:8px; font-size:.82em; font-family:inherit; color:#333; cursor:pointer; transition:background .15s; margin:0; border:none; text-align:left; overflow:hidden; text-overflow:clip; white-space:nowrap; box-sizing:border-box; }
     .modal-link:hover { background:#eee; }
-    .modal-link.copied { background:#d4edda; }
+    .modal-link.copied { background:#d4edda; text-align:center; }
     .modal-box canvas { display:block; margin:10px auto; border-radius:6px; }
     .modal-box .or-line { display:flex; align-items:center; gap:10px; margin:10px 0; }
     .modal-box .or-line hr { flex:1; border:none; border-top:1px solid #e0e0e0; }
@@ -193,15 +193,15 @@ def render_output_html(
     parts.append("<body>")
     parts.append('  <div class="cmd-bar" id="cmd-bar">')
     parts.append(
-        '    <button onmousedown="this.blur()" onclick="openShareModal()">Share</button>'
+        '    <button onmousedown="this.blur()" onclick="toggleFilter(this)" id="btn-filter">Show My Picks</button>'
     )
     parts.append('    <span class="sep">|</span>')
     parts.append(
-        '    <button onmousedown="this.blur()" onclick="openSyncModal()">Sync</button>'
+        '    <button onmousedown="this.blur()" onclick="openShareModal()">Share My Picks</button>'
     )
     parts.append('    <span class="sep">|</span>')
     parts.append(
-        '    <button onmousedown="this.blur()" onclick="toggleFilter(this)" id="btn-filter">My Picks</button>'
+        '    <button onmousedown="this.blur()" onclick="openSyncModal()">Sync My Picks</button>'
     )
     parts.append("  </div>")
     parts.append(f"  <h1>{esc(title)}</h1>")
@@ -216,7 +216,7 @@ def render_output_html(
         '      <p class="sub">Friends can view your picks. Click the link to copy it.</p>'
     )
     parts.append(
-        '      <button type="button" class="modal-link" id="share-link"></button>'
+        '      <input type="text" readonly class="modal-link" id="share-link">'
     )
     parts.append("    </div>")
     parts.append("  </div>")
@@ -422,7 +422,7 @@ def render_output_html(
     function updateUI() {
       const btn = document.getElementById('btn-filter');
       const n = localPicks.size;
-      const label = filterActive ? 'Show All' : 'My Picks';
+      const label = filterActive ? 'Show All' : 'Show My Picks';
       btn.textContent = n ? label + ' (' + n + ')' : label;
       document.querySelectorAll('.artist-item').forEach(li => {
         li.classList.toggle('hearted', localPicks.has(li.dataset.artistId));
@@ -697,16 +697,17 @@ def render_output_html(
     // Share modal
     const shareLink = document.getElementById('share-link');
     shareLink.addEventListener('click', () => {
-      const url = shareLink.textContent;
+      shareLink.select();
+      const url = shareLink.value;
       navigator.clipboard.writeText(url).then(() => {
         shareLink.classList.add('copied');
-        shareLink.textContent = 'Copied!';
-        setTimeout(() => { shareLink.textContent = url; shareLink.classList.remove('copied'); }, 1500);
+        shareLink.value = 'Copied!';
+        setTimeout(() => { shareLink.value = url; shareLink.classList.remove('copied'); }, 1500);
       });
     });
     function openShareModal() {
       if (!shareToken) { alert('Heart an artist first.'); return; }
-      shareLink.textContent = location.origin + '/?code=' + shareToken;
+      shareLink.value = location.origin + '/?code=' + shareToken;
       openDialog('m-share');
     }
 
