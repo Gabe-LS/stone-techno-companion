@@ -140,7 +140,7 @@ def render_output_html(
     .cmd-bar button:hover { color: #fff; }
     .cmd-bar button:focus-visible { outline: 1px solid #fff; outline-offset: -2px; }
     .cmd-bar button:focus:not(:focus-visible) { outline: none; }
-    .cmd-bar button.active { color: #e53e3e; }
+    .cmd-bar button.active { color: #fff; }
     .cmd-bar .sep { color: #333; margin: 0; display: flex; align-items: center; }
     .filter-active .artist-item:not(.hearted) { display: none; }
 
@@ -422,8 +422,7 @@ def render_output_html(
     function updateUI() {
       const btn = document.getElementById('btn-filter');
       const n = localPicks.size;
-      const label = filterActive ? 'Show All' : 'Show My Picks';
-      btn.textContent = n ? label + ' (' + n + ')' : label;
+      btn.textContent = n ? 'Show My Picks (' + n + ')' : 'Show My Picks';
       document.querySelectorAll('.artist-item').forEach(li => {
         li.classList.toggle('hearted', localPicks.has(li.dataset.artistId));
       });
