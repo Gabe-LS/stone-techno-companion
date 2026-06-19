@@ -600,6 +600,15 @@ def render_output_html(
       _ws.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data);
+          if (data.sync_complete) {
+            if (_syncTimer) { clearInterval(_syncTimer); _syncTimer = null; }
+            const exp = document.getElementById('sync-expiry');
+            const d = document.getElementById('pin-display');
+            const qr = document.getElementById('sync-qr');
+            if (d) d.innerHTML = '';
+            if (qr) qr.getContext('2d').clearRect(0, 0, qr.width, qr.height);
+            if (exp) exp.textContent = 'Device synced successfully.';
+          }
           if (data.picks) {
             localPicks = new Set(data.picks);
             saveLocal();

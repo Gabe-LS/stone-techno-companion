@@ -146,6 +146,16 @@ async def _broadcast(
             del _ws_clients[session_id]
 
 
+async def _broadcast_sync_complete(session_id: str) -> None:
+    msg = json.dumps({"sync_complete": True})
+    clients = list(_ws_clients.get(session_id, set()))
+    for ws in clients:
+        try:
+            await asyncio.wait_for(ws.send_text(msg), timeout=5.0)
+        except Exception:
+            pass
+
+
 async def _prune_rate_limits() -> None:
     while True:
         await asyncio.sleep(3600)
@@ -251,7 +261,7 @@ def create_sync_pin(code: str, request: Request):
 
 
 @app.post("/api/sync/{pin}")
-def exchange_sync_pin(pin: str, request: Request):
+def exchange_sync_pin(pin: str, request: Request, background_tasks: BackgroundTasks):
     if not PIN_RE.match(pin):
         raise HTTPException(422, "Invalid PIN format")
     _check_rate(_get_client_ip(request), "load")
@@ -265,6 +275,7 @@ def exchange_sync_pin(pin: str, request: Request):
     db = _get_db()
     try:
         _, share_token, picks_json, _ = _find_session(db, session_id)
+        background_tasks.add_task(_broadcast_sync_complete, session_id)
         return {
             "picks": json.loads(picks_json),
             "readonly": False,
