@@ -63,6 +63,6 @@ All frontend code lives in `scraper/render.py` as Python string concatenation. T
 
 ## Server
 
-The FastAPI server (`server/api.py`) serves static files and provides the favorites API. Sessions use 6-digit numeric codes (edit code for read-write, share code for read-only). Picks are stored as JSON arrays in SQLite with atomic add/remove via `json_each`/`json_group_array`. Real-time sync uses WebSocket at `/ws/{code}`.
+The FastAPI server (`server/api.py`) serves static files and provides the favorites API. Sessions are identified by 128-bit URL-safe tokens (`secrets.token_urlsafe(16)`): `session_id` for read-write, `share_token` for read-only. Cross-device sync uses ephemeral 6-digit PINs (5-min TTL, single-use, one active per session). Picks are stored as JSON arrays in SQLite with atomic add/remove via `json_each`/`json_group_array`. Real-time sync uses WebSocket at `/ws/{code}`.
 
 Production: Docker container on a DigitalOcean VPS behind Caddy (auto-TLS). Database at `server/data/hearts.db` is volume-mounted for persistence.

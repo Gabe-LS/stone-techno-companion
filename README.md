@@ -29,7 +29,9 @@ stone-techno-companion/
 │       ├── soundcloud-square-round.svg
 │       ├── spotify-square-round.svg
 │       ├── linktree-square-round.svg
-│       └── youtube-square-round.svg
+│       ├── youtube-square-round.svg
+│       ├── favicon.svg              # Favicon (calendar + music note)
+│       └── favicon.png              # PNG version for OG image previews
 ├── server/
 │   ├── api.py                   # FastAPI app — favorites API + WebSocket sync
 │   ├── Dockerfile               # Python 3.12 slim + uvicorn
@@ -40,8 +42,7 @@ stone-techno-companion/
 ├── output/                      # Generated (gitignored)
 │   ├── lineup.html              # The final page (~2800 lines)
 │   └── photos/*.avif            # Processed artist photos (~100 files)
-├── lineup.db                    # SQLite cache (gitignored)
-└── spec.md                      # Detailed spec and architecture document
+└── lineup.db                    # SQLite cache (gitignored)
 ```
 
 ## Requirements
@@ -145,11 +146,13 @@ The generated page includes a hearts/favorites feature with no sign-up required.
 
 1. User taps a heart on any artist card
 2. First tap auto-creates a session — no signup, no login, no personal data
-3. Each session gets two 6-digit numeric codes:
-   - **Edit code** — stored in localStorage, grants read + write access
-   - **Share code** — shown in UI, grants read-only access
-4. Hearts sync across devices in real time via WebSocket
-5. Users can share a read-only link with friends or sync devices by entering a code
+3. Each session gets two 128-bit URL-safe tokens (`secrets.token_urlsafe(16)`):
+   - **Session ID** — stored in localStorage, grants read + write access
+   - **Share token** — used in share URLs, grants read-only access
+4. Cross-device sync uses ephemeral 6-digit PINs (5-min TTL, single-use) — the PIN appears in the QR code and dialog, never the session ID
+5. Hearts sync across devices in real time via WebSocket
+6. Users can share a read-only link with friends (shows only picked artists)
+7. When a sync PIN is used, the sender gets a real-time confirmation via WebSocket
 
 ### API Endpoints
 
@@ -157,10 +160,12 @@ Base URL: `https://stonetechno.deftlab.dev/api`
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/session` | Create a new session |
-| `GET` | `/api/session/{code}` | Load picks (works with edit or share code) |
+| `POST` | `/api/session` | Create a new session (returns session_id + share_token) |
+| `GET` | `/api/session/{code}` | Load picks (works with session_id or share_token) |
 | `POST` | `/api/session/{code}/pick/{artist_id}` | Add a pick |
 | `DELETE` | `/api/session/{code}/pick/{artist_id}` | Remove a pick |
+| `POST` | `/api/session/{code}/sync-pin` | Generate a 6-digit sync PIN (5-min TTL, single-use) |
+| `POST` | `/api/sync/{pin}` | Exchange a sync PIN for session credentials |
 | `WS` | `/ws/{code}` | WebSocket for real-time sync |
 
 Pick operations are atomic — they use `json_group_array` with `json_each` and `UNION`/`WHERE` to avoid read-modify-write races.
@@ -280,8 +285,10 @@ Caddy auto-provisions the TLS certificate. The `stone-techno` container and Cadd
 - Sticky section headers (date, period, location) with gradient fade effect using IntersectionObserver
 - Artist cards with photo, name, schedule annotation, social links + follower counts
 - Lazy-loaded AVIF photos
-- Command bar with Share, Sync, and My Picks (filter) buttons
-- Share modal with copy-to-clipboard link
-- Sync modal with QR code generation and 6-digit pin input for device pairing
+- Command bar: Show My Picks (filter toggle) | Share My Picks | Sync My Picks
+- Share modal with readonly URL input and copy-to-clipboard
+- Sync modal with QR code, 6-digit PIN, live countdown timer, and success confirmation via WebSocket
+- Read-only share views auto-filter to show only picked artists
+- Favicon (SVG inline + PNG for OG image) and Open Graph / Twitter Card metadata
 - Accessible: `aria-label`, `aria-pressed`, keyboard navigation, focus management in modals
 - Escape key closes modals, tab trapping within open modals, scroll lock
