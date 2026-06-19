@@ -467,21 +467,27 @@ def render_output_html(
       });
     }
 
+    let _sessionPromise = null;
     async function ensureSession() {
       if (editCode) return;
-      try {
-        const res = await fetch(API + '/session', {method: 'POST'});
-        if (!res.ok) return;
-        const data = await res.json();
-        editCode = data.edit_code;
-        shareCode = data.share_code;
-        localStorage.setItem('stc_edit_code', editCode);
-        localStorage.setItem('stc_share_code', shareCode);
-        connectWS(editCode);
-        for (const id of localPicks) {
-          fetch(API + '/session/' + editCode + '/pick/' + id, {method: 'POST'}).catch(() => {});
-        }
-      } catch {}
+      if (_sessionPromise) return _sessionPromise;
+      _sessionPromise = (async () => {
+        try {
+          const res = await fetch(API + '/session', {method: 'POST'});
+          if (!res.ok) return;
+          const data = await res.json();
+          editCode = data.edit_code;
+          shareCode = data.share_code;
+          localStorage.setItem('stc_edit_code', editCode);
+          localStorage.setItem('stc_share_code', shareCode);
+          connectWS(editCode);
+          for (const id of localPicks) {
+            fetch(API + '/session/' + editCode + '/pick/' + id, {method: 'POST'}).catch(() => {});
+          }
+        } catch {}
+        finally { _sessionPromise = null; }
+      })();
+      return _sessionPromise;
     }
 
     async function toggleHeart(btn) {
@@ -553,9 +559,11 @@ def render_output_html(
         if (!res.ok) return;
         const data = await res.json();
         const serverPicks = new Set(data.picks);
+        const syncs = [];
         for (const id of localPicks) {
-          if (!serverPicks.has(id)) fetch(API + '/session/' + editCode + '/pick/' + id, {method: 'POST'}).catch(() => {});
+          if (!serverPicks.has(id)) syncs.push(fetch(API + '/session/' + editCode + '/pick/' + id, {method: 'POST'}).catch(() => {}));
         }
+        await Promise.all(syncs);
         for (const id of serverPicks) localPicks.add(id);
         saveLocal();
         applyHearts();

@@ -5,6 +5,8 @@ import json
 import re
 import secrets
 import sqlite3
+import logging
+import threading
 import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
@@ -28,7 +30,9 @@ UUID_RE = re.compile(r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]
 CODE_RE = re.compile(r"^\d{6}$")
 
 _rate_limits: dict[str, list[tuple[float, str]]] = defaultdict(list)
+_rate_lock = threading.Lock()
 RATE_LIMITS = {"create": (10, 3600), "pick": (600, 3600), "load": (600, 3600)}
+logger = logging.getLogger(__name__)
 
 
 def _get_client_ip(request: Request) -> str:
@@ -42,12 +46,13 @@ _ws_clients: dict[str, set[WebSocket]] = {}
 def _check_rate(ip: str, key: str) -> None:
     limit, window = RATE_LIMITS[key]
     now = time.monotonic()
-    entries = _rate_limits[ip]
-    _rate_limits[ip] = [(t, k) for t, k in entries if now - t < RATE_LIMITS.get(k, (0, 3600))[1]]
-    count = sum(1 for t, k in _rate_limits[ip] if k == key)
-    if count >= limit:
-        raise HTTPException(429, "Rate limit exceeded", headers={"Retry-After": "60"})
-    _rate_limits[ip].append((now, key))
+    with _rate_lock:
+        entries = _rate_limits[ip]
+        _rate_limits[ip] = [(t, k) for t, k in entries if now - t < RATE_LIMITS.get(k, (0, 3600))[1]]
+        count = sum(1 for t, k in _rate_limits[ip] if k == key)
+        if count >= limit:
+            raise HTTPException(429, "Rate limit exceeded", headers={"Retry-After": "60"})
+        _rate_limits[ip].append((now, key))
 
 
 def _get_db() -> sqlite3.Connection:
@@ -126,25 +131,50 @@ async def _prune_rate_limits() -> None:
         await asyncio.sleep(3600)
         try:
             now = time.monotonic()
-            stale = [
-                ip
-                for ip, entries in _rate_limits.items()
-                if all(now - t >= 3600 for t, _ in entries)
-            ]
-            for ip in stale:
-                del _rate_limits[ip]
+            with _rate_lock:
+                stale = [
+                    ip
+                    for ip, entries in _rate_limits.items()
+                    if all(now - t >= 3600 for t, _ in entries)
+                ]
+                for ip in stale:
+                    del _rate_limits[ip]
         except Exception:
-            pass
+            logger.exception("Failed to prune rate limits")
+
+
+async def _prune_expired_sessions() -> None:
+    while True:
+        await asyncio.sleep(86400)
+        try:
+            db = _get_db()
+            try:
+                pruned = db.execute(
+                    "DELETE FROM sessions WHERE updated_at < datetime('now', '-90 days')"
+                ).rowcount
+                db.commit()
+                if pruned:
+                    logger.info("Pruned %d expired session(s)", pruned)
+            finally:
+                db.close()
+        except Exception:
+            logger.exception("Failed to prune expired sessions")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _init_db()
     task = asyncio.create_task(_prune_rate_limits())
+    prune_task = asyncio.create_task(_prune_expired_sessions())
     yield
     task.cancel()
+    prune_task.cancel()
     try:
         await task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await prune_task
     except asyncio.CancelledError:
         pass
 
@@ -269,6 +299,9 @@ def remove_pick(code: str, artist_id: str, request: Request, background_tasks: B
     return Response(status_code=204)
 
 
+MAX_WS_PER_SESSION = 20
+
+
 @app.websocket("/ws/{code}")
 async def ws_sync(ws: WebSocket, code: str):
     await ws.accept()
@@ -284,7 +317,11 @@ async def ws_sync(ws: WebSocket, code: str):
     finally:
         db.close()
 
-    _ws_clients.setdefault(edit_code, set()).add(ws)
+    clients = _ws_clients.setdefault(edit_code, set())
+    if len(clients) >= MAX_WS_PER_SESSION:
+        await ws.close(code=1013)
+        return
+    clients.add(ws)
     try:
         await ws.send_text(
             json.dumps({"picks": json.loads(picks_json), "readonly": readonly})
