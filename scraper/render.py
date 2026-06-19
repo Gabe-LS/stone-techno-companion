@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -84,6 +85,8 @@ def render_output_html(
         '  <meta name="viewport" content="width=device-width, initial-scale=1.0">'
     )
     parts.append(f"  <title>{esc(title)}</title>")
+    qr_js = (ICONS_DIR.parent / "qrcode.min.js").read_text(encoding="utf-8")
+    parts.append(f"  <script>{qr_js}</script>")
     parts.append("  <style>")
     parts.append("""
     *, *::before, *::after { box-sizing: border-box; }
@@ -141,13 +144,13 @@ def render_output_html(
 
     /* --- Modals --- */
     html.scroll-locked, html.scroll-locked body { overflow:hidden; }
-    html.scroll-locked body { position:fixed; width:100%; }
+    html.scroll-locked body { position:fixed; left:0; right:0; }
     .modal-overlay { display:none; position:fixed; inset:0; z-index:100; background:rgba(0,0,0,.4); padding:24px; }
     .modal-overlay.open { display:flex; justify-content:center; align-items:center; }
-    .modal-box { background:#fff; border-radius:14px; padding:24px; width:320px; max-width:100%; text-align:center; color:#111; box-shadow:0 8px 24px rgba(0,0,0,.12); }
+    .modal-box { background:#fff; border-radius:14px; padding:24px; width:420px; max-width:100%; text-align:center; color:#111; box-shadow:0 8px 24px rgba(0,0,0,.12); }
     .modal-box h3 { margin:0 0 6px; font-size:1em; font-weight:600; }
     .modal-box .sub { font-size:.8em; color:#999; margin:0 0 14px; }
-    .modal-link { display:block; width:100%; background:#f5f5f5; padding:12px 14px; border-radius:8px; font-size:.82em; font-family:inherit; word-break:break-all; color:#333; cursor:pointer; transition:background .15s; margin:0; border:none; text-align:left; }
+    .modal-link { display:block; width:100%; background:#f5f5f5; padding:12px 14px; border-radius:8px; font-size:.82em; font-family:inherit; word-break:break-all; color:#333; cursor:pointer; transition:background .15s; margin:0; border:none; text-align:center; }
     .modal-link:hover { background:#eee; }
     .modal-link.copied { background:#d4edda; }
     .modal-box canvas { display:block; margin:10px auto; border-radius:6px; }
@@ -187,12 +190,16 @@ def render_output_html(
     parts.append("</head>")
     parts.append("<body>")
     parts.append('  <div class="cmd-bar" id="cmd-bar">')
-    parts.append('    <button onclick="openShareModal()">Share</button>')
-    parts.append('    <span class="sep">|</span>')
-    parts.append('    <button onclick="openSyncModal()">Sync</button>')
+    parts.append(
+        '    <button onmousedown="this.blur()" onclick="openShareModal()">Share</button>'
+    )
     parts.append('    <span class="sep">|</span>')
     parts.append(
-        '    <button onclick="toggleFilter(this)" id="btn-filter">My Picks</button>'
+        '    <button onmousedown="this.blur()" onclick="openSyncModal()">Sync</button>'
+    )
+    parts.append('    <span class="sep">|</span>')
+    parts.append(
+        '    <button onmousedown="this.blur()" onclick="toggleFilter(this)" id="btn-filter">My Picks</button>'
     )
     parts.append("  </div>")
     parts.append(f"  <h1>{esc(title)}</h1>")
@@ -229,7 +236,9 @@ def render_output_html(
     parts.append('      <div class="pane on" id="p-send">')
     parts.append('        <div class="qr-wrap">')
     parts.append('          <p class="lbl">Scan this QR with your other device:</p>')
-    parts.append('          <canvas id="sync-qr" width="180" height="180"></canvas>')
+    parts.append(
+        '          <canvas id="sync-qr" width="540" height="540" style="width:180px;height:180px"></canvas>'
+    )
     parts.append('          <div class="or-line"><hr><span>or</span><hr></div>')
     parts.append("        </div>")
     parts.append('        <p class="lbl">On your other device:</p>')
@@ -267,7 +276,9 @@ def render_output_html(
         txt = f"{svg} {esc(label)}" if label else svg
         return f'<a href="{esc(href)}" target="_blank" rel="noopener noreferrer" title="{esc(label)}">{txt}</a>'
 
-    def render_artist_card(a: dict, cur_date: str, cur_period: str) -> None:
+    def render_artist_card(
+        a: dict, cur_date: str, cur_period: str, loc_id: str | None = None
+    ) -> None:
         name = a.get("name") or ""
         photo_local = a.get("photo_local")
         ig = a.get("instagram")
@@ -280,7 +291,8 @@ def render_output_html(
         sp_l = format_followers(a.get("spotify_listeners"))
         schedule = _format_other_slots(a.get("all_slots", []), cur_date, cur_period)
 
-        artist_id = a.get("overlay_id", "")
+        card_key = f"{a.get('overlay_id', '')}:{cur_date}:{cur_period}:{loc_id or ''}"
+        artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, card_key))
         parts.append(
             f'      <li class="artist-item" data-artist-id="{esc(artist_id)}">'
         )
@@ -360,7 +372,7 @@ def render_output_html(
                         )
                     parts.append('    <ul class="artist-list">')
                     for a in loc_artists:
-                        render_artist_card(a, sec["date"], sec["period"])
+                        render_artist_card(a, sec["date"], sec["period"], loc_id)
                     parts.append("    </ul>")
             else:
                 parts.append('    <ul class="artist-list">')
@@ -586,7 +598,7 @@ def render_output_html(
       document.body.style.top = '';
       document.documentElement.classList.remove('scroll-locked');
       window.scrollTo(0, parseInt(scrollY || '0') * -1);
-      if (_modalTrigger) { _modalTrigger.focus(); _modalTrigger = null; }
+      if (_modalTrigger) { _modalTrigger.blur(); _modalTrigger = null; }
     }
     document.querySelectorAll('.modal-overlay').forEach(ov => {
       ov.addEventListener('click', e => { if (e.target === ov) closeDialog(ov.id); });
@@ -608,11 +620,22 @@ def render_output_html(
 
     function loadQR(id, url) {
       const c = document.getElementById(id);
-      if (!c) return;
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => { c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); };
-      img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(url);
+      if (!c || typeof qrcode === 'undefined') return;
+      const qr = qrcode(0, 'M');
+      qr.addData(url);
+      qr.make();
+      const count = qr.getModuleCount();
+      const size = c.width;
+      const cellSize = size / count;
+      const ctx = c.getContext('2d');
+      ctx.clearRect(0, 0, size, size);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, size, size);
+      ctx.fillStyle = '#000';
+      for (let r = 0; r < count; r++)
+        for (let col = 0; col < count; col++)
+          if (qr.isDark(r, col))
+            ctx.fillRect(Math.round(col * cellSize), Math.round(r * cellSize), Math.ceil(cellSize), Math.ceil(cellSize));
     }
 
     // Share modal
