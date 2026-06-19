@@ -997,11 +997,26 @@ def render_output_html(
     .artist-info { flex: 1; min-width: 0; }
     .artist-name { font-weight: 700; font-size: 1.15em; display: block; margin-bottom: 3px; }
     .artist-schedule { color: #888; font-size: 0.85em; display: block; margin-bottom: 6px; }
-    .links { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; }
+    .links { display: flex; flex-wrap: wrap; column-gap: 18px; row-gap: 4px; align-items: center; }
     .links a { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; color: #555; font-size: 0.72em; padding: 3px 0; min-width: 72px; font-variant-numeric: tabular-nums; }
     .links a:hover { color: #111; }
     .links a svg { flex-shrink: 0; }
     .missing { color: #aaa; font-size: 0.8em; }
+    @media (max-width: 480px) {
+      body { padding: 0 12px; }
+      h1 { font-size: 1.5em; padding: 8px 0 6px; }
+      h2 { font-size: 1.2em; padding: 6px 0; top: 52px; }
+      h3.period-heading { font-size: 1em; padding: 6px 0 4px; top: 94px; margin: 16px 0 8px; }
+      h4.location-heading { top: 126px; }
+      li.artist-item { gap: 10px; padding: 10px; }
+      .artist-photo { width: 72px; height: 72px; border-radius: 4px; }
+      .photo-placeholder { width: 72px; height: 72px; }
+      .artist-name { font-size: 1em; }
+      .artist-schedule { font-size: 0.75em; margin-bottom: 4px; }
+      .links { column-gap: 8px; row-gap: 0; }
+      .links a { font-size: 0.68em; min-width: 72px; gap: 3px; }
+      .links a svg { width: 14px; height: 14px; }
+    }
     """)
     parts.append("  </style>")
     parts.append("</head>")
