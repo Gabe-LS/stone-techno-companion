@@ -128,7 +128,6 @@ def render_output_html(
       .modal-tabs { flex-direction: column; }
       .sync-qr-section { display: none; }
     }
-    html.scroll-locked, html.scroll-locked body { height: calc(var(--vh, 100vh) - 1px); overflow: hidden; }
     .heart-btn { background: none; border: none; cursor: pointer; padding: 6px; flex-shrink: 0; align-self: flex-start; margin-top: 2px; }
     .heart-btn svg { fill: none; stroke: #ccc; stroke-width: 2; transition: fill 0.15s, stroke 0.15s; width: 22px; height: 22px; }
     .heart-btn:hover:not(.active) svg { stroke: #ddd; }
@@ -142,8 +141,8 @@ def render_output_html(
     .filter-active .artist-item:not(.hearted) { display: none; }
 
     /* --- Modals --- */
-    .mo { display:none; position:fixed; inset:0; z-index:100; background:rgba(0,0,0,.4); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); }
-    .mo.open { display:flex; align-items:flex-start; justify-content:center; padding:16vh 0 2vh; overflow-y:auto; }
+    .mo { display:none; position:fixed; top:0; left:0; right:0; bottom:0; z-index:100; background:rgba(0,0,0,.4); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); touch-action:none; overscroll-behavior:none; }
+    .mo.open { display:flex; justify-content:center; align-items:flex-start; padding-top:16vh; }
     .mo-box { background:#fff; border-radius:14px; padding:24px; width:320px; max-width:calc(100vw - 48px); text-align:center; color:#111; box-shadow:0 8px 24px rgba(0,0,0,.12); position:relative; }
     .mo-box h3 { margin:0 0 6px; font-size:1em; font-weight:600; }
     .mo-box .sub { font-size:.8em; color:#999; margin:0 0 14px; }
@@ -173,8 +172,8 @@ def render_output_html(
     .mo-box .btn:hover { background:#333; }
     .mo-box .btn:focus { outline:none; }
     .qr-wrap { display:block; }
-    @media (max-width:480px) { .qr-wrap { display:none; } .mo-box .tabs { flex-direction:column; } }
-    @media (max-height:600px) { .mo.open { padding-top:5vh; } }
+    @media (max-width:480px) { .qr-wrap { display:none; } .mo-box .tabs { flex-direction:column; } .mo.open { padding-top:10vh; } }
+    @media (max-height:500px) { .mo.open { padding-top:5vh; } }
     """)
     parts.append("  </style>")
     parts.append("</head>")
@@ -543,24 +542,21 @@ def render_output_html(
 
     // Modal helpers
     // Scroll lock (PQINA technique — works on iOS Safari)
-    let _savedY = 0;
-    function _syncVH() { document.documentElement.style.setProperty('--vh', window.innerHeight + 'px'); }
-    window.addEventListener('resize', _syncVH); _syncVH();
-
+    function _blockTouch(e) { e.preventDefault(); }
     function openMo(id) {
-      _savedY = window.scrollY;
-      document.documentElement.classList.add('scroll-locked');
-      document.getElementById(id).classList.add('open');
+      const mo = document.getElementById(id);
+      mo.classList.add('open');
+      mo.addEventListener('touchmove', _blockTouch, {passive:false});
     }
     function closeMo(el) {
-      (el.closest ? el.closest('.mo') : el).classList.remove('open');
-      document.documentElement.classList.remove('scroll-locked');
-      window.scrollTo(0, _savedY);
+      const mo = el.closest ? el.closest('.mo') : el;
+      mo.removeEventListener('touchmove', _blockTouch);
+      mo.classList.remove('open');
     }
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') {
         const open = document.querySelectorAll('.mo.open');
-        if (open.length) { open.forEach(m => m.classList.remove('open')); document.documentElement.classList.remove('scroll-locked'); window.scrollTo(0, _savedY); }
+        if (open.length) { open.forEach(m => { m.removeEventListener('touchmove', _blockTouch); m.classList.remove('open'); }); }
       }
     });
     document.addEventListener('click', e => { if (e.target.matches('button')) e.target.blur(); });
