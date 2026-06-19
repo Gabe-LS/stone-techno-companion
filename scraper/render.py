@@ -549,8 +549,15 @@ def render_output_html(
           saveLocal();
         }
         applyHearts();
-        if (readOnly) document.querySelectorAll('.heart-btn').forEach(b => b.style.display = 'none');
-        else document.querySelectorAll('.heart-btn').forEach(b => b.style.display = '');
+        if (readOnly) {
+          document.querySelectorAll('.heart-btn').forEach(b => b.style.pointerEvents = 'none');
+          filterActive = true;
+          document.body.classList.add('filter-active');
+          document.getElementById('btn-filter').style.display = 'none';
+          updateGroupVisibility();
+        } else {
+          document.querySelectorAll('.heart-btn').forEach(b => { b.style.display = ''; b.style.pointerEvents = ''; });
+        }
       } catch {}
     }
 
@@ -597,7 +604,13 @@ def render_output_html(
             applyHearts();
             if (data.readonly !== undefined) {
               readOnly = data.readonly;
-              if (readOnly) document.querySelectorAll('.heart-btn').forEach(b => b.style.display = 'none');
+              if (readOnly) {
+                document.querySelectorAll('.heart-btn').forEach(b => b.style.pointerEvents = 'none');
+                filterActive = true;
+                document.body.classList.add('filter-active');
+                document.getElementById('btn-filter').style.display = 'none';
+                updateGroupVisibility();
+              }
             }
           }
         } catch {}
