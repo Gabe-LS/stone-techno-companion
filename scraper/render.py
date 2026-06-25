@@ -93,9 +93,14 @@ def _slot_time_str(slot: dict) -> str:
     return ""
 
 
+def _format_short_date_abbr(date_str: str) -> str:
+    dt = datetime.strptime(date_str, "%Y-%m-%d")
+    return f"{dt.strftime('%a')}, {dt.strftime('%B')} {dt.day}"
+
+
 def _format_artist_schedule(
     all_slots: list[dict], current_date: str, current_period: str
-) -> str | None:
+) -> tuple[str | None, str | None]:
     current_label = None
     other_labels = []
     for slot in all_slots:
@@ -103,24 +108,19 @@ def _format_artist_schedule(
         time = _slot_time_str(slot)
         is_current = slot["date"] == current_date and slot["period"] == current_period
         if is_current:
-            parts = [p for p in (floor, time) if p]
-            current_label = " · ".join(parts) if parts else None
+            current_label = ", ".join(p for p in (floor, time) if p) or None
         else:
             same_day = slot["date"] == current_date
             if same_day:
                 parts = [p for p in (floor, time) if p]
             else:
                 parts = [
-                    p for p in (_format_short_date(slot["date"]), floor, time) if p
+                    p for p in (_format_short_date_abbr(slot["date"]), floor, time) if p
                 ]
             if parts:
-                other_labels.append(" ".join(parts))
-    result = []
-    if current_label:
-        result.append(current_label)
-    if other_labels:
-        result.append("Also @ " + " · ".join(other_labels))
-    return " · ".join(result) if result else None
+                other_labels.append(", ".join(parts))
+    also_label = ("Also " + " · ".join(other_labels)) if other_labels else None
+    return current_label, also_label
 
 
 def render_output_html(
@@ -211,7 +211,8 @@ def render_output_html(
     .photo-placeholder { width: 120px; height: 120px; flex-shrink: 0; background: #eee; border-radius: 6px; }
     .artist-info { flex: 1; min-width: 0; }
     .artist-name { font-weight: 700; font-size: var(--font-lg); display: block; margin-bottom: 3px; }
-    .artist-schedule { color: var(--color-muted); font-size: var(--font-sm); display: block; margin-bottom: 6px; }
+    .artist-schedule { color: var(--color-muted); font-size: var(--font-sm); display: block; margin-bottom: 2px; }
+    .artist-also { color: var(--color-muted); font-size: var(--font-xs); display: block; margin-bottom: 6px; }
     .links { display: flex; flex-wrap: wrap; column-gap: 18px; row-gap: 4px; align-items: center; }
     .links a { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; color: #555; font-size: var(--font-xs); padding: 3px 0; min-width: 72px; font-variant-numeric: tabular-nums; }
     .links a:hover { color: #111; }
@@ -648,7 +649,9 @@ def render_output_html(
         ig_f = format_followers(a.get("ig_followers"))
         sc_f = format_followers(a.get("sc_followers"))
         sp_l = format_followers(a.get("spotify_listeners"))
-        schedule = _format_artist_schedule(a.get("all_slots", []), cur_date, cur_period)
+        sched_main, sched_also = _format_artist_schedule(
+            a.get("all_slots", []), cur_date, cur_period
+        )
 
         card_key = f"{a.get('overlay_id', '')}:{cur_date}:{cur_period}:{loc_id or ''}"
         artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, card_key))
@@ -663,10 +666,12 @@ def render_output_html(
             parts.append('        <div class="photo-placeholder"></div>')
         parts.append('        <div class="artist-info">')
         parts.append(f'        <span class="artist-name">{esc(name)}</span>')
-        if schedule:
+        if sched_main:
             parts.append(
-                f'        <span class="artist-schedule">{esc(schedule)}</span>'
+                f'        <span class="artist-schedule">{esc(sched_main)}</span>'
             )
+        if sched_also:
+            parts.append(f'        <span class="artist-also">{esc(sched_also)}</span>')
         parts.append('        <div class="links">')
         if ig:
             parts.append(f"          {_link(ig, SVG_IG, ig_f or '')}")
