@@ -725,7 +725,9 @@ def render_output_html(
             else:
                 parts.append('    <ul class="artist-list">')
                 for a in artists:
-                    render_artist_card(a, sec["date"], sec["period"])
+                    render_artist_card(
+                        a, sec["date"], sec["period"], a.get("location_id")
+                    )
                 parts.append("    </ul>")
 
         parts.append("  </section>")
