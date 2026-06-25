@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 import secrets
 import sqlite3
@@ -10,7 +11,9 @@ import threading
 import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from fastapi import (
     BackgroundTasks,
@@ -119,6 +122,24 @@ def _init_db() -> None:
         db.commit()
     except sqlite3.OperationalError:
         pass
+    db.executescript("""
+        CREATE TABLE IF NOT EXISTS push_subscriptions (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id  TEXT NOT NULL,
+            endpoint    TEXT NOT NULL UNIQUE,
+            p256dh      TEXT NOT NULL,
+            auth        TEXT NOT NULL,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_push_sub_session ON push_subscriptions(session_id);
+        CREATE TABLE IF NOT EXISTS sent_notifications (
+            session_id  TEXT NOT NULL,
+            slot_id     TEXT NOT NULL,
+            sent_at     TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (session_id, slot_id)
+        );
+    """)
     pruned = db.execute(
         "DELETE FROM sessions WHERE updated_at < datetime('now', '-90 days')"
     ).rowcount
@@ -228,20 +249,152 @@ async def _prune_expired_sessions() -> None:
             logger.exception("Failed to prune expired sessions")
 
 
+TIMETABLE_PATH = STATIC_DIR / "timetable.json"
+_timetable: dict | None = None
+_timetable_mtime: float = 0
+
+
+def _load_timetable() -> dict | None:
+    global _timetable, _timetable_mtime
+    if not TIMETABLE_PATH.exists():
+        return None
+    mtime = TIMETABLE_PATH.stat().st_mtime
+    if mtime != _timetable_mtime:
+        _timetable = json.loads(TIMETABLE_PATH.read_text())
+        _timetable_mtime = mtime
+    return _timetable
+
+
+async def _push_notification_scheduler() -> None:
+    while True:
+        await asyncio.sleep(60)
+        if not os.environ.get("VAPID_PRIVATE_KEY"):
+            continue
+        try:
+            timetable = _load_timetable()
+            if not timetable:
+                continue
+
+            tz = ZoneInfo(timetable["timezone"])
+            now = datetime.now(tz)
+            window_start = now + timedelta(minutes=9, seconds=30)
+            window_end = now + timedelta(minutes=10, seconds=30)
+
+            due_slots: list[tuple[str, dict]] = []
+            for slot_id, slot in timetable["slots"].items():
+                start = datetime.fromisoformat(slot["start"]).replace(tzinfo=tz)
+                if window_start <= start <= window_end:
+                    due_slots.append((slot_id, slot))
+
+            if not due_slots:
+                continue
+
+            db = _get_db()
+            try:
+                slot_ids = [s[0] for s in due_slots]
+                placeholders = ",".join("?" * len(slot_ids))
+                rows = db.execute(
+                    f"SELECT DISTINCT s.session_id, je.value as slot_id "
+                    f"FROM sessions s, json_each(s.schedule) je "
+                    f"WHERE je.value IN ({placeholders})",
+                    slot_ids,
+                ).fetchall()
+
+                if not rows:
+                    continue
+
+                to_send: list[tuple[str, str]] = []
+                for session_id, slot_id in rows:
+                    sent = db.execute(
+                        "SELECT 1 FROM sent_notifications WHERE session_id = ? AND slot_id = ?",
+                        (session_id, slot_id),
+                    ).fetchone()
+                    if not sent:
+                        to_send.append((session_id, slot_id))
+
+                if not to_send:
+                    continue
+
+                from pywebpush import WebPushException, webpush
+
+                slot_map = dict(due_slots)
+                for session_id, slot_id in to_send:
+                    subs = db.execute(
+                        "SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE session_id = ?",
+                        (session_id,),
+                    ).fetchall()
+                    if not subs:
+                        continue
+
+                    slot = slot_map[slot_id]
+                    artists = " b2b ".join(slot["artists"])
+                    payload = json.dumps(
+                        {
+                            "title": f"\U0001f3b5 {artists} starts in 10 min",
+                            "body": f"{slot['floor']}, {slot['start_hhmm']}–{slot['end_hhmm']}",
+                            "tag": f"stc-{slot_id}",
+                            "url": "/?view=timetable",
+                        }
+                    )
+
+                    for endpoint, p256dh, auth in subs:
+                        try:
+                            webpush(
+                                subscription_info={
+                                    "endpoint": endpoint,
+                                    "keys": {"p256dh": p256dh, "auth": auth},
+                                },
+                                data=payload,
+                                vapid_private_key=os.environ["VAPID_PRIVATE_KEY"],
+                                vapid_claims={
+                                    "sub": os.environ.get(
+                                        "VAPID_SUBJECT", "mailto:noreply@example.com"
+                                    )
+                                },
+                            )
+                        except WebPushException as e:
+                            if e.response and e.response.status_code in (404, 410):
+                                db.execute(
+                                    "DELETE FROM push_subscriptions WHERE endpoint = ?",
+                                    (endpoint,),
+                                )
+                                db.commit()
+                            logger.warning("Push failed for %s: %s", endpoint[:60], e)
+
+                    db.execute(
+                        "INSERT OR IGNORE INTO sent_notifications (session_id, slot_id) VALUES (?, ?)",
+                        (session_id, slot_id),
+                    )
+                    db.commit()
+                    logger.info(
+                        "Sent push for %s to session %s", artists, session_id[:8]
+                    )
+            finally:
+                db.close()
+        except Exception:
+            logger.exception("Push notification scheduler error")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _init_db()
     task = asyncio.create_task(_prune_rate_limits())
     prune_task = asyncio.create_task(_prune_expired_sessions())
+    push_task = asyncio.create_task(_push_notification_scheduler())
     yield
     task.cancel()
     prune_task.cancel()
+    push_task.cancel()
     try:
         await task
     except asyncio.CancelledError:
         pass
     try:
         await prune_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await push_task
     except asyncio.CancelledError:
         pass
 
@@ -554,6 +707,83 @@ async def ws_sync(ws: WebSocket, code: str):
                 del _ws_clients[session_id]
 
 
+@app.get("/api/push/vapid-key")
+def get_vapid_key():
+    key = os.environ.get("VAPID_PUBLIC_KEY")
+    if not key:
+        raise HTTPException(501, "Push notifications not configured")
+    return {"public_key": key}
+
+
+@app.post("/api/session/{code}/push/subscribe", status_code=204)
+async def push_subscribe(code: str, request: Request):
+    if not TOKEN_RE.match(code):
+        raise HTTPException(422, "Invalid code format")
+    _check_rate(_get_client_ip(request), "pick")
+    body = await request.json()
+    endpoint = body.get("endpoint", "")
+    keys = body.get("keys", {})
+    p256dh = keys.get("p256dh", "")
+    auth = keys.get("auth", "")
+    if not endpoint or not p256dh or not auth:
+        raise HTTPException(422, "Missing subscription fields")
+    db = _get_db()
+    try:
+        session_id, _, _, _, readonly = _find_session(db, code)
+        if readonly:
+            raise HTTPException(403, "Read-only session")
+        db.execute(
+            "INSERT INTO push_subscriptions (session_id, endpoint, p256dh, auth) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(endpoint) DO UPDATE SET session_id=excluded.session_id, "
+            "p256dh=excluded.p256dh, auth=excluded.auth, created_at=datetime('now')",
+            (session_id, endpoint, p256dh, auth),
+        )
+        db.commit()
+    finally:
+        db.close()
+    return Response(status_code=204)
+
+
+@app.delete("/api/session/{code}/push/subscribe", status_code=204)
+async def push_unsubscribe(code: str, request: Request):
+    if not TOKEN_RE.match(code):
+        raise HTTPException(422, "Invalid code format")
+    body = await request.json()
+    endpoint = body.get("endpoint", "")
+    if not endpoint:
+        raise HTTPException(422, "Missing endpoint")
+    db = _get_db()
+    try:
+        session_id, _, _, _, readonly = _find_session(db, code)
+        if readonly:
+            raise HTTPException(403, "Read-only session")
+        db.execute(
+            "DELETE FROM push_subscriptions WHERE session_id = ? AND endpoint = ?",
+            (session_id, endpoint),
+        )
+        db.commit()
+    finally:
+        db.close()
+    return Response(status_code=204)
+
+
+@app.get("/api/session/{code}/push/status")
+def push_status(code: str, request: Request):
+    if not TOKEN_RE.match(code):
+        raise HTTPException(422, "Invalid code format")
+    db = _get_db()
+    try:
+        session_id, _, _, _, _ = _find_session(db, code)
+        count = db.execute(
+            "SELECT COUNT(*) FROM push_subscriptions WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()[0]
+    finally:
+        db.close()
+    return {"subscribed": count > 0}
+
+
 @app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def api_not_found(path: str):
     raise HTTPException(404, "Not found")
@@ -576,6 +806,26 @@ async def serve_favicon_png():
     file_path = STATIC_DIR / "favicon.png"
     if file_path.exists():
         return FileResponse(file_path, media_type="image/png")
+    raise HTTPException(404, "Not found")
+
+
+@app.get("/manifest.json")
+async def serve_manifest():
+    file_path = STATIC_DIR / "manifest.json"
+    if file_path.exists():
+        return FileResponse(file_path, media_type="application/manifest+json")
+    raise HTTPException(404, "Not found")
+
+
+@app.get("/sw.js")
+async def serve_sw():
+    file_path = STATIC_DIR / "sw.js"
+    if file_path.exists():
+        return FileResponse(
+            file_path,
+            media_type="application/javascript",
+            headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"},
+        )
     raise HTTPException(404, "Not found")
 
 

@@ -21,6 +21,7 @@ from scraper.db import (
 )
 from scraper.images import process_artist_photos
 from scraper.render import render_output_html
+from scraper.timetable_json import generate_timetable_json
 from scraper.scrape import (
     fetch_all_ig,
     fetch_all_sc,
@@ -50,6 +51,9 @@ def deploy_to_vps(output_dir: Path, output_path: Path) -> None:
             src = icons_dir / fname
             if src.exists():
                 shutil.copy2(src, staging_path / fname)
+        timetable_src = output_dir / "timetable.json"
+        if timetable_src.exists():
+            shutil.copy2(timetable_src, staging_path / "timetable.json")
         photos_src = output_dir / "photos"
         if photos_src.is_dir():
             shutil.copytree(photos_src, staging_path / "photos")
@@ -160,6 +164,12 @@ def main() -> None:
             all_locations,
             has_timetable=has_timetable,
         )
+
+        if has_timetable:
+            timetable_json = generate_timetable_json(db)
+            timetable_path = output_dir / "timetable.json"
+            timetable_path.write_text(timetable_json, encoding="utf-8")
+            print(f"Wrote {timetable_path}")
     finally:
         db.close()
 

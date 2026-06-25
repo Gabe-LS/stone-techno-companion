@@ -1,0 +1,13 @@
+{
+  "name": "Stone Techno Companion",
+  "short_name": "Stone Techno",
+  "description": "Festival lineup companion with picks, schedule, and notifications",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#111111",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/favicon.png", "sizes": "192x192", "type": "image/png" }
+  ]
+}

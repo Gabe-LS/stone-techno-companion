@@ -169,6 +169,11 @@ def render_output_html(
     parts.append(
         f'  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,{favicon_b64}">'
     )
+    parts.append('  <link rel="manifest" href="/manifest.json">')
+    parts.append('  <meta name="apple-mobile-web-app-capable" content="yes">')
+    parts.append(
+        '  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
+    )
     parts.append("  <style>")
     parts.append("""
     :root {
@@ -521,6 +526,12 @@ def render_output_html(
     parts.append(
         '      <button onmousedown="this.blur()" onclick="openSyncModal()">Sync</button>'
     )
+    parts.append(
+        '      <button onmousedown="this.blur()" onclick="toggleNotifications()" id="btn-bell" '
+        'style="display:none" aria-label="Notifications">'
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>'
+    )
     parts.append("    </div>")
     parts.append(
         '    <button class="hamburger" onclick="toggleMenu()" aria-label="Menu"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg></button>'
@@ -545,6 +556,9 @@ def render_output_html(
         )
     parts.append('    <button onclick="openShareModal(); closeMenu()">Share</button>')
     parts.append('    <button onclick="openSyncModal(); closeMenu()">Sync</button>')
+    parts.append(
+        '    <button onclick="toggleNotifications(); closeMenu()" id="dd-bell" style="display:none">Notifications</button>'
+    )
     parts.append("  </div>")
     parts.append(
         '  <div class="menu-overlay" id="menu-overlay" onclick="closeMenu()"></div>'
@@ -629,6 +643,28 @@ def render_output_html(
     parts.append(
         '        <button type="button" class="btn" onclick="submitPin()">Connect</button>'
     )
+    parts.append("      </div>")
+    parts.append("    </div>")
+    parts.append("  </div>")
+
+    # iOS PWA instructions modal
+    parts.append(
+        '  <div class="modal-overlay" id="m-ios" role="dialog" aria-modal="true" aria-labelledby="m-ios-title">'
+    )
+    parts.append('    <div class="modal-box">')
+    parts.append('      <h3 id="m-ios-title">Enable Notifications</h3>')
+    parts.append(
+        '      <p class="sub" style="color:inherit">On iOS, notifications require the app to be added to your home screen.</p>'
+    )
+    parts.append('      <div class="steps">')
+    parts.append(
+        "        <p>Tap the <strong>Share</strong> button "
+        '<svg style="display:inline;vertical-align:middle" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></p>'
+    )
+    parts.append("        <p>Scroll down, tap <strong>Add to Home Screen</strong></p>")
+    parts.append("        <p>Open the app from your home screen</p>")
+    parts.append("        <p>Tap the notification bell again</p>")
     parts.append("      </div>")
     parts.append("    </div>")
     parts.append("  </div>")
@@ -1768,6 +1804,72 @@ def render_output_html(
       document.getElementById('cmd-dropdown').classList.remove('open');
       document.getElementById('menu-overlay').classList.remove('open');
     }
+
+    // --- Push Notifications ---
+    const _isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const _isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    const _supportsPush = 'serviceWorker' in navigator && 'PushManager' in window;
+
+    function _urlBase64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const raw = atob(base64);
+      const out = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+      return out;
+    }
+
+    function updateBellState() {
+      const btn = document.getElementById('btn-bell');
+      const dd = document.getElementById('dd-bell');
+      const on = localStorage.getItem('stc_push') === '1';
+      if (btn) { btn.style.display = _supportsPush ? '' : 'none'; btn.classList.toggle('active', on); }
+      if (dd) { dd.style.display = _supportsPush ? '' : 'none'; dd.classList.toggle('active', on); dd.textContent = on ? 'Notifications ✓' : 'Notifications'; }
+    }
+
+    async function enableNotifications() {
+      if (!_supportsPush) return;
+      if (_isIOS && !_isStandalone) { openDialog('m-ios'); return; }
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') return;
+      try {
+        const vapidRes = await fetch(API + '/push/vapid-key');
+        if (!vapidRes.ok) return;
+        const { public_key } = await vapidRes.json();
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: _urlBase64ToUint8Array(public_key) });
+        await ensureSession();
+        if (!sessionId) return;
+        await fetch(API + '/session/' + sessionId + '/push/subscribe', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(sub.toJSON()) });
+        localStorage.setItem('stc_push', '1');
+        track('push-enable');
+      } catch (e) { console.warn('Push subscribe failed', e); }
+      updateBellState();
+    }
+
+    async function disableNotifications() {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          const endpoint = sub.endpoint;
+          await sub.unsubscribe();
+          if (sessionId) {
+            await fetch(API + '/session/' + sessionId + '/push/subscribe', { method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({endpoint}) });
+          }
+        }
+      } catch {}
+      localStorage.removeItem('stc_push');
+      track('push-disable');
+      updateBellState();
+    }
+
+    async function toggleNotifications() {
+      if (localStorage.getItem('stc_push') === '1') { await disableNotifications(); }
+      else { await enableNotifications(); }
+    }
+
+    updateBellState();
     """)
     parts.append("""
     // Keep dropdown button states in sync with cmd-bar buttons
@@ -2370,6 +2472,10 @@ def render_output_html(
         parts.append("      updateNowLine();")
     parts.append("""
     })();
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(function() {});
+    }
     """)
     parts.append("  </script>")
     parts.append("</body>")

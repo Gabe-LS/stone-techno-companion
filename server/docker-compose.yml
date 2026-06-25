@@ -3,6 +3,8 @@ services:
     build: .
     container_name: stone-techno
     restart: unless-stopped
+    env_file:
+      - .env
     volumes:
       - ./data:/app/data
       - ./static:/app/static
