@@ -240,6 +240,9 @@ async def _prune_expired_sessions() -> None:
                 pruned = db.execute(
                     "DELETE FROM sessions WHERE updated_at < datetime('now', '-90 days')"
                 ).rowcount
+                db.execute(
+                    "DELETE FROM sent_notifications WHERE sent_at < datetime('now', '-7 days')"
+                )
                 db.commit()
                 if pruned:
                     logger.info("Pruned %d expired session(s)", pruned)

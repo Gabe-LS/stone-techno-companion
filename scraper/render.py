@@ -40,11 +40,6 @@ def _format_date_heading(date_str: str) -> str:
     return f"{dt.strftime('%A')}, {dt.strftime('%B')} {dt.day}, {dt.year}"
 
 
-def _format_short_date(date_str: str) -> str:
-    dt = datetime.strptime(date_str, "%Y-%m-%d")
-    return f"{dt.strftime('%A')}, {dt.strftime('%B')} {dt.day}"
-
-
 def _format_date_tab(date_str: str) -> str:
     dt = datetime.strptime(date_str, "%Y-%m-%d")
     return f"{dt.strftime('%a')} {dt.day}"
@@ -328,7 +323,6 @@ def render_output_html(
     .timetable-panel { display: none; }
     .timetable-panel.active { display: block; }
     .timetable { display: grid; position: relative; margin-bottom: 4px; }
-    .time-gutter { grid-column: 1; position: sticky; left: 0; z-index: 5; background: #fff; width: 40px; }
     .time-label { font-size: var(--font-xs); color: var(--color-muted); text-align: right; padding-right: 8px; line-height: 1; position: relative; top: calc(-0.5em + 1px); }
     .grid-line { grid-column: 2 / -1; border-top: 1px solid #ccc; pointer-events: none; }
     .grid-line.hour { border-top: 1px solid var(--color-line-hour); }
@@ -856,6 +850,15 @@ def render_output_html(
     # --- Timetable view ---
     if has_timetable:
         # Build timetable data
+        canonical_floor_order = [
+            "eisbahn",
+            "grand-hall",
+            "koksofenbatterie",
+            "listening-floor",
+            "mischanlage",
+            "salzlager",
+            "werksschwimmbad",
+        ]
         timetable_data: list[dict] = []
         for date_str in dates_seen:
             for sec in sections_by_date[date_str]:
@@ -866,15 +869,6 @@ def render_output_html(
                 if not timed:
                     continue
 
-                canonical_floor_order = [
-                    "eisbahn",
-                    "grand-hall",
-                    "koksofenbatterie",
-                    "listening-floor",
-                    "mischanlage",
-                    "salzlager",
-                    "werksschwimmbad",
-                ]
                 by_floor: dict[str, list[dict]] = {}
                 for a in timed:
                     fid = a.get("location_id") or "unknown"
@@ -945,7 +939,6 @@ def render_output_html(
 
             total_minutes = grid_end - grid_start
             px_per_min = 2
-            grid_height = total_minutes * px_per_min
 
             parts.append(
                 f'  <div class="timetable-panel" data-date="{esc(tt_date_str)}" data-period="{esc(period)}" '
@@ -2153,7 +2146,7 @@ def render_output_html(
     let _popupJustOpened = false;
     document.querySelectorAll('.tt-block').forEach(block => {
       block.addEventListener('click', e => {
-        if (e.target.closest('.tt-heart') || e.target.closest('.tt-cal') || e.target.closest('.tt-ics')) return;
+        if (e.target.closest('.tt-photo-heart') || e.target.closest('.tt-cal') || e.target.closest('.tt-ics')) return;
         if (popup.classList.contains('open')) {
           closePopup();
           _popupJustOpened = true;
@@ -2213,14 +2206,14 @@ def render_output_html(
       if (!start || !end) return;
 
       function toICSDate(iso) {
-        return iso.replace(/[-:]/g, '').replace('T', 'T') + '00';
+        return iso.replace(/[-:]/g, '') + '00';
       }
 
       const dtStart = toICSDate(start);
       const dtEnd = toICSDate(end);
       const uid = dtStart + '-' + name.replace(/[^a-zA-Z0-9]/g, '') + '@stonetechno.deftlab.dev';
       const now = new Date();
-      const stamp = now.toISOString().replace(/[-:]/g, '').split('.')[0];
+      const stamp = now.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
 
       const ics = [
         'BEGIN:VCALENDAR',
