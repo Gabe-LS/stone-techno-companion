@@ -442,7 +442,7 @@ def render_output_html(
       .tt-v-scroll { overflow: auto; scrollbar-width: none; -ms-overflow-style: none; overscroll-behavior: none; }
       .tt-v-scroll::-webkit-scrollbar { display: none; }
 
-      .tt-table { border-collapse: separate; border-spacing: 0; table-layout: fixed; }
+      .tt-table { border-collapse: separate; border-spacing: 0; table-layout: fixed; width: calc(40px + var(--num-floors) * 40vw); }
       .tt-table thead th { position: sticky; top: 0; z-index: 2; background: #fff; padding: 4px 2px 4px; text-align: center; }
       .tt-table thead th:first-child { left: 0; z-index: 3; background: #fff; width: 40px; min-width: 40px; }
       .tt-floor-th span { display: block; padding: 6px 10px; border-radius: 999px; font-size: var(--font-xs); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0 3px; }
@@ -1079,8 +1079,9 @@ def render_output_html(
             parts.append('    <div class="tt-table-wrap">')
             parts.append('    <div class="tt-v-scroll">')
             # Main table
-            table_w = f"calc(40px + {num_floors * 40}vw)"
-            parts.append(f'    <table class="tt-table" style="width:{table_w}">')
+            parts.append(
+                f'    <table class="tt-table" style="--num-floors:{num_floors}">'
+            )
             parts.append('    <colgroup><col style="width:40px;min-width:40px;">')
             for fid in floor_ids:
                 parts.append('<col style="width:40vw;min-width:40vw;">')
