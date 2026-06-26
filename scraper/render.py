@@ -263,8 +263,8 @@ def render_output_html(
     .modal-overlay { display:none; position:fixed; inset:0; z-index:100; background:rgba(0,0,0,.4); padding:24px; }
     .modal-overlay.open { display:flex; justify-content:center; align-items:center; }
     .modal-box { background:#fff; border-radius:14px; padding:24px; width:420px; max-width:100%; text-align:center; color:#111; box-shadow:0 8px 24px rgba(0,0,0,.12); }
-    .modal-box h3 { margin:0 0 6px; font-size:var(--font-base); font-weight:600; }
-    .modal-box .sub { font-size:var(--font-xs); color:#888; margin:0 0 14px; }
+    .modal-box h3 { margin:0 0 6px; font-size:var(--font-base); font-weight:600; text-wrap:balance; }
+    .modal-box .sub { font-size:var(--font-xs); color:#888; margin:0 0 14px; text-wrap:balance; }
     .modal-link { display:block; width:100%; background:#f5f5f5; padding:12px 14px; border-radius:8px; font-size:var(--font-sm); font-family:inherit; color:#333; cursor:pointer; transition:background .15s; margin:0; border:none; text-align:left; overflow:hidden; text-overflow:clip; white-space:nowrap; box-sizing:border-box; outline:none; }
     .modal-link:hover { background:#eee; }
     .modal-link.copied { background:#d4edda; text-align:center; }
@@ -283,8 +283,8 @@ def render_output_html(
     .modal-box .lbl { font-size:var(--font-sm); color:#333; text-align:left; margin:0 0 4px; }
     .modal-box .recv-lbl { font-size:var(--font-sm); color:#333; text-align:left; margin:10px 0 4px; }
     .modal-box .steps { counter-reset:s; }
-    .modal-box .steps p { text-align:left; font-size:var(--font-xs); color:#333; margin:5px 0; padding-left:16px; }
-    .modal-box .steps p::before { content:counter(s) ". "; counter-increment:s; font-weight:600; }
+    .modal-box .steps p { text-align:left; font-size:var(--font-xs); color:#333; margin:5px 0; padding-left:20px; position:relative; }
+    .modal-box .steps p::before { content:counter(s) ". "; counter-increment:s; font-weight:600; position:absolute; left:0; }
     .pin { display:flex; gap:5px; justify-content:center; margin:10px 0; }
     .pin span { width:28px; height:36px; font-size:var(--font-lg); font-weight:700; border:1px solid #ddd; border-radius:5px; background:#f5f5f5; color:#111; display:flex; align-items:center; justify-content:center; line-height:1; }
     .sync-expiry { font-size:var(--font-xs); color:#888; text-align:center; margin:8px 0 0; }
@@ -528,9 +528,10 @@ def render_output_html(
     )
     parts.append(
         '      <button onmousedown="this.blur()" onclick="toggleNotifications()" id="btn-bell" '
-        'style="display:none" aria-label="Notifications">'
-        '<svg width="13" height="13" style="position:relative;top:2px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+        'aria-label="Notifications">'
+        '<svg width="14" height="14" style="position:relative;top:1px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
         '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>'
+        '<script>document.getElementById("btn-bell").className=localStorage.getItem("stc_push")==="1"?"active":""</script>'
     )
     parts.append("    </div>")
     parts.append(
@@ -673,6 +674,42 @@ def render_output_html(
     parts.append("        <p>Open the app from your home screen</p>")
     parts.append("        <p>Enable notifications</p>")
     parts.append("      </div>")
+    parts.append("    </div>")
+    parts.append("  </div>")
+
+    # Non-Safari iOS: switch to Safari + sync instructions
+    parts.append(
+        '  <div class="modal-overlay" id="m-ios-switch" role="dialog" aria-modal="true" aria-labelledby="m-ios-switch-title">'
+    )
+    parts.append('    <div class="modal-box">')
+    parts.append('      <h3 id="m-ios-switch-title">Enable Notifications</h3>')
+    parts.append(
+        '      <p class="sub" style="color:inherit">On iOS, notifications only work in Safari.</p>'
+    )
+    parts.append(
+        '      <button type="button" class="btn" style="margin:0 0 14px;width:100%" '
+        'onclick="navigator.clipboard.writeText(location.origin).then(function(){'
+        "this.textContent='Copied!';var b=this;setTimeout(function(){"
+        "b.textContent='Copy link to open in Safari'},1500)}.bind(this))\">"
+        "Copy link to open in Safari</button>"
+    )
+    parts.append('      <div class="steps">')
+    parts.append("        <p>Open <strong>Safari</strong> and paste the link</p>")
+    parts.append(
+        "        <p>Tap the <strong>Share</strong> button "
+        '<svg style="display:inline;vertical-align:middle" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/>'
+        '<line x1="12" y1="2" x2="12" y2="15"/></svg> '
+        "&rarr; <strong>Add to Home Screen</strong></p>"
+    )
+    parts.append(
+        "        <p>Open the app from your home screen and enable notifications</p>"
+    )
+    parts.append("      </div>")
+    parts.append(
+        '      <p class="sub" style="color:inherit;margin:10px 0 0"><strong>Tip:</strong> '
+        "use Sync to transfer your picks to Safari before switching.</p>"
+    )
     parts.append("    </div>")
     parts.append("  </div>")
 
@@ -1836,6 +1873,7 @@ def render_output_html(
     // --- Push Notifications ---
     const _isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
     const _isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    const _needsSafariSwitch = _isIOS && !!navigator.brave;
     const _supportsPush = 'serviceWorker' in navigator && 'PushManager' in window;
 
     function _urlBase64ToUint8Array(base64String) {
@@ -1856,6 +1894,7 @@ def render_output_html(
     }
 
     async function enableNotifications() {
+      if (_needsSafariSwitch) { openDialog('m-ios-switch'); return; }
       if (_isIOS && !_isStandalone) { openDialog('m-ios'); return; }
       if (!_supportsPush) return;
       const perm = await Notification.requestPermission();
@@ -2515,7 +2554,20 @@ def render_output_html(
         switchView('timetable', document.getElementById('btn-timetable'));
       }
       syncDropdownState();
-      setTimeout(syncDropdownState, 100);""")
+      setTimeout(syncDropdownState, 100);
+      // Re-sync push subscription to server (handles purged DB, reinstalls, etc.)
+      if (localStorage.getItem('stc_push') === '1' && 'serviceWorker' in navigator) {
+        try {
+          var swReg = await navigator.serviceWorker.ready;
+          var existingSub = await swReg.pushManager.getSubscription();
+          if (existingSub && sessionId) {
+            fetch(API + '/session/' + sessionId + '/push/subscribe', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(existingSub.toJSON()) }).catch(function() {});
+          } else if (!existingSub) {
+            localStorage.removeItem('stc_push');
+            updateBellState();
+          }
+        } catch {}
+      }""")
     if has_timetable:
         parts.append("      updateNowLine();")
     parts.append("""
