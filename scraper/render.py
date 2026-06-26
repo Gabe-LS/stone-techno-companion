@@ -1506,7 +1506,8 @@ def render_output_html(
       const el = btn.closest('[data-artist-id]');
       const id = el.dataset.artistId;
       const adding = !localSchedule.has(id);
-      track(adding ? 'schedule-add' : 'schedule-remove');
+      const name = el.querySelector('.artist-name')?.textContent || el.dataset.name || id;
+      track(adding ? 'schedule-add' : 'schedule-remove', {artist: name});
 
       if (adding) localSchedule.add(id); else localSchedule.delete(id);
       btn.classList.toggle('active', adding);
@@ -1947,6 +1948,7 @@ def render_output_html(
         parts.append("""
     // View toggle
     function switchView(view, btn) {
+      track('view-switch', {view});
       currentView = view;
       localStorage.setItem('stc_view', view);
       const listView = document.getElementById('list-view');
@@ -2061,6 +2063,7 @@ def render_output_html(
     }
 
     function switchDay(date, btn) {
+      track('day-switch', {day: btn.textContent.trim()});
       currentDate = date;
       document.querySelectorAll('.day-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
@@ -2175,6 +2178,7 @@ def render_output_html(
       const start = block.dataset.icsStart;
       const end = block.dataset.icsEnd;
       if (!start || !end) return;
+      track('ics-export', {artist: name});
 
       function toICSDate(iso) {
         return iso.replace(/[-:]/g, '') + '00';
