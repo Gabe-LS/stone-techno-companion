@@ -313,10 +313,8 @@ def render_output_html(
 
     /* Floor headers */
     .floor-header-bar { display: grid; position: sticky; top: 148px; z-index: 10; background: #fff; padding: 8px 0 6px; margin: 24px 0 12px; }
-    .floor-header-bar.fade-after { position: sticky; }
     .floor-header-bar::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 36px; background: linear-gradient(to bottom, rgba(255,255,255,1) 0%, rgba(255,255,255,0.9) 20%, rgba(255,255,255,0.75) 35%, rgba(255,255,255,0.5) 55%, rgba(255,255,255,0.15) 78%, rgba(255,255,255,0) 100%); pointer-events: none; opacity: 0; transition: opacity 0.15s; }
     .floor-header-bar.stuck::after { opacity: 1; }
-    .floor-header-gutter { }
     .floor-header { text-align: center; font-weight: 700; font-size: var(--font-sm); padding: 8px 12px; border-radius: 999px; margin: 0 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
     /* Timetable grid */
@@ -376,9 +374,6 @@ def render_output_html(
     .floor-header.floor-salzlager { background: var(--floor-salzlager); }
     .floor-header.floor-werksschwimmbad { background: var(--floor-werksschwimmbad); }
 
-    /* Corner cell — only visible on mobile */
-    .tt-corner-cell { display: none; }
-
     /* Mobile table — hidden on desktop */
     .tt-table-wrap { display: none; }
 
@@ -408,7 +403,7 @@ def render_output_html(
 
     @media (max-width: 480px) {
       body { padding: 0 12px; }
-      h1 { font-size: var(--font-xl); padding: 8px 0 6px; top: 48px; }
+      h1 { font-size: var(--font-xl); padding: 8px 0 6px; top: 48px; margin-bottom: 0; }
 
       /* Mobile cmd bar — 48px, full width, label left, hamburger right */
       .cmd-bar { height: 48px; padding: 0 16px; margin-left: -12px; margin-right: -12px; }
@@ -438,46 +433,44 @@ def render_output_html(
 
       /* Hide CSS grid timetable on mobile — replaced by table */
       .floor-header-bar { display: none !important; }
-      .tt-time-col { display: none !important; }
-      .tt-floor-pill { display: none !important; }
-      .tt-corner-cell { display: none !important; }
       .timetable { display: none !important; }
-      .tt-scroll-wrap { display: none !important; }
 
-      /* Show mobile table — floor headers sticky, two nested divs for scroll */
-      .tt-table-wrap { display: block !important; min-height: 300px; top: -10px; position: relative; }
+      /* Show mobile table */
+      .tt-table-wrap { display: block !important; min-height: 300px; }
 
-      /* Mobile floor header bar — sticky, synced horizontally via JS */
-      .mobile-fhb { display: grid !important; margin: 0 !important; padding: 8px 0 4px !important; position: sticky; top: 139px; z-index: 9; background: #fff; overflow: hidden; --col-w: 40vw; }
-      .mobile-fhb .floor-header-gutter { position: sticky; left: 0; z-index: 1; background: #fff; }
-      .floor-header-bar::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 36px; background: linear-gradient(to bottom, rgba(255,255,255,1) 0%, rgba(255,255,255,0.9) 20%, rgba(255,255,255,0.75) 35%, rgba(255,255,255,0.5) 55%, rgba(255,255,255,0.15) 78%, rgba(255,255,255,0) 100%); pointer-events: none; opacity: 0; transition: opacity 0.15s; }
-      .floor-header-bar.stuck::after { opacity: 1; }
-
-      /* Outer div — no native scroll, JS-driven */
-      .tt-v-scroll { overflow: hidden; }
-
-      /* Inner div — no native scroll, JS-driven */
-      .tt-h-scroll { overflow: hidden; }
+      /* Single scroll container for both axes */
+      .tt-v-scroll { overflow: auto; scrollbar-width: none; -ms-overflow-style: none; overscroll-behavior: none; }
+      .tt-v-scroll::-webkit-scrollbar { display: none; }
 
       .tt-table { border-collapse: separate; border-spacing: 0; }
-      .tt-table thead { display: none; }
-      .tt-table tbody td.tt-time-td { position: sticky; left: 0; z-index: 1; background: #fff; font-size: var(--font-xs); color: var(--color-muted-icon); text-align: right; padding: 0 6px 0 0; vertical-align: top; width: 40px; min-width: 40px; line-height: 16px; height: 16px; overflow: hidden; }
+      .tt-table thead th { position: sticky; top: 0; z-index: 2; background: #fff; padding: 4px 2px 4px; text-align: center; }
+      .tt-table thead th:first-child { left: 0; z-index: 3; background: #fff; width: 40px; min-width: 40px; }
+      .tt-floor-th span { display: block; padding: 6px 10px; border-radius: 999px; font-size: var(--font-xs); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0 3px; }
+      .tt-floor-th.floor-eisbahn span { background: var(--floor-eisbahn); }
+      .tt-floor-th.floor-grand-hall span { background: var(--floor-grand-hall); }
+      .tt-floor-th.floor-koksofenbatterie span { background: var(--floor-koksofenbatterie); }
+      .tt-floor-th.floor-listening-floor span { background: var(--floor-listening-floor); }
+      .tt-floor-th.floor-mischanlage span { background: var(--floor-mischanlage); }
+      .tt-floor-th.floor-salzlager span { background: var(--floor-salzlager); }
+      .tt-floor-th.floor-werksschwimmbad span { background: var(--floor-werksschwimmbad); }
+      .tt-table tbody td.tt-time-td { position: sticky; left: 0; z-index: 1; background: #fff; font-size: var(--font-xs); color: var(--color-muted-icon); text-align: right; padding: 0 6px 0 0; vertical-align: top; width: 40px; min-width: 40px; line-height: var(--row-h); overflow: hidden; }
+      .tt-table tbody td.tt-line-hour, .tt-table tbody td.tt-line-half { vertical-align: middle; }
       .tt-table tbody td { vertical-align: top; padding: 0; }
       .tt-table tbody td:not(.tt-time-td) { width: 40vw; min-width: 40vw; scroll-snap-align: start; scroll-snap-stop: always; }
-      .tt-table tbody tr { height: 16px; }
-
-      /* Floor colors on header pills */
-      .floor-header.floor-eisbahn { background: var(--floor-eisbahn); }
-      .floor-header.floor-grand-hall { background: var(--floor-grand-hall); }
-      .floor-header.floor-koksofenbatterie { background: var(--floor-koksofenbatterie); }
-      .floor-header.floor-listening-floor { background: var(--floor-listening-floor); }
-      .floor-header.floor-mischanlage { background: var(--floor-mischanlage); }
-      .floor-header.floor-salzlager { background: var(--floor-salzlager); }
-      .floor-header.floor-werksschwimmbad { background: var(--floor-werksschwimmbad); }
-
+      .tt-table tbody tr { height: var(--row-h); }
+      .tt-table tbody tr:first-child { height: calc(var(--row-h) / 2); }
+      .tt-table tbody tr:first-child td.tt-time-td { padding-bottom: calc(var(--row-h) / 2); }
+      .tt-table tbody tr:last-child { height: calc(var(--row-h) / 2); }
+      .tt-table tbody tr:nth-last-child(2) td.tt-time-td { padding-top: calc(var(--row-h) / 2); }
+      .tt-table tbody {
+        background-image:
+          repeating-linear-gradient(to bottom, var(--color-line-hour) 0, var(--color-line-hour) 1px, transparent 1px, transparent calc(var(--row-h) * 12)),
+          repeating-linear-gradient(to bottom, var(--color-line-half) 0, var(--color-line-half) 1px, transparent 1px, transparent calc(var(--row-h) * 6));
+        background-position: 0 calc(var(--row-h) / 2 - 1px);
+      }
 
       /* Artist blocks inside table cells */
-      .tt-table .tt-block { position: absolute; top: 1.5px; left: 1px; right: 1px; bottom: 1px; }
+      .tt-table .tt-block { position: absolute; top: 1.5px; left: 1px; right: 1px; bottom: 2.5px; }
 
       /* Filter bar compact */
       .filter-bar { padding: 6px 0; margin: 0 0 4px; top: 100px; }
@@ -904,6 +897,22 @@ def render_output_html(
                     }
                 )
 
+        needs_large_rows = False
+        for td in timetable_data:
+            for fid, floor_artists in td["by_floor"].items():
+                slots: dict[tuple[str, str], list[dict]] = {}
+                for a in floor_artists:
+                    key = (a["start_time"], a["end_time"])
+                    slots.setdefault(key, []).append(a)
+                for (st, et), group in slots.items():
+                    dur = _parse_time(et) - _parse_time(st)
+                    if td["is_night"] and dur < 0:
+                        dur += 1440
+                    if dur < 30 * (len(group) + 1):
+                        needs_large_rows = True
+        row_h = 14 if needs_large_rows else 10
+
+        parts.append(f"  <style>.tt-table {{ --row-h: {row_h}px; }}</style>")
         parts.append('  <div id="timetable-view" style="display:none">')
 
         # Filter bar (day/period tabs)
@@ -942,20 +951,7 @@ def render_output_html(
                 f'data-is-night="{1 if is_night else 0}" id="{esc(panel_id)}">'
             )
 
-            # Scroll-wrap (kept for structure; tt-time-col hidden on mobile via CSS)
-            parts.append('    <div class="tt-scroll-wrap" style="position: relative;">')
-            parts.append('    <div class="tt-time-col" style="display:none;">')
-            hour_start_tc = grid_start // 60
-            hour_end_tc = (grid_end + 59) // 60
-            for h in range(hour_start_tc, hour_end_tc):
-                display_h = h % 24
-                y_pos = (h * 60 - grid_start) * px_per_min
-                parts.append(
-                    f'      <div class="time-label" style="position:absolute; top:{y_pos}px; left:0; width:40px; transform:translateY(-50%);">{display_h:02d}:00</div>'
-                )
-            parts.append("    </div>")
-
-            # Floor header bar (outside scroll container — CSS sticky vertical, JS touch horizontal)
+            # Floor header bar (desktop — CSS sticky)
             parts.append(
                 f'    <div class="floor-header-bar" '
                 f'style="grid-template-columns: 40px repeat({num_floors}, var(--col-w, 1fr));">'
@@ -968,23 +964,9 @@ def render_output_html(
                 )
             parts.append("    </div>")
 
-            parts.append('    <div class="tt-scroll">')
-
             parts.append(
                 f'    <div class="timetable" data-num-floors="{num_floors}" style="grid-template-columns: 40px repeat({num_floors}, var(--col-w, 1fr)); grid-template-rows: auto repeat({total_minutes}, {px_per_min}px);">'
             )
-
-            # Corner cell (row 1, col 1 — sticky both axes on mobile)
-            parts.append(
-                '      <div class="tt-corner-cell" style="grid-column: 1; grid-row: 1;"></div>'
-            )
-
-            # Floor pills inside grid (row 1, hidden on desktop, shown on mobile)
-            for col, fid in enumerate(floor_ids, 2):
-                loc_name = locations.get(fid, {}).get("name", fid)
-                parts.append(
-                    f'      <div class="tt-floor-pill floor-header floor-{esc(fid)}" style="display:none; grid-column: {col}; grid-row: 1; scroll-snap-align: start;">{esc(loc_name)}</div>'
-                )
 
             # Time labels and grid lines
             hour_start = grid_start // 60
@@ -1087,31 +1069,15 @@ def render_output_html(
                     )
 
             parts.append("    </div>")  # .timetable
-            parts.append("    </div>")  # .tt-scroll
-            parts.append("    </div>")  # .tt-scroll-wrap
 
             # Table uses 5-minute rows, starts 5 min early for label centering
             step = 5
             table_start = grid_start - step
             total_rows = (total_minutes + step) // step + 1
 
-            # Mobile floor header bar (separate from desktop one, direct child of panel)
-            parts.append(
-                f'    <div class="floor-header-bar mobile-fhb" '
-                f'style="display:none; grid-template-columns: 40px repeat({num_floors}, var(--col-w, 1fr));">'
-            )
-            parts.append('      <div class="floor-header-gutter"></div>')
-            for fid in floor_ids:
-                loc_name = locations.get(fid, {}).get("name", fid)
-                parts.append(
-                    f'      <div class="floor-header floor-{esc(fid)}">{esc(loc_name)}</div>'
-                )
-            parts.append("    </div>")
-
             # --- Mobile table (hidden on desktop, shown on mobile via CSS) ---
             parts.append('    <div class="tt-table-wrap">')
             parts.append('    <div class="tt-v-scroll">')
-            parts.append('    <div class="tt-h-scroll">')
             # Main table
             parts.append('    <table class="tt-table">')
             parts.append('    <colgroup><col style="width:40px;min-width:40px;">')
@@ -1205,7 +1171,10 @@ def render_output_html(
                             f'<div class="tt-photo-wrap">{photo_el}{heart_btn}</div>'
                             f'<span class="tt-name">{esc(name)}</span></div>'
                         )
-                    block_parts.append("</div></div>")
+                    block_parts.append(
+                        '<a class="tt-ics" onclick="event.stopPropagation(); downloadICS(this.closest(\'[data-ics-start]\'))">Add to calendar</a>'
+                        "</div></div>"
+                    )
                     block_html = "".join(block_parts)
 
                     artist_at[(fi, offset)] = (duration, block_html)
@@ -1239,13 +1208,13 @@ def render_output_html(
                     if next_min % 60 == 0:
                         display_h = (next_min // 60) % 24
                         parts.append(
-                            f'<td class="tt-time-td tt-line-hour" rowspan="2" style="vertical-align:middle">{display_h:02d}:00</td>'
+                            f'<td class="tt-time-td tt-line-hour" rowspan="2">{display_h:02d}:00</td>'
                         )
                         time_covered.add(row_idx + 1)
                     elif next_min % 30 == 0:
                         display_h = (next_min // 60) % 24
                         parts.append(
-                            f'<td class="tt-time-td tt-line-half" rowspan="2" style="vertical-align:middle">{display_h:02d}:30</td>'
+                            f'<td class="tt-time-td tt-line-half" rowspan="2">{display_h:02d}:30</td>'
                         )
                         time_covered.add(row_idx + 1)
                     else:
@@ -1266,8 +1235,10 @@ def render_output_html(
 
                 parts.append("</tr>")
 
+            parts.append(
+                f'    <tr style="height:calc(var(--row-h) / 2)"><td></td>{"<td></td>" * len(floor_ids)}</tr>'
+            )
             parts.append("    </tbody></table>")
-            parts.append("    </div>")  # .tt-h-scroll
             parts.append("    </div>")  # .tt-v-scroll
             parts.append("    </div>")  # .tt-table-wrap
             # --- End mobile table ---
@@ -1966,8 +1937,7 @@ def render_output_html(
         h1.textContent = h1.textContent.replace('Line-up', 'Timetable');
         requestAnimationFrame(truncateNames);
         updateNowLine();
-        requestAnimationFrame(() => { sizeMobileTable(); alignBgTables(); initTimetableTouch(); });
-        setTimeout(alignBgTables, 200);
+        requestAnimationFrame(() => { sizeMobileTable(); });
       } else {
         listView.style.display = '';
         ttView.style.display = 'none';
@@ -2001,6 +1971,7 @@ def render_output_html(
     }
 
     let _savedScrollTop = {};
+    let _carryScroll = null;
     function showPanel(date, period) {
       const prevPanel = document.querySelector('.timetable-panel.active');
       if (prevPanel) {
@@ -2011,19 +1982,18 @@ def render_output_html(
       const id = 'panel-' + date + '-' + period;
       const panel = document.getElementById(id);
       if (panel) panel.classList.add('active');
+      const scrollY = _carryScroll ? _carryScroll.top : (_savedScrollTop[period] || 0);
+      const scrollX = _carryScroll ? _carryScroll.left : 0;
+      _carryScroll = null;
       requestAnimationFrame(() => {
-        truncateNames(); sizeMobileTable(); initTimetableTouch(); alignBgTables();
+        truncateNames(); sizeMobileTable();
         const next = panel ? panel.querySelector('.tt-v-scroll') : null;
-        if (next) next.scrollTop = _savedScrollTop[period] || 0;
-        const nextH = panel ? panel.querySelector('.tt-h-scroll') : null;
-        if (nextH) nextH.scrollLeft = 0;
-        const fhb = panel ? panel.previousElementSibling : null;
-        if (fhb && fhb.classList.contains('mobile-fhb')) fhb.scrollLeft = 0;
+        if (next) { next.scrollTop = scrollY; next.scrollLeft = scrollX; }
       });
       updateNowLine();
     }
 
-    // Sticky fade observers for floor headers (desktop only — mobile uses JS positioning)
+    // Sticky fade observers for floor headers (desktop only)
     document.querySelectorAll('.floor-header-bar').forEach(el => {
       if (window.innerWidth <= 480) return;
       const top = parseFloat(getComputedStyle(el).top) || 0;
@@ -2064,6 +2034,9 @@ def render_output_html(
 
     function switchDay(date, btn) {
       track('day-switch', {day: btn.textContent.trim()});
+      const sameDay = date === currentDate;
+      const prevVScroll = document.querySelector('.timetable-panel.active .tt-v-scroll');
+      _carryScroll = sameDay ? {top: 0, left: 0} : (prevVScroll ? {top: prevVScroll.scrollTop, left: prevVScroll.scrollLeft} : null);
       currentDate = date;
       document.querySelectorAll('.day-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
@@ -2126,8 +2099,6 @@ def render_output_html(
           _popupJustOpened = true;
           return;
         }
-        const vscroll = block.closest('.tt-v-scroll');
-        if (vscroll && vscroll._stoppedMomentum) return;
         openBlockPopup(block, e.clientX, e.clientY);
       });
     });
@@ -2173,70 +2144,8 @@ def render_output_html(
     }
 
     function downloadICS(block) {
-      const name = block.dataset.name;
-      const floor = block.dataset.floor;
-      const start = block.dataset.icsStart;
-      const end = block.dataset.icsEnd;
-      if (!start || !end) return;
-      track('ics-export', {artist: name});
-
-      function toICSDate(iso) {
-        return iso.replace(/[-:]/g, '') + '00';
-      }
-
-      const dtStart = toICSDate(start);
-      const dtEnd = toICSDate(end);
-      const uid = dtStart + '-' + name.replace(/[^a-zA-Z0-9]/g, '') + '@stonetechno.deftlab.dev';
-      const now = new Date();
-      const stamp = now.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-
-      const ics = [
-        'BEGIN:VCALENDAR',
-        'VERSION:2.0',
-        'PRODID:-//Stone Techno Companion//EN',
-        'CALSCALE:GREGORIAN',
-        'METHOD:PUBLISH',
-        'BEGIN:VTIMEZONE',
-        'TZID:Europe/Berlin',
-        'BEGIN:DAYLIGHT',
-        'TZOFFSETFROM:+0100',
-        'TZOFFSETTO:+0200',
-        'TZNAME:CEST',
-        'DTSTART:19700329T020000',
-        'RRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=3',
-        'END:DAYLIGHT',
-        'BEGIN:STANDARD',
-        'TZOFFSETFROM:+0200',
-        'TZOFFSETTO:+0100',
-        'TZNAME:CET',
-        'DTSTART:19701025T030000',
-        'RRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=10',
-        'END:STANDARD',
-        'END:VTIMEZONE',
-        'BEGIN:VEVENT',
-        'DTSTART;TZID=Europe/Berlin:' + dtStart,
-        'DTEND;TZID=Europe/Berlin:' + dtEnd,
-        'DTSTAMP:' + stamp,
-        'UID:' + uid,
-        'SUMMARY:' + name,
-        'LOCATION:' + floor + ' — Stone Techno 2026',
-        'DESCRIPTION:Stone Techno 2026 — ' + name + ' @ ' + floor,
-        'BEGIN:VALARM',
-        'TRIGGER:-PT10M',
-        'ACTION:DISPLAY',
-        'DESCRIPTION:' + name + ' starts in 10 minutes',
-        'END:VALARM',
-        'END:VEVENT',
-        'END:VCALENDAR'
-      ].join('\\r\\n');  // CRLF per RFC 5545
-
-      const blob = new Blob([ics], {type: 'text/calendar;charset=utf-8'});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = name.replace(/[^a-zA-Z0-9 ]/g, '').replace(/ +/g, '_') + '.ics';
-      a.click();
-      URL.revokeObjectURL(url);
+      track('ics-export', {artist: block.dataset.name});
+      window.location.href = '/ics/' + block.dataset.artistId;
     }
 
     function closePopup() {
@@ -2247,7 +2156,7 @@ def render_output_html(
       if (popup.classList.contains('open') && !e.target.closest('.tt-popup')) closePopup();
     });
     document.addEventListener('scroll', () => closePopup(), {passive: true});
-    document.querySelectorAll('.tt-v-scroll, .tt-h-scroll').forEach(w => w.addEventListener('scroll', () => closePopup(), {passive: true}));
+    document.querySelectorAll('.tt-v-scroll').forEach(w => w.addEventListener('scroll', () => closePopup(), {passive: true}));
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape' && !document.querySelector('.modal-overlay.open')) closePopup();
     });
@@ -2288,115 +2197,6 @@ def render_output_html(
 
 
 
-    // Custom touch-driven scroll with momentum — single axis, syncs header and grid
-    function initTimetableTouch() {
-      document.querySelectorAll('.timetable-panel.active .tt-v-scroll').forEach(vscroll => {
-        if (vscroll._touchInit) return;
-        vscroll._touchInit = true;
-        const hscroll = vscroll.querySelector('.tt-h-scroll');
-        const panel = vscroll.closest('.timetable-panel');
-        const fhb = panel ? panel.querySelector('.mobile-fhb') : null;
-        if (!hscroll) return;
-
-        let startX, startY, startSL, startST, axis, velX, velY, animId;
-        const history = [];
-
-        function clampH(sl) { return Math.max(0, Math.min(sl, hscroll.scrollWidth - hscroll.clientWidth)); }
-        function clampV(st) { return Math.max(0, Math.min(st, vscroll.scrollHeight - vscroll.clientHeight)); }
-
-        function setH(sl) { hscroll.scrollLeft = sl; if (fhb) fhb.scrollLeft = sl; }
-
-        vscroll.addEventListener('touchstart', e => {
-          if (animId) { cancelAnimationFrame(animId); animId = null; vscroll._stoppedMomentum = true; }
-          else { vscroll._stoppedMomentum = false; }
-          const t = e.touches[0];
-          startX = t.clientX;
-          startY = t.clientY;
-          startSL = hscroll.scrollLeft;
-          startST = vscroll.scrollTop;
-          velX = velY = 0;
-          axis = null;
-          history.length = 0;
-          history.push({x: t.clientX, y: t.clientY, t: Date.now()});
-        }, {passive: false});
-
-        vscroll.addEventListener('touchmove', e => {
-          e.preventDefault();
-          const t = e.touches[0];
-          const dx = startX - t.clientX;
-          const dy = startY - t.clientY;
-
-          if (!axis) {
-            if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-            axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
-          }
-
-          const raw = axis === 'x' ? Math.abs(dx) : Math.abs(dy);
-          const ease = Math.min(1, raw / 40);
-          const factor = ease * ease;
-          if (axis === 'x') {
-            setH(clampH(startSL + dx * factor));
-          } else {
-            vscroll.scrollTop = clampV(startST + dy * factor);
-          }
-
-          vscroll._lastScrollTime = Date.now();
-          history.push({x: t.clientX, y: t.clientY, t: Date.now()});
-          if (history.length > 5) history.shift();
-        }, {passive: false});
-
-        vscroll.addEventListener('touchend', () => {
-          if (history.length >= 2) {
-            const first = history[0];
-            const last = history[history.length - 1];
-            const dt = Math.max(1, last.t - first.t);
-            velX = (first.x - last.x) / dt;
-            velY = (first.y - last.y) / dt;
-          }
-          const friction = 0.965;
-          let posX = hscroll.scrollLeft;
-          let posY = vscroll.scrollTop;
-          function coast() {
-            if (axis === 'x') {
-              velX *= friction;
-              if (Math.abs(velX * 24) < 0.5) { setH(Math.round(posX)); animId = null; return; }
-              posX = clampH(posX + velX * 24);
-              setH(posX);
-            } else {
-              velY *= friction;
-              if (Math.abs(velY * 24) < 0.5) { vscroll.scrollTop = Math.round(posY); animId = null; return; }
-              posY = clampV(posY + velY * 24);
-              vscroll.scrollTop = posY;
-            }
-            vscroll._lastScrollTime = Date.now();
-            animId = requestAnimationFrame(coast);
-          }
-          coast();
-        }, {passive: true});
-      });
-    }
-
-    function alignBgTables() {
-      document.querySelectorAll('.tt-table tbody').forEach(tbody => {
-        const firstLabel = tbody.querySelector('.tt-time-td[rowspan]');
-        if (!firstLabel) return;
-        const rows = tbody.querySelectorAll('tr');
-        if (rows.length < 2) return;
-        const rowH = rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().top;
-        if (rowH <= 0) return;
-        const tbodyTop = tbody.getBoundingClientRect().top;
-        const labelCenter = firstLabel.getBoundingClientRect().top + firstLabel.getBoundingClientRect().height / 2 - tbodyTop;
-        const interval30 = rowH * 6;
-        const interval60 = rowH * 12;
-        const cs = getComputedStyle(document.documentElement);
-        const hourColor = cs.getPropertyValue('--color-line-hour').trim();
-        const halfColor = cs.getPropertyValue('--color-line-half').trim();
-        tbody.style.backgroundImage =
-          'repeating-linear-gradient(to bottom, ' + hourColor + ' 0, ' + hourColor + ' 1px, transparent 1px, transparent ' + interval60 + 'px),' +
-          'repeating-linear-gradient(to bottom, ' + halfColor + ' 0, ' + halfColor + ' 1px, transparent 1px, transparent ' + interval30 + 'px)';
-        tbody.style.backgroundPosition = '0 ' + labelCenter + 'px';
-      });
-    }
     function sizeMobileTable() {
       document.querySelectorAll('.tt-v-scroll').forEach(vscroll => {
         if (vscroll.offsetHeight === 0) return;

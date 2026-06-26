@@ -787,6 +787,76 @@ def push_status(code: str, request: Request):
     return {"subscribed": count > 0}
 
 
+@app.get("/ics/{slot_id}")
+def generate_ics(slot_id: str):
+    timetable = json.loads(TIMETABLE_PATH.read_text(encoding="utf-8"))
+    slot = timetable.get("slots", {}).get(slot_id)
+    if not slot:
+        raise HTTPException(404, "Slot not found")
+    name = " b2b ".join(slot["artists"])
+    floor = slot["floor"]
+    start = slot["start"]
+    end = slot["end"]
+
+    def to_ics_dt(iso: str) -> str:
+        return iso.replace("-", "").replace(":", "") + "00"
+
+    dt_start = to_ics_dt(start)
+    dt_end = to_ics_dt(end)
+    uid = (
+        dt_start + "-" + re.sub(r"[^a-zA-Z0-9]", "", name) + "@stonetechno.deftlab.dev"
+    )
+    stamp = datetime.now(tz=ZoneInfo("UTC")).strftime("%Y%m%dT%H%M%SZ")
+
+    ics = "\r\n".join(
+        [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "PRODID:-//Stone Techno Companion//EN",
+            "CALSCALE:GREGORIAN",
+            "METHOD:PUBLISH",
+            "BEGIN:VTIMEZONE",
+            "TZID:Europe/Berlin",
+            "BEGIN:DAYLIGHT",
+            "TZOFFSETFROM:+0100",
+            "TZOFFSETTO:+0200",
+            "TZNAME:CEST",
+            "DTSTART:19700329T020000",
+            "RRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=3",
+            "END:DAYLIGHT",
+            "BEGIN:STANDARD",
+            "TZOFFSETFROM:+0200",
+            "TZOFFSETTO:+0100",
+            "TZNAME:CET",
+            "DTSTART:19701025T030000",
+            "RRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=10",
+            "END:STANDARD",
+            "END:VTIMEZONE",
+            "BEGIN:VEVENT",
+            f"DTSTART;TZID=Europe/Berlin:{dt_start}",
+            f"DTEND;TZID=Europe/Berlin:{dt_end}",
+            f"DTSTAMP:{stamp}",
+            f"UID:{uid}",
+            f"SUMMARY:{name}",
+            f"LOCATION:{floor}\\, Stone Techno 2026",
+            "BEGIN:VALARM",
+            "TRIGGER:-PT10M",
+            "ACTION:DISPLAY",
+            f"DESCRIPTION:{name} starts in 10 minutes",
+            "END:VALARM",
+            "END:VEVENT",
+            "END:VCALENDAR",
+        ]
+    )
+
+    filename = re.sub(r"[^a-zA-Z0-9 ]", "", name).replace(" ", "_") + ".ics"
+    return Response(
+        content=ics,
+        media_type="text/calendar; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def api_not_found(path: str):
     raise HTTPException(404, "Not found")
