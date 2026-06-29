@@ -4,7 +4,15 @@ import sqlite3
 from pathlib import Path
 
 
-OVERRIDE_FIELDS = {"instagram", "soundcloud", "spotify", "linktree", "youtube", "photo"}
+OVERRIDE_FIELDS = {
+    "instagram",
+    "soundcloud",
+    "spotify",
+    "linktree",
+    "youtube",
+    "photo",
+    "ra",
+}
 
 
 def init_db(db: sqlite3.Connection) -> None:
@@ -50,6 +58,9 @@ def init_db(db: sqlite3.Connection) -> None:
         ("linktree", "TEXT"),
         ("youtube", "TEXT"),
         ("spotify_listeners", "INTEGER"),
+        ("ra", "TEXT"),
+        ("ra_followers", "INTEGER"),
+        ("ra_bio", "TEXT"),
     ]:
         if col not in artist_cols:
             db.execute(f"ALTER TABLE artists ADD COLUMN {col} {typ}")
@@ -173,12 +184,19 @@ def apply_overrides(db: sqlite3.Connection, overrides_path: Path) -> None:
                 "soundcloud": "sc_followers",
                 "spotify": "spotify_listeners",
                 "photo": "photo_local",
+                "ra": "ra_followers",
             }.get(field)
             current = db.execute(
                 f"SELECT {field} FROM artists WHERE overlay_id = ?", (oid,)
             ).fetchone()[0]
             if current != value:
-                if dependent_col:
+                if field == "ra":
+                    count_val = 0 if value == "" else None
+                    db.execute(
+                        "UPDATE artists SET ra = ?, ra_followers = ?, ra_bio = ? WHERE overlay_id = ?",
+                        (value, count_val, None if count_val is None else "", oid),
+                    )
+                elif dependent_col:
                     count_val = 0 if value == "" else None
                     db.execute(
                         f"UPDATE artists SET {field} = ?, {dependent_col} = ? WHERE overlay_id = ?",
@@ -210,6 +228,14 @@ def get_missing(
 ) -> list[tuple[str, str]]:
     return db.execute(
         f"SELECT overlay_id, {url_col} FROM artists WHERE {url_col} IS NOT NULL AND {url_col} != '' AND {count_col} IS NULL"
+    ).fetchall()
+
+
+def get_artists_without_ra(db: sqlite3.Connection) -> list[sqlite3.Row]:
+    cur = db.cursor()
+    cur.row_factory = sqlite3.Row
+    return cur.execute(
+        "SELECT * FROM artists WHERE (ra IS NULL OR ra = '') AND ra_followers IS NULL"
     ).fetchall()
 
 
@@ -272,7 +298,8 @@ def load_assignments_from_db(db: sqlite3.Connection) -> dict[str, list[dict]]:
     for row in db.execute(
         "SELECT a.name, a.instagram, a.soundcloud, a.spotify, a.linktree, a.youtube, "
         "a.photo_local, a.ig_followers, a.sc_followers, a.spotify_listeners, "
-        "s.timestamp_key, sa.location_id, a.overlay_id, sa.start_time, sa.end_time "
+        "s.timestamp_key, sa.location_id, a.overlay_id, sa.start_time, sa.end_time, "
+        "a.ra, a.ra_followers "
         "FROM artist_sections sa "
         "JOIN artists a ON a.overlay_id = sa.overlay_id "
         "JOIN sections s ON s.timestamp_key = sa.timestamp_key "
@@ -295,6 +322,8 @@ def load_assignments_from_db(db: sqlite3.Connection) -> dict[str, list[dict]]:
                 "all_slots": all_slots.get(row[12], []),
                 "start_time": row[13],
                 "end_time": row[14],
+                "ra": row[15],
+                "ra_followers": row[16],
             }
         )
     return assignments
@@ -304,11 +333,14 @@ _VALID_FIELDS = {
     "ig_followers",
     "sc_followers",
     "spotify_listeners",
+    "ra_followers",
+    "ra_bio",
     "instagram",
     "soundcloud",
     "spotify",
     "linktree",
     "youtube",
+    "ra",
     "photo_local",
 }
 

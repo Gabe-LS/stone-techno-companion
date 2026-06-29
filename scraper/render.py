@@ -33,6 +33,7 @@ SVG_SC = _load_icon("soundcloud")
 SVG_SP = _load_icon("spotify")
 SVG_LT = _load_icon("linktree")
 SVG_YT = _load_icon("youtube")
+SVG_RA = _load_icon("ra")
 
 
 def _svg_to_symbol(svg: str, symbol_id: str) -> str:
@@ -93,9 +94,11 @@ def _artists_json(group: list[dict], photos_prefix: str) -> str:
                 "sp": a.get("spotify") or "",
                 "lt": a.get("linktree") or "",
                 "yt": a.get("youtube") or "",
+                "ra": a.get("ra") or "",
                 "igF": format_followers(a.get("ig_followers")) or "",
                 "scF": format_followers(a.get("sc_followers")) or "",
                 "spL": format_followers(a.get("spotify_listeners")) or "",
+                "raF": format_followers(a.get("ra_followers")) or "",
             }
             for a in group
         ]
@@ -238,8 +241,7 @@ def render_output_html(
     .artist-info { flex: 1; min-width: 0; }
     .artist-name { font-weight: 700; font-size: var(--font-lg); display: block; margin-bottom: 3px; }
     .artist-schedule { color: var(--color-muted); font-size: var(--font-sm); display: block; margin-bottom: 6px; }
-    .artist-schedule + .artist-also { margin-top: -4px; }
-    .artist-also { color: var(--color-muted); font-size: var(--font-xs); display: block; margin-bottom: 6px; }
+    .artist-also { color: var(--color-muted); font-size: var(--font-xs); line-height: 1; margin-top: 4px; }
     .links { display: flex; flex-wrap: wrap; column-gap: 18px; row-gap: 4px; align-items: center; }
     .links a { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; color: #555; font-size: var(--font-xs); padding: 3px 0; min-width: 72px; font-variant-numeric: tabular-nums; }
     .links a:hover { color: #111; }
@@ -252,9 +254,10 @@ def render_output_html(
       h2 { font-size: var(--font-xl); padding: 6px 0; top: 100px; }
       h3.period-heading { font-size: var(--font-base); padding: 6px 0 4px; top: 148px; margin: 16px 0 8px; }
       h4.location-heading { top: 176px; }
-      li.artist-item { gap: 10px; padding: 10px; }
-      .artist-photo { width: 72px; height: 72px; border-radius: 4px; }
-      .photo-placeholder { width: 72px; height: 72px; border-radius: 4px; }
+      li.artist-item { gap: 10px; padding: 10px; align-items: flex-start; flex-wrap: wrap; }
+      .artist-also { margin-left: calc(-72px - 10px); width: calc(100% + 72px + 10px); margin-top: 10px; display: block; }
+      .artist-photo { width: 72px; height: 72px; border-radius: 4px; margin-top: 2px; }
+      .photo-placeholder { width: 72px; height: 72px; border-radius: 4px; margin-top: 2px; }
       .artist-name { font-size: var(--font-base); }
       .artist-schedule { font-size: var(--font-xs); margin-bottom: 4px; }
       .links { column-gap: 8px; row-gap: 0; }
@@ -409,11 +412,12 @@ def render_output_html(
     .tt-popup { position: fixed; z-index: 200; background: #fff; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.18); padding: 16px; width: 320px; max-width: 90vw; visibility: hidden; opacity: 0; pointer-events: none; }
     .tt-popup.open { visibility: visible; opacity: 1; pointer-events: auto; }
     .tt-popup .popup-meta { font-size: var(--font-xs); color: var(--color-muted); margin-bottom: 10px; }
-    .tt-popup .popup-artist { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
-    .tt-popup .popup-photo { width: 48px; height: 48px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
-    .tt-popup .popup-photo-placeholder { width: 48px; height: 48px; border-radius: 6px; background: #eee; flex-shrink: 0; }
+    .tt-popup .popup-artist { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 10px; }
+    .tt-popup .popup-artist:last-child { margin-bottom: 0; }
+    .tt-popup .popup-photo { width: 80px; height: 80px; border-radius: 6px; object-fit: cover; flex-shrink: 0; margin-top: 2px; }
+    .tt-popup .popup-photo-placeholder { width: 80px; height: 80px; border-radius: 6px; background: #eee; flex-shrink: 0; margin-top: 2px; }
     .tt-popup .popup-name { font-weight: 700; font-size: var(--font-base); }
-    .tt-popup .links { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
+    .tt-popup .links { display: flex; flex-wrap: wrap; column-gap: 24px; row-gap: 0; margin-top: 8px; }
     .tt-popup .links a { display: inline-flex; align-items: center; gap: 4px; text-decoration: none; color: #555; font-size: var(--font-xs); }
     .tt-popup .links a:hover { color: #111; }
 
@@ -440,6 +444,7 @@ def render_output_html(
       .cmd-sep { display: none; }
 
       /* View label — left aligned, 16px */
+      .cmd-bar { cursor: pointer; -webkit-tap-highlight-color: transparent; }
       .cmd-bar .view-label { color: #fff; font-size: 16px; font-weight: 600; letter-spacing: 0.02em; display: flex; align-items: center; height: 100%; }
 
       /* Hamburger — 48x48 tap target, 28px SVG */
@@ -507,6 +512,7 @@ def render_output_html(
 
       /* Popup full width on mobile */
       .tt-popup { width: calc(100vw - 24px); max-width: none; left: 12px !important; }
+      .tt-popup .popup-photo, .tt-popup .popup-photo-placeholder { width: 64px; height: 64px; }
     }
     """)
     parts.append("  </style>")
@@ -524,6 +530,7 @@ def render_output_html(
     parts.append(f"    {_svg_to_symbol(SVG_SP, 'i-sp')}")
     parts.append(f"    {_svg_to_symbol(SVG_LT, 'i-lt')}")
     parts.append(f"    {_svg_to_symbol(SVG_YT, 'i-yt')}")
+    parts.append(f"    {_svg_to_symbol(SVG_RA, 'i-ra')}")
     parts.append("  </svg>")
     parts.append('  <div class="cmd-bar" id="cmd-bar">')
     parts.append('    <span class="view-label" id="view-label">Line-up</span>')
@@ -771,9 +778,11 @@ def render_output_html(
         sp = a.get("spotify")
         lt = a.get("linktree")
         yt = a.get("youtube")
+        ra = a.get("ra")
         ig_f = format_followers(a.get("ig_followers"))
         sc_f = format_followers(a.get("sc_followers"))
         sp_l = format_followers(a.get("spotify_listeners"))
+        ra_f = format_followers(a.get("ra_followers"))
         sched_main, sched_also = _format_artist_schedule(
             a.get("all_slots", []), cur_date, cur_period
         )
@@ -795,8 +804,6 @@ def render_output_html(
             parts.append(
                 f'        <span class="artist-schedule">{esc(sched_main)}</span>'
             )
-        if sched_also:
-            parts.append(f'        <span class="artist-also">{esc(sched_also)}</span>')
         parts.append('        <div class="links">')
         if ig:
             parts.append(
@@ -810,17 +817,23 @@ def render_output_html(
             parts.append(
                 f"          {_link(sp, _use_svg('i-sp', width='18', height='18'), sp_l or '')}"
             )
-        if lt:
-            parts.append(
-                f"          {_link(lt, _use_svg('i-lt', width='18', height='18'))}"
-            )
         if yt:
             parts.append(
                 f"          {_link(yt, _use_svg('i-yt', width='18', height='18'))}"
             )
-        if not ig and not sc and not sp and not lt and not yt:
+        if ra:
+            parts.append(
+                f"          {_link(ra, _use_svg('i-ra', width='18', height='18'), ra_f or '')}"
+            )
+        if lt:
+            parts.append(
+                f"          {_link(lt, _use_svg('i-lt', width='18', height='18'))}"
+            )
+        if not ig and not sc and not sp and not lt and not yt and not ra:
             parts.append('          <span class="missing">No links</span>')
         parts.append("        </div>")
+        if sched_also:
+            parts.append(f'        <span class="artist-also">{esc(sched_also)}</span>')
         parts.append("        </div>")
         parts.append(
             '        <button class="heart-btn" onclick="toggleHeart(this)" aria-label="Add to favorites" aria-pressed="false"><svg viewBox="0 0 24 24"><use href="#i-heart"/></svg></button>'
@@ -1886,6 +1899,11 @@ def render_output_html(
       document.getElementById('cmd-dropdown').classList.toggle('open');
       document.getElementById('menu-overlay').classList.toggle('open');
     }
+    if (window.matchMedia('(max-width:768px)').matches) {
+      document.getElementById('cmd-bar').addEventListener('click', function(e) {
+        if (!e.target.closest('.hamburger')) toggleMenu();
+      });
+    }
     function closeMenu() {
       document.getElementById('cmd-dropdown').classList.remove('open');
       document.getElementById('menu-overlay').classList.remove('open');
@@ -2155,7 +2173,8 @@ def render_output_html(
     const SVG_SC_JS = '<svg width="18" height="18"><use href="#i-sc"/></svg>';
     const SVG_SP_JS = '<svg width="18" height="18"><use href="#i-sp"/></svg>';
     const SVG_LT_JS = '<svg width="18" height="18"><use href="#i-lt"/></svg>';
-    const SVG_YT_JS = '<svg width="18" height="18"><use href="#i-yt"/></svg>';""")
+    const SVG_YT_JS = '<svg width="18" height="18"><use href="#i-yt"/></svg>';
+    const SVG_RA_JS = '<svg width="18" height="18"><use href="#i-ra"/></svg>';""")
         parts.append("""
     let _popupJustOpened = false;
     document.querySelectorAll('.tt-block').forEach(block => {
@@ -2187,8 +2206,9 @@ def render_output_html(
             if (a.ig) links += _popupLink(a.ig, SVG_IG_JS, a.igF);
             if (a.sc) links += _popupLink(a.sc, SVG_SC_JS, a.scF);
             if (a.sp) links += _popupLink(a.sp, SVG_SP_JS, a.spL);
-            if (a.lt) links += _popupLink(a.lt, SVG_LT_JS, '');
             if (a.yt) links += _popupLink(a.yt, SVG_YT_JS, '');
+            if (a.ra) links += _popupLink(a.ra, SVG_RA_JS, a.raF);
+            if (a.lt) links += _popupLink(a.lt, SVG_LT_JS, '');
             artistsHtml += '<div class="popup-artist">' + photo + '<div><div class="popup-name">' + a.name + '</div><div class="links">' + links + '</div></div></div>';
           });
           document.getElementById('popup-artists').innerHTML = artistsHtml;

@@ -25,6 +25,7 @@ from scraper.render import render_output_html
 from scraper.timetable_json import generate_timetable_json
 from scraper.scrape import (
     fetch_all_ig,
+    fetch_all_ra,
     fetch_all_sc,
     fetch_all_spotify,
     scrape_lineup,
@@ -133,7 +134,8 @@ def main() -> None:
 
                     if args.refresh_followers:
                         db.execute(
-                            "UPDATE artists SET ig_followers = NULL, sc_followers = NULL, spotify_listeners = NULL"
+                            "UPDATE artists SET ig_followers = NULL, sc_followers = NULL, "
+                            "spotify_listeners = NULL, ra = NULL, ra_followers = NULL, ra_bio = NULL"
                         )
                         db.commit()
 
@@ -141,6 +143,7 @@ def main() -> None:
                         fetch_all_sc(ctx, db)
                         fetch_all_ig(ctx, db)
                         fetch_all_spotify(ctx, db)
+                        fetch_all_ra(ctx, db)
                 finally:
                     browser.close()
         else:

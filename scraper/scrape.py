@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from bs4 import BeautifulSoup
 from playwright.sync_api import BrowserContext
 
-from .db import get_artist, get_missing, update_artist_field
+from .db import get_artist, get_artists_without_ra, get_missing, update_artist_field
 
 logger = logging.getLogger(__name__)
 
@@ -421,7 +421,11 @@ def fetch_ig_profile(ctx: BrowserContext, url: str) -> dict:
             soup = BeautifulSoup(page.content(), "html.parser")
             meta = soup.find("meta", attrs={"property": "og:description"})
             if meta:
-                m = re.match(r"([\d,.]+[KMB]?)\s+Follower", meta.get("content", ""), re.IGNORECASE)
+                m = re.match(
+                    r"([\d,.]+[KMB]?)\s+Follower",
+                    meta.get("content", ""),
+                    re.IGNORECASE,
+                )
                 if m:
                     result["followers"] = parse_follower_count(m.group(1))
 
@@ -529,3 +533,168 @@ def fetch_all_spotify(ctx: BrowserContext, db: sqlite3.Connection) -> None:
                 update_artist_field(db, o, "spotify_listeners", listeners)
 
         print(f" -> {listeners:,}" if listeners else " -> ?")
+
+
+# ---------------------------------------------------------------------------
+# Resident Advisor
+# ---------------------------------------------------------------------------
+
+_RA_SEARCH_QUERY = """
+query SearchArtists($term: String!) {
+    search(searchTerm: $term, limit: 5, indices: [ARTIST]) {
+        id
+        value
+        contentUrl
+        searchType
+        score
+    }
+}
+"""
+
+_RA_ARTIST_QUERY = """
+query GetArtist($slug: String!) {
+    artist(slug: $slug) {
+        id
+        name
+        followerCount
+        contentUrl
+        facebook
+        instagram
+        twitter
+        soundcloud
+        discogs
+        bandcamp
+        website
+        biography { blurb content }
+    }
+}
+"""
+
+
+def _ra_gql(page, query: str, variables: dict) -> dict:
+    return page.evaluate(
+        """async ([query, variables]) => {
+        const resp = await fetch('https://ra.co/graphql', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Referer': 'https://ra.co/',
+            },
+            body: JSON.stringify({ query, variables })
+        });
+        return await resp.json();
+    }""",
+        [query, variables],
+    )
+
+
+def _normalize_social_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    url = url.strip().rstrip("/").lower()
+    parsed = urlparse(url)
+    host = parsed.netloc.replace("www.", "").replace("m.", "")
+    path = parsed.path.rstrip("/")
+    return f"{host}{path}"
+
+
+def _ra_match_score(ra_profile: dict, db_artist) -> int:
+    score = 0
+    for field in ("soundcloud", "instagram"):
+        ra_val = _normalize_social_url(ra_profile.get(field))
+        db_val = _normalize_social_url(db_artist[field])
+        if ra_val and db_val:
+            if ra_val == db_val:
+                score += 3
+            else:
+                score -= 2
+    ra_name = (ra_profile.get("name") or "").strip().lower()
+    db_name = (db_artist["name"] or "").strip().lower()
+    if ra_name == db_name:
+        score += 2
+    elif ra_name and db_name and (ra_name in db_name or db_name in ra_name):
+        score += 1
+    return score
+
+
+def fetch_ra_profile(page, artist_name: str, db_artist) -> dict | None:
+    """Search RA for an artist, validate via social link matching, return profile."""
+    result = _ra_gql(page, _RA_SEARCH_QUERY, {"term": artist_name})
+    hits = (result.get("data") or {}).get("search") or []
+    if not hits:
+        return None
+
+    for hit in hits:
+        content_url = hit.get("contentUrl", "")
+        if not content_url.startswith("/dj/"):
+            continue
+        slug = content_url.replace("/dj/", "").strip("/")
+
+        profile_result = _ra_gql(page, _RA_ARTIST_QUERY, {"slug": slug})
+        profile = (profile_result.get("data") or {}).get("artist")
+        if not profile:
+            continue
+
+        score = _ra_match_score(profile, db_artist)
+
+        has_social_overlap = any(
+            _normalize_social_url(profile.get(f))
+            and _normalize_social_url(db_artist[f])
+            for f in ("soundcloud", "instagram")
+        )
+        if has_social_overlap and score >= 3:
+            bio = profile.get("biography") or {}
+            return {
+                "ra_url": f"https://ra.co{profile['contentUrl']}",
+                "ra_followers": profile.get("followerCount"),
+                "ra_bio": bio.get("content") or "",
+            }
+        if not has_social_overlap and score >= 2:
+            bio = profile.get("biography") or {}
+            return {
+                "ra_url": f"https://ra.co{profile['contentUrl']}",
+                "ra_followers": profile.get("followerCount"),
+                "ra_bio": bio.get("content") or "",
+            }
+
+    return None
+
+
+def fetch_all_ra(ctx: BrowserContext, db: sqlite3.Connection) -> None:
+    missing = get_artists_without_ra(db)
+    if not missing:
+        return
+
+    total = len(missing)
+    print(f"Fetching {total} Resident Advisor profiles ...")
+
+    page = ctx.new_page()
+    try:
+        page.goto("https://ra.co", wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_timeout(2000)
+
+        matched = 0
+        for i, artist in enumerate(missing, 1):
+            print(f"  [{i}/{total}] RA: {artist['name']}", end="", flush=True)
+
+            profile = fetch_ra_profile(page, artist["name"], artist)
+
+            if profile:
+                matched += 1
+                update_artist_field(db, artist["overlay_id"], "ra", profile["ra_url"])
+                update_artist_field(
+                    db, artist["overlay_id"], "ra_followers", profile["ra_followers"]
+                )
+                bio = profile["ra_bio"].strip()
+                if bio:
+                    update_artist_field(db, artist["overlay_id"], "ra_bio", bio)
+                fc = f"{profile['ra_followers']:,}" if profile["ra_followers"] else "?"
+                print(f" -> {fc} followers ({profile['ra_url']})")
+            else:
+                update_artist_field(db, artist["overlay_id"], "ra", "")
+                update_artist_field(db, artist["overlay_id"], "ra_followers", 0)
+                print(" -> not found")
+    finally:
+        page.close()
+
+    print(f"Matched {matched}/{total} artists on Resident Advisor")
