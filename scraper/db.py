@@ -24,6 +24,7 @@ def init_db(db: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS events (
             id         TEXT PRIMARY KEY,
             name       TEXT NOT NULL,
+            edition    TEXT,
             source_url TEXT,
             website    TEXT,
             start_date TEXT,
@@ -113,16 +114,18 @@ PLATFORM_POSITIONS = {
 
 def ensure_event(db: sqlite3.Connection, event_id: str, name: str, **kwargs) -> None:
     db.execute(
-        "INSERT INTO events (id, name, source_url, website, start_date, end_date, "
+        "INSERT INTO events (id, name, edition, source_url, website, start_date, end_date, "
         "timezone, address, latitude, longitude) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-        "ON CONFLICT(id) DO UPDATE SET name=excluded.name, source_url=excluded.source_url, "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(id) DO UPDATE SET name=excluded.name, edition=excluded.edition, "
+        "source_url=excluded.source_url, "
         "website=excluded.website, start_date=excluded.start_date, end_date=excluded.end_date, "
         "timezone=excluded.timezone, address=excluded.address, "
         "latitude=excluded.latitude, longitude=excluded.longitude",
         (
             event_id,
             name,
+            kwargs.get("edition"),
             kwargs.get("source_url"),
             kwargs.get("website"),
             kwargs.get("start_date"),

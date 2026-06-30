@@ -14,6 +14,7 @@ from playwright.sync_api import sync_playwright
 from scraper.db import (
     apply_overrides,
     ensure_event,
+    get_event,
     init_db,
     load_all_sets,
     load_assignments_from_db,
@@ -44,7 +45,8 @@ VPS_HOST = "root@209.38.244.136"
 VPS_STATIC_DIR = "/root/services/stone-techno/server/static/"
 
 DEFAULT_EVENT_ID = "stone-techno-2026"
-DEFAULT_EVENT_NAME = "Stone Techno 2026"
+DEFAULT_EVENT_NAME = "Stone Techno"
+DEFAULT_EVENT_EDITION = "2026"
 
 
 def deploy_to_vps(output_dir: Path, output_path: Path) -> None:
@@ -95,9 +97,9 @@ def main() -> None:
     )
     parser.add_argument("--url", default=STONE_TECHNO_URL)
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
-    parser.add_argument("--title", default="Stone Techno Companion")
     parser.add_argument("--event-id", default=DEFAULT_EVENT_ID)
     parser.add_argument("--event-name", default=DEFAULT_EVENT_NAME)
+    parser.add_argument("--event-edition", default=DEFAULT_EVENT_EDITION)
     parser.add_argument(
         "--no-followers", action="store_true", help="Skip fetching follower counts"
     )
@@ -128,7 +130,13 @@ def main() -> None:
     db.row_factory = sqlite3.Row
     try:
         init_db(db)
-        ensure_event(db, event_id, args.event_name, url=args.url)
+        ensure_event(
+            db,
+            event_id,
+            args.event_name,
+            edition=args.event_edition,
+            source_url=args.url,
+        )
 
         if not args.render_only:
             with sync_playwright() as p:
@@ -184,8 +192,14 @@ def main() -> None:
             a.get("start_time") for artists in all_assignments.values() for a in artists
         )
 
+        event = get_event(db, event_id)
+        event_title = event["name"] if event else args.event_name
+        if event and event["edition"]:
+            event_title = f"{event['name']} {event['edition']}"
+        page_title = f"{event_title} Companion"
+
         output_html = render_output_html(
-            args.title,
+            page_title,
             ordered_sections,
             all_assignments,
             all_locations,

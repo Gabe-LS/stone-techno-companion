@@ -14,7 +14,8 @@ VIDEOS_JSON = Path(__file__).resolve().parent / "output" / "videos.json"
 OVERRIDES_PATH = Path(__file__).resolve().parent / "scraper" / "overrides.toml"
 
 DEFAULT_EVENT_ID = "stone-techno-2026"
-DEFAULT_EVENT_NAME = "Stone Techno 2026"
+DEFAULT_EVENT_NAME = "Stone Techno"
+DEFAULT_EVENT_EDITION = "2026"
 DEFAULT_EVENT_URL = "https://www.stone-techno.com/"
 DEFAULT_TIMEZONE = "Europe/Berlin"
 
@@ -86,6 +87,7 @@ def migrate() -> None:
         CREATE TABLE IF NOT EXISTS events (
             id         TEXT PRIMARY KEY,
             name       TEXT NOT NULL,
+            edition    TEXT,
             source_url TEXT,
             website    TEXT,
             start_date TEXT,
@@ -160,8 +162,14 @@ def migrate() -> None:
 
     # Event
     db.execute(
-        "INSERT OR IGNORE INTO events (id, name, source_url, timezone) VALUES (?, ?, ?, ?)",
-        (DEFAULT_EVENT_ID, DEFAULT_EVENT_NAME, DEFAULT_EVENT_URL, DEFAULT_TIMEZONE),
+        "INSERT OR IGNORE INTO events (id, name, edition, source_url, timezone) VALUES (?, ?, ?, ?, ?)",
+        (
+            DEFAULT_EVENT_ID,
+            DEFAULT_EVENT_NAME,
+            DEFAULT_EVENT_EDITION,
+            DEFAULT_EVENT_URL,
+            DEFAULT_TIMEZONE,
+        ),
     )
     print(f"Created event: {DEFAULT_EVENT_ID}")
 
