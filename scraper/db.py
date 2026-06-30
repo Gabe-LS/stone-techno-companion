@@ -175,7 +175,7 @@ def apply_overrides(db: sqlite3.Connection, overrides_path: Path) -> None:
             }.get(col)
             current = db.execute(
                 f"SELECT {col} FROM artists WHERE id = ?", (aid,)
-            ).fetchone()[0]
+            ).fetchone()[col]
             if current != value:
                 if col == "ra":
                     count_val = 0 if value == "" else None
