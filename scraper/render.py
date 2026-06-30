@@ -2177,8 +2177,10 @@ def render_output_html(
     if has_timetable:
         parts.append("""
     // View toggle
+    var _viewScrollPos = { list: 0, timetable: 0 };
     function switchView(view, btn) {
       track('view-switch', {view});
+      _viewScrollPos[currentView] = window.scrollY;
       currentView = view;
       localStorage.setItem('stc_view', view);
       const listView = document.getElementById('list-view');
@@ -2209,7 +2211,7 @@ def render_output_html(
         if (btnSched) btnSched.classList.remove('active');
       }
       document.getElementById('view-label').textContent = view === 'timetable' ? 'Timetable' : 'Line-up';
-      window.scrollTo(0, 0);
+      window.scrollTo(0, _viewScrollPos[view] || 0);
       syncDropdownState();
     }
 
