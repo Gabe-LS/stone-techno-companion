@@ -18,9 +18,9 @@ from scraper.db import (
     init_db,
     load_all_sets,
     load_assignments_from_db,
-    load_floor_curators,
-    load_location_colors,
-    load_locations_from_db,
+    load_stage_curators,
+    load_stage_colors,
+    load_stages_from_db,
     load_sections_from_db,
     upsert_lineup,
 )
@@ -182,11 +182,11 @@ def main() -> None:
             process_artist_photos(db, output_dir / "photos")
 
         ordered_sections = load_sections_from_db(db, event_id)
-        all_locations = load_locations_from_db(db, event_id)
+        all_locations = load_stages_from_db(db, event_id)
         all_assignments = load_assignments_from_db(db, event_id)
         all_videos = load_all_sets(db)
-        floor_curators = load_floor_curators(db, event_id)
-        floor_colors = load_location_colors(db, event_id)
+        stage_curators = load_stage_curators(db, event_id)
+        stage_colors = load_stage_colors(db, event_id)
 
         has_timetable = any(
             a.get("start_time") for artists in all_assignments.values() for a in artists
@@ -204,8 +204,8 @@ def main() -> None:
             all_assignments,
             all_locations,
             has_timetable=has_timetable,
-            floor_curators=floor_curators,
-            floor_colors=floor_colors,
+            stage_curators=stage_curators,
+            stage_colors=stage_colors,
             output_dir=str(output_dir),
             videos=all_videos,
         )

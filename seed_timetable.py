@@ -37,9 +37,14 @@ SET_LENGTHS = [60, 75, 90, 105, 120]
 def seed(db: sqlite3.Connection, event_id: str = DEFAULT_EVENT_ID) -> None:
     for loc_id, name, desc in ALL_FLOORS:
         db.execute(
-            "INSERT INTO locations (id, event_id, name, description) VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description",
-            (loc_id, event_id, name, desc),
+            "INSERT INTO stages (id, name) VALUES (?, ?) "
+            "ON CONFLICT(id) DO UPDATE SET name=excluded.name",
+            (loc_id, name),
+        )
+        db.execute(
+            "INSERT INTO event_stages (event_id, stage_id) VALUES (?, ?) "
+            "ON CONFLICT(event_id, stage_id) DO NOTHING",
+            (event_id, loc_id),
         )
 
     date_periods = db.execute(
@@ -118,7 +123,7 @@ def seed(db: sqlite3.Connection, event_id: str = DEFAULT_EVENT_ID) -> None:
                 for aid in group:
                     db.execute(
                         "INSERT INTO schedule "
-                        "(artist_id, event_id, location_id, start_time, end_time, date, period) "
+                        "(artist_id, event_id, stage_id, start_time, end_time, date, period) "
                         "VALUES (?, ?, ?, ?, ?, ?, ?)",
                         (aid, event_id, floor_id, start_time, end_time, date, period),
                     )

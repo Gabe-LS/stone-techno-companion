@@ -50,39 +50,50 @@ def init_db(db: sqlite3.Connection) -> None:
             PRIMARY KEY (artist_id, platform)
         );
         CREATE INDEX IF NOT EXISTS idx_artist_links_artist ON artist_links(artist_id);
-        CREATE TABLE IF NOT EXISTS locations (
+        CREATE TABLE IF NOT EXISTS venues (
             id        TEXT PRIMARY KEY,
-            event_id  TEXT NOT NULL REFERENCES events(id),
             name      TEXT NOT NULL,
-            color     TEXT,
             about     TEXT,
             address   TEXT,
             latitude  REAL,
             longitude REAL
         );
-        CREATE TABLE IF NOT EXISTS location_notes (
-            location_id TEXT NOT NULL REFERENCES locations(id),
-            date        TEXT NOT NULL,
-            note        TEXT NOT NULL,
-            position    INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY (location_id, date, position)
+        CREATE TABLE IF NOT EXISTS stages (
+            id       TEXT PRIMARY KEY,
+            name     TEXT NOT NULL,
+            about    TEXT,
+            venue_id TEXT REFERENCES venues(id)
         );
-        CREATE TABLE IF NOT EXISTS location_details (
-            location_id TEXT NOT NULL REFERENCES locations(id),
-            label       TEXT NOT NULL,
-            value       TEXT NOT NULL,
-            position    INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY (location_id, label)
+        CREATE TABLE IF NOT EXISTS event_stages (
+            event_id TEXT NOT NULL REFERENCES events(id),
+            stage_id TEXT NOT NULL REFERENCES stages(id),
+            color    TEXT,
+            position INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (event_id, stage_id)
+        );
+        CREATE TABLE IF NOT EXISTS stage_notes (
+            stage_id TEXT NOT NULL REFERENCES stages(id),
+            date     TEXT NOT NULL,
+            note     TEXT NOT NULL,
+            position INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (stage_id, date, position)
+        );
+        CREATE TABLE IF NOT EXISTS stage_details (
+            stage_id TEXT NOT NULL REFERENCES stages(id),
+            label    TEXT NOT NULL,
+            value    TEXT NOT NULL,
+            position INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (stage_id, label)
         );
         CREATE TABLE IF NOT EXISTS schedule (
-            artist_id   TEXT NOT NULL REFERENCES artists(id),
-            event_id    TEXT NOT NULL REFERENCES events(id),
-            location_id TEXT REFERENCES locations(id),
-            start_time  TEXT NOT NULL,
-            end_time    TEXT NOT NULL,
-            date        TEXT NOT NULL,
-            period      TEXT,
-            set_type    TEXT,
+            artist_id TEXT NOT NULL REFERENCES artists(id),
+            event_id  TEXT NOT NULL REFERENCES events(id),
+            stage_id  TEXT REFERENCES stages(id),
+            start_time TEXT NOT NULL,
+            end_time   TEXT NOT NULL,
+            date       TEXT NOT NULL,
+            period     TEXT,
+            set_type   TEXT,
             PRIMARY KEY (artist_id, event_id, start_time)
         );
         CREATE INDEX IF NOT EXISTS idx_schedule_event ON schedule(event_id, date, period);
@@ -147,15 +158,20 @@ def upsert_lineup(db: sqlite3.Connection, parsed: dict, event_id: str) -> None:
     all_dates = sorted({date for date, _ in section_lookup.values()})
     for loc_id, loc in parsed["locations"].items():
         db.execute(
-            "INSERT INTO locations (id, event_id, name) VALUES (?, ?, ?) "
+            "INSERT INTO stages (id, name) VALUES (?, ?) "
             "ON CONFLICT(id) DO UPDATE SET name=excluded.name",
-            (loc_id, event_id, loc["name"]),
+            (loc_id, loc["name"]),
+        )
+        db.execute(
+            "INSERT INTO event_stages (event_id, stage_id) VALUES (?, ?) "
+            "ON CONFLICT(event_id, stage_id) DO NOTHING",
+            (event_id, loc_id),
         )
         loc_desc = loc.get("description")
         if loc_desc:
             for date in all_dates:
                 db.execute(
-                    "INSERT OR IGNORE INTO location_notes (location_id, date, note, position) "
+                    "INSERT OR IGNORE INTO stage_notes (stage_id, date, note, position) "
                     "VALUES (?, ?, ?, 0)",
                     (loc_id, date, loc_desc),
                 )
@@ -163,7 +179,7 @@ def upsert_lineup(db: sqlite3.Connection, parsed: dict, event_id: str) -> None:
         current_locs = list(parsed["locations"].keys())
         placeholders = ",".join("?" * len(current_locs))
         db.execute(
-            f"DELETE FROM locations WHERE event_id = ? AND id NOT IN ({placeholders})",
+            f"DELETE FROM event_stages WHERE event_id = ? AND stage_id NOT IN ({placeholders})",
             [event_id, *current_locs],
         )
 
@@ -194,7 +210,7 @@ def upsert_lineup(db: sqlite3.Connection, parsed: dict, event_id: str) -> None:
             date, period = section_lookup.get(ts_key, ("", None))
             db.execute(
                 "INSERT OR IGNORE INTO schedule "
-                "(artist_id, event_id, location_id, start_time, end_time, date, period) "
+                "(artist_id, event_id, stage_id, start_time, end_time, date, period) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     assignment["overlay_id"],
@@ -255,10 +271,9 @@ def apply_overrides(
                 ).fetchone()[col]
                 if current != value:
                     if dependent:
-                        dep_val = None if value else None
                         db.execute(
-                            f"UPDATE artists SET {col} = ?, {dependent} = ? WHERE id = ?",
-                            (value, dep_val, aid),
+                            f"UPDATE artists SET {col} = ?, {dependent} = NULL WHERE id = ?",
+                            (value, aid),
                         )
                     else:
                         db.execute(
@@ -291,16 +306,16 @@ def apply_overrides(
     if event_id:
         curators = overrides.get("floor_curators", {})
         for key, note in curators.items():
-            date, loc_id = key.split(".", 1)
+            date, stage_id = key.split(".", 1)
             existing = db.execute(
-                "SELECT MAX(position) FROM location_notes WHERE location_id = ? AND date = ?",
-                (loc_id, date),
+                "SELECT MAX(position) FROM stage_notes WHERE stage_id = ? AND date = ?",
+                (stage_id, date),
             ).fetchone()[0]
             pos = (existing or 0) + 1
             db.execute(
-                "INSERT OR IGNORE INTO location_notes (location_id, date, note, position) "
+                "INSERT OR IGNORE INTO stage_notes (stage_id, date, note, position) "
                 "VALUES (?, ?, ?, ?)",
-                (loc_id, date, note, pos),
+                (stage_id, date, note, pos),
             )
         if curators:
             applied += len(curators)
@@ -310,24 +325,25 @@ def apply_overrides(
         print(f"Applied {applied} override(s) from overrides.toml")
 
 
-def load_floor_curators(db: sqlite3.Connection, event_id: str) -> dict[str, str]:
+def load_stage_curators(db: sqlite3.Connection, event_id: str) -> dict[str, str]:
     return {
-        f"{row['date']}.{row['location_id']}": row["note"]
+        f"{row['date']}.{row['stage_id']}": row["note"]
         for row in db.execute(
-            "SELECT ln.location_id, ln.date, ln.note FROM location_notes ln "
-            "JOIN locations l ON l.id = ln.location_id "
-            "WHERE l.event_id = ? "
-            "ORDER BY ln.position",
+            "SELECT sn.stage_id, sn.date, sn.note FROM stage_notes sn "
+            "JOIN event_stages es ON es.stage_id = sn.stage_id "
+            "WHERE es.event_id = ? "
+            "ORDER BY sn.position",
             (event_id,),
         )
     }
 
 
-def load_location_colors(db: sqlite3.Connection, event_id: str) -> dict[str, str]:
+def load_stage_colors(db: sqlite3.Connection, event_id: str) -> dict[str, str]:
     return {
-        row["id"]: row["color"]
+        row["stage_id"]: row["color"]
         for row in db.execute(
-            "SELECT id, color FROM locations WHERE event_id = ? AND color IS NOT NULL",
+            "SELECT stage_id, color FROM event_stages "
+            "WHERE event_id = ? AND color IS NOT NULL",
             (event_id,),
         )
     }
@@ -414,15 +430,18 @@ def load_sections_from_db(db: sqlite3.Connection, event_id: str) -> list[dict]:
     ]
 
 
-def load_locations_from_db(db: sqlite3.Connection, event_id: str) -> dict[str, dict]:
+def load_stages_from_db(db: sqlite3.Connection, event_id: str) -> dict[str, dict]:
     return {
-        row["id"]: {
+        row["stage_id"]: {
             "name": row["name"],
-            "color": row["color"],
             "about": row["about"],
         }
         for row in db.execute(
-            "SELECT id, name, color, about FROM locations WHERE event_id = ?",
+            "SELECT es.stage_id, s.name, s.about "
+            "FROM event_stages es "
+            "JOIN stages s ON s.id = es.stage_id "
+            "WHERE es.event_id = ? "
+            "ORDER BY es.position",
             (event_id,),
         )
     }
@@ -433,10 +452,10 @@ def _load_artist_all_slots(
 ) -> dict[str, list[dict]]:
     slots: dict[str, list[dict]] = {}
     for row in db.execute(
-        "SELECT s.artist_id, s.date, s.period, s.location_id, l.name AS location_name, "
+        "SELECT s.artist_id, s.date, s.period, s.stage_id, st.name AS stage_name, "
         "s.start_time, s.end_time "
         "FROM schedule s "
-        "LEFT JOIN locations l ON l.id = s.location_id "
+        "LEFT JOIN stages st ON st.id = s.stage_id "
         "WHERE s.event_id = ? "
         "ORDER BY s.date, CASE s.period WHEN 'day' THEN 0 WHEN 'night' THEN 1 ELSE 2 END, "
         "s.start_time",
@@ -446,8 +465,8 @@ def _load_artist_all_slots(
             {
                 "date": row["date"],
                 "period": row["period"],
-                "location_id": row["location_id"],
-                "location_name": row["location_name"],
+                "location_id": row["stage_id"],
+                "location_name": row["stage_name"],
                 "start_time": row["start_time"],
                 "end_time": row["end_time"],
             }
@@ -480,7 +499,7 @@ def load_assignments_from_db(
     assignments: dict[str, list[dict]] = {}
     for row in db.execute(
         "SELECT a.id, a.name, a.photo_file, a.bio, "
-        "s.date, s.period, s.location_id, s.start_time, s.end_time, s.set_type "
+        "s.date, s.period, s.stage_id, s.start_time, s.end_time, s.set_type "
         "FROM schedule s "
         "JOIN artists a ON a.id = s.artist_id "
         "WHERE s.event_id = ? "
@@ -496,7 +515,7 @@ def load_assignments_from_db(
                 "photo_file": row["photo_file"],
                 "bio": row["bio"],
                 "links": all_links.get(row["id"], []),
-                "location_id": row["location_id"],
+                "location_id": row["stage_id"],
                 "all_slots": all_slots.get(row["id"], []),
                 "start_time": row["start_time"],
                 "end_time": row["end_time"],

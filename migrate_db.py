@@ -66,23 +66,20 @@ def migrate() -> None:
 
     tables = _get_tables(db)
 
-    if "artist_links" in tables and "artist_sets" in tables:
+    if "stages" in tables and "event_stages" in tables and "artist_sets" in tables:
         print("Already fully migrated. Skipping.")
         db.close()
         return
 
-    # Detect old schema variants
     has_old_overlay = "artists" in tables and "overlay_id" in _get_cols(db, "artists")
     has_old_sections = "sections" in tables
     has_old_artist_sections = "artist_sections" in tables
 
-    # Build date lookup from old sections table
     section_lookup: dict[str, tuple[str, str]] = {}
     if has_old_sections:
         for row in db.execute("SELECT timestamp_key, date, period FROM sections"):
             section_lookup[row["timestamp_key"]] = (row["date"], row["period"])
 
-    # Create new tables
     db.executescript("""
         CREATE TABLE IF NOT EXISTS events (
             id         TEXT PRIMARY KEY,
@@ -112,39 +109,50 @@ def migrate() -> None:
             position       INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (artist_id, platform)
         );
-        CREATE TABLE IF NOT EXISTS locations_new (
+        CREATE TABLE IF NOT EXISTS venues (
             id        TEXT PRIMARY KEY,
-            event_id  TEXT NOT NULL REFERENCES events(id),
             name      TEXT NOT NULL,
-            color     TEXT,
             about     TEXT,
             address   TEXT,
             latitude  REAL,
             longitude REAL
         );
-        CREATE TABLE IF NOT EXISTS location_notes (
-            location_id TEXT NOT NULL REFERENCES locations_new(id),
-            date        TEXT NOT NULL,
-            note        TEXT NOT NULL,
-            position    INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY (location_id, date, position)
+        CREATE TABLE IF NOT EXISTS stages_new (
+            id       TEXT PRIMARY KEY,
+            name     TEXT NOT NULL,
+            about    TEXT,
+            venue_id TEXT REFERENCES venues(id)
         );
-        CREATE TABLE IF NOT EXISTS location_details (
-            location_id TEXT NOT NULL REFERENCES locations_new(id),
-            label       TEXT NOT NULL,
-            value       TEXT NOT NULL,
-            position    INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY (location_id, label)
+        CREATE TABLE IF NOT EXISTS event_stages (
+            event_id TEXT NOT NULL REFERENCES events(id),
+            stage_id TEXT NOT NULL REFERENCES stages_new(id),
+            color    TEXT,
+            position INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (event_id, stage_id)
+        );
+        CREATE TABLE IF NOT EXISTS stage_notes (
+            stage_id TEXT NOT NULL REFERENCES stages_new(id),
+            date     TEXT NOT NULL,
+            note     TEXT NOT NULL,
+            position INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (stage_id, date, position)
+        );
+        CREATE TABLE IF NOT EXISTS stage_details (
+            stage_id TEXT NOT NULL REFERENCES stages_new(id),
+            label    TEXT NOT NULL,
+            value    TEXT NOT NULL,
+            position INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (stage_id, label)
         );
         CREATE TABLE IF NOT EXISTS schedule_new (
-            artist_id   TEXT NOT NULL REFERENCES artists_new(id),
-            event_id    TEXT NOT NULL REFERENCES events(id),
-            location_id TEXT REFERENCES locations_new(id),
-            start_time  TEXT NOT NULL,
-            end_time    TEXT NOT NULL,
-            date        TEXT NOT NULL,
-            period      TEXT,
-            set_type    TEXT,
+            artist_id  TEXT NOT NULL REFERENCES artists_new(id),
+            event_id   TEXT NOT NULL REFERENCES events(id),
+            stage_id   TEXT REFERENCES stages_new(id),
+            start_time TEXT NOT NULL,
+            end_time   TEXT NOT NULL,
+            date       TEXT NOT NULL,
+            period     TEXT,
+            set_type   TEXT,
             PRIMARY KEY (artist_id, event_id, start_time)
         );
         CREATE TABLE IF NOT EXISTS artist_sets (
@@ -160,9 +168,9 @@ def migrate() -> None:
         );
     """)
 
-    # Event
     db.execute(
-        "INSERT OR IGNORE INTO events (id, name, edition, source_url, timezone) VALUES (?, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO events (id, name, edition, source_url, timezone) "
+        "VALUES (?, ?, ?, ?, ?)",
         (
             DEFAULT_EVENT_ID,
             DEFAULT_EVENT_NAME,
@@ -193,7 +201,6 @@ def migrate() -> None:
                 row[bio_col] if bio_col in artist_cols else None,
             ),
         )
-        # Migrate social links
         link_map = {
             "instagram": (
                 "instagram",
@@ -219,7 +226,8 @@ def migrate() -> None:
                 count = row[count_col] if count_col else None
                 pos = PLATFORM_POSITIONS.get(platform, 99)
                 db.execute(
-                    "INSERT OR IGNORE INTO artist_links (artist_id, platform, url, follower_count, position) "
+                    "INSERT OR IGNORE INTO artist_links "
+                    "(artist_id, platform, url, follower_count, position) "
                     "VALUES (?, ?, ?, ?, ?)",
                     (aid, platform, url, count, pos),
                 )
@@ -227,13 +235,9 @@ def migrate() -> None:
     links_count = db.execute("SELECT COUNT(*) FROM artist_links").fetchone()[0]
     print(f"Migrated {artists_count} artists with {links_count} links")
 
-    # Locations
-    loc_table = "locations"
-    loc_cols = _get_cols(db, loc_table)
-    loc_id_col = "location_id" if "location_id" in loc_cols else "id"
-
-    used_locs = set()
+    # Stages (from old locations table)
     source_schedule = None
+    used_locs = set()
     if has_old_artist_sections:
         source_schedule = "artist_sections"
         used_locs = {
@@ -244,46 +248,57 @@ def migrate() -> None:
         }
     elif "schedule" in tables:
         source_schedule = "schedule"
+        loc_col = (
+            "stage_id" if "stage_id" in _get_cols(db, "schedule") else "location_id"
+        )
         used_locs = {
             row[0]
             for row in db.execute(
-                "SELECT DISTINCT location_id FROM schedule WHERE location_id IS NOT NULL"
+                f"SELECT DISTINCT {loc_col} FROM schedule WHERE {loc_col} IS NOT NULL"
             ).fetchall()
         }
 
-    # Get dates for location notes
     all_dates: list[str] = []
     if section_lookup:
         all_dates = sorted({d for d, _ in section_lookup.values()})
-    elif source_schedule == "schedule":
+    elif source_schedule:
         all_dates = [
             r[0]
             for r in db.execute(
-                "SELECT DISTINCT date FROM schedule ORDER BY date"
+                f"SELECT DISTINCT date FROM {source_schedule} ORDER BY date"
             ).fetchall()
         ]
 
-    for row in db.execute(f"SELECT * FROM {loc_table}"):
-        loc_id = row[loc_id_col]
-        if used_locs and loc_id not in used_locs:
-            print(f"  Skipping orphan location: {loc_id} ({row['name']})")
-            continue
-        color = FLOOR_COLORS.get(loc_id)
-        db.execute(
-            "INSERT OR IGNORE INTO locations_new (id, event_id, name, color) "
-            "VALUES (?, ?, ?, ?)",
-            (loc_id, DEFAULT_EVENT_ID, row["name"], color),
-        )
-        desc = row["description"] if "description" in loc_cols else None
-        if desc:
-            for date in all_dates:
-                db.execute(
-                    "INSERT OR IGNORE INTO location_notes (location_id, date, note, position) "
-                    "VALUES (?, ?, ?, 0)",
-                    (loc_id, date, desc),
-                )
-    locs_count = db.execute("SELECT COUNT(*) FROM locations_new").fetchone()[0]
-    print(f"Migrated {locs_count} locations with colors")
+    loc_table = "locations" if "locations" in tables else None
+    if loc_table:
+        loc_cols = _get_cols(db, loc_table)
+        loc_id_col = "location_id" if "location_id" in loc_cols else "id"
+        for row in db.execute(f"SELECT * FROM {loc_table}"):
+            loc_id = row[loc_id_col]
+            if used_locs and loc_id not in used_locs:
+                print(f"  Skipping orphan location: {loc_id} ({row['name']})")
+                continue
+            color = FLOOR_COLORS.get(loc_id)
+            db.execute(
+                "INSERT OR IGNORE INTO stages_new (id, name) VALUES (?, ?)",
+                (loc_id, row["name"]),
+            )
+            db.execute(
+                "INSERT OR IGNORE INTO event_stages (event_id, stage_id, color) "
+                "VALUES (?, ?, ?)",
+                (DEFAULT_EVENT_ID, loc_id, color),
+            )
+            desc = row["description"] if "description" in loc_cols else None
+            if desc:
+                for date in all_dates:
+                    db.execute(
+                        "INSERT OR IGNORE INTO stage_notes "
+                        "(stage_id, date, note, position) VALUES (?, ?, ?, 0)",
+                        (loc_id, date, desc),
+                    )
+
+    stages_count = db.execute("SELECT COUNT(*) FROM stages_new").fetchone()[0]
+    print(f"Migrated {stages_count} stages with colors")
 
     # Schedule
     sched_count = 0
@@ -299,23 +314,24 @@ def migrate() -> None:
             date, period = section_lookup.get(ts_key, ("", None))
             db.execute(
                 "INSERT OR IGNORE INTO schedule_new "
-                "(artist_id, event_id, location_id, start_time, end_time, date, period) "
+                "(artist_id, event_id, stage_id, start_time, end_time, date, period) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (oid, DEFAULT_EVENT_ID, row["location_id"], start, end, date, period),
             )
             sched_count += 1
     elif source_schedule == "schedule":
         sched_cols = _get_cols(db, "schedule")
+        loc_col = "stage_id" if "stage_id" in sched_cols else "location_id"
         for row in db.execute("SELECT * FROM schedule"):
             eid = row["event_id"] if "event_id" in sched_cols else DEFAULT_EVENT_ID
             db.execute(
                 "INSERT OR IGNORE INTO schedule_new "
-                "(artist_id, event_id, location_id, start_time, end_time, date, period) "
+                "(artist_id, event_id, stage_id, start_time, end_time, date, period) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     row["artist_id"],
                     eid,
-                    row["location_id"],
+                    row[loc_col],
                     row["start_time"],
                     row["end_time"],
                     row["date"],
@@ -325,25 +341,45 @@ def migrate() -> None:
             sched_count += 1
     print(f"Migrated {sched_count} schedule entries")
 
-    # Videos/Sets
+    # Artist sets
     set_count = 0
-    if "videos" in tables:
+    if "artist_sets" in tables:
+        as_cols = _get_cols(db, "artist_sets")
+        for row in db.execute("SELECT * FROM artist_sets"):
+            db.execute(
+                "INSERT OR IGNORE INTO artist_sets "
+                "(id, artist_id, platform, url, title, view_count, duration_min, upload_date, position) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    row["id"],
+                    row["artist_id"],
+                    row["platform"],
+                    row["url"],
+                    row["title"],
+                    row["view_count"],
+                    row["duration_min"],
+                    row["upload_date"],
+                    row["position"],
+                ),
+            )
+            set_count += 1
+    elif "videos" in tables:
         vid_cols = _get_cols(db, "videos")
-        vid_id_col = "video_id" if "video_id" in vid_cols else "id"
-        views_col = "views" if "views" in vid_cols else "view_count"
-        dur_col = "duration" if "duration" in vid_cols else "duration_min"
+        vid_id = "video_id" if "video_id" in vid_cols else "id"
+        views = "views" if "views" in vid_cols else "view_count"
+        dur = "duration" if "duration" in vid_cols else "duration_min"
         for row in db.execute("SELECT * FROM videos"):
             db.execute(
                 "INSERT OR IGNORE INTO artist_sets "
                 "(id, artist_id, platform, url, title, view_count, duration_min, upload_date, position) "
                 "VALUES (?, ?, 'youtube', ?, ?, ?, ?, ?, ?)",
                 (
-                    row[vid_id_col],
+                    row[vid_id],
                     row["artist_id"],
                     row["url"],
                     row["title"],
-                    row[views_col],
-                    row[dur_col],
+                    row[views],
+                    row[dur],
                     row["upload_date"] if "upload_date" in vid_cols else None,
                     row["position"],
                 ),
@@ -371,7 +407,7 @@ def migrate() -> None:
                 set_count += 1
     print(f"Migrated {set_count} artist sets")
 
-    # Floor curator notes from overrides
+    # Floor curator notes
     if OVERRIDES_PATH.exists():
         import tomllib
 
@@ -380,22 +416,22 @@ def migrate() -> None:
         curators = overrides.get("floor_curators", {})
         note_count = 0
         for key, note in curators.items():
-            date, loc_id = key.split(".", 1)
+            date, stage_id = key.split(".", 1)
             existing = db.execute(
-                "SELECT MAX(position) FROM location_notes WHERE location_id = ? AND date = ?",
-                (loc_id, date),
+                "SELECT MAX(position) FROM stage_notes WHERE stage_id = ? AND date = ?",
+                (stage_id, date),
             ).fetchone()[0]
             pos = (existing or 0) + 1
             db.execute(
-                "INSERT OR IGNORE INTO location_notes (location_id, date, note, position) "
+                "INSERT OR IGNORE INTO stage_notes (stage_id, date, note, position) "
                 "VALUES (?, ?, ?, ?)",
-                (loc_id, date, note, pos),
+                (stage_id, date, note, pos),
             )
             note_count += 1
         if note_count:
             print(f"Migrated {note_count} floor curator notes")
 
-    # Drop old tables, rename new ones
+    # Drop old tables, rename new
     for t in (
         "artists",
         "locations",
@@ -403,13 +439,15 @@ def migrate() -> None:
         "videos",
         "artist_sections",
         "sections",
+        "location_notes",
+        "location_details",
+        "event_locations",
     ):
         db.execute(f"DROP TABLE IF EXISTS {t}")
     db.execute("ALTER TABLE artists_new RENAME TO artists")
-    db.execute("ALTER TABLE locations_new RENAME TO locations")
+    db.execute("ALTER TABLE stages_new RENAME TO stages")
     db.execute("ALTER TABLE schedule_new RENAME TO schedule")
 
-    # Indexes
     db.execute(
         "CREATE INDEX IF NOT EXISTS idx_artist_links_artist ON artist_links(artist_id)"
     )

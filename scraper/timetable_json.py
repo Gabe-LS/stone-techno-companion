@@ -12,11 +12,11 @@ def generate_timetable_json(db: sqlite3.Connection, event_id: str) -> str:
     timezone = event["timezone"] if event else "Europe/Berlin"
 
     rows = db.execute(
-        "SELECT a.id, a.name, s.date, s.period, s.location_id, l.name AS location_name, "
+        "SELECT a.id, a.name, s.date, s.period, s.stage_id, st.name AS stage_name, "
         "s.start_time, s.end_time "
         "FROM schedule s "
         "JOIN artists a ON a.id = s.artist_id "
-        "LEFT JOIN locations l ON l.id = s.location_id "
+        "LEFT JOIN stages st ON st.id = s.stage_id "
         "WHERE s.event_id = ? AND s.start_time IS NOT NULL AND s.end_time IS NOT NULL "
         "ORDER BY s.date, CASE s.period WHEN 'day' THEN 0 WHEN 'night' THEN 1 ELSE 2 END, "
         "s.start_time, a.name",
@@ -28,7 +28,7 @@ def generate_timetable_json(db: sqlite3.Connection, event_id: str) -> str:
         key = (
             row["date"],
             row["period"],
-            row["location_id"],
+            row["stage_id"],
             row["start_time"],
             row["end_time"],
         )
@@ -36,7 +36,7 @@ def generate_timetable_json(db: sqlite3.Connection, event_id: str) -> str:
             {
                 "id": row["id"],
                 "name": row["name"],
-                "loc_name": row["location_name"] or row["location_id"] or "unknown",
+                "loc_name": row["stage_name"] or row["stage_id"] or "unknown",
             }
         )
 

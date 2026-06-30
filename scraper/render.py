@@ -177,8 +177,8 @@ def render_output_html(
     locations: dict[str, dict],
     has_timetable: bool = False,
     photos_prefix: str = "photos/",
-    floor_curators: dict[str, str] | None = None,
-    floor_colors: dict[str, str] | None = None,
+    stage_curators: dict[str, str] | None = None,
+    stage_colors: dict[str, str] | None = None,
     output_dir: str | None = None,
     videos: dict[str, list[dict]] | None = None,
 ) -> str:
@@ -558,7 +558,7 @@ def render_output_html(
       .tt-popup .popup-photo, .tt-popup .popup-photo-placeholder { width: 64px; height: 64px; }
     }
     """)
-    _fc = floor_colors or {}
+    _fc = stage_colors or {}
     if _fc:
         color_css: list[str] = []
         color_css.append("    /* Floor colors (from DB) */")
@@ -1127,7 +1127,7 @@ def render_output_html(
             for fid in floor_ids:
                 loc_name = locations.get(fid, {}).get("name", fid)
                 curator_key = f"{tt_date_str}.{fid}"
-                curator_text = (floor_curators or {}).get(curator_key, "")
+                curator_text = (stage_curators or {}).get(curator_key, "")
                 curator_html = (
                     f'<span class="floor-curator">{esc(curator_text)}</span>'
                     if curator_text
@@ -1270,7 +1270,7 @@ def render_output_html(
             for fid in floor_ids:
                 loc_name = locations.get(fid, {}).get("name", fid)
                 curator_key = f"{tt_date_str}.{fid}"
-                curator_text = (floor_curators or {}).get(curator_key, "")
+                curator_text = (stage_curators or {}).get(curator_key, "")
                 if curator_text:
                     parts.append(
                         f'<th class="tt-floor-th floor-{esc(fid)}"><span>{esc(loc_name)}</span>'
