@@ -826,15 +826,26 @@ document.addEventListener('click', (e) => {
 });
 
 function shareLocation() {
-  if (!navigator.geolocation) { showToast('Geolocation not available'); return; }
+  if (!navigator.geolocation) { showToast('Geolocation not available'); dbg('shareLocation: geolocation API missing'); return; }
+  dbg('shareLocation: requesting position...');
   showToast('Getting location...');
-  navigator.geolocation.getCurrentPosition(pos => {
-    wsSend('send_message', {
-      room_id: currentRoom, type: 'location',
-      content: JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude, label: 'My location' }),
-    });
-    showToast('Location shared');
-  }, () => showToast('Could not get location'));
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      dbg('shareLocation: got position', pos.coords.latitude, pos.coords.longitude);
+      const content = JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude, label: 'My location' });
+      wsSend('send_message', { room_id: currentRoom, type: 'location', content });
+      dbg('shareLocation: sent');
+      showToast('Location shared');
+    },
+    err => {
+      dbg('shareLocation: error', err.code, err.message);
+      if (err.code === 1) showToast('Location access denied. Check browser permissions.', 5000);
+      else if (err.code === 2) showToast('Location unavailable', 5000);
+      else if (err.code === 3) showToast('Location request timed out', 5000);
+      else showToast('Could not get location', 5000);
+    },
+    { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+  );
 }
 
 function uploadImage() {
