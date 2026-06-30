@@ -438,6 +438,45 @@ Reuse the existing push notification infrastructure (VAPID + service worker). Wh
 
 ---
 
+## Push Notifications
+
+Reuses the existing VAPID + service worker infrastructure. Two notification types in v1:
+
+### DM Notifications
+
+Triggered immediately when a DM message is stored. If the recipient has an active WebSocket connection and the chat panel is focused on that DM, no push is sent (they're already reading it). Otherwise:
+
+- **Title**: display name of the sender
+- **Body**: message preview (first 100 chars of text, or "Sent an image" / "Shared a location")
+- **Click action**: opens the app and navigates to that DM conversation
+
+Sent via the existing `pywebpush` infrastructure. The chat user's push subscription is stored alongside their existing schedule push subscription (same `push_subscriptions` mechanism in `hearts.db`).
+
+### Meetup Reminders
+
+Integrated into the existing push notification scheduler (background task in `api.py` that runs every 60 seconds). The scheduler already checks `timetable.json` for upcoming sets — extend it to also check `meetups` in `chat.db`:
+
+```
+For each meetup where meetup_time is 10 minutes from now:
+  For each attendee of that meetup:
+    If attendee has a push subscription:
+      Send: "Your meetup '{title}' starts in 10 minutes"
+```
+
+Dedup via the existing `sent_notifications` table — key `(user_id, meetup_id)` prevents duplicate sends on scheduler re-runs.
+
+- **Title**: "Meetup in 10 minutes"
+- **Body**: meetup title + location label (e.g. "Main bar hangout · Near Grand Hall entrance")
+- **Click action**: opens the app and navigates to the meetup chat
+
+### Not in v1
+
+- Stage room activity notifications (too noisy)
+- @mention notifications (requires parsing, defer)
+- "New meetup in a stage you're watching" (nice-to-have, not essential)
+
+---
+
 ## Auto-Deletion Pipeline
 
 ### Purge Job
@@ -709,11 +748,15 @@ User session (cookie) persists across tab closes. On reopen, the client reconnec
 
 ---
 
+## Resolved Decisions
+
+1. **Avatars**: generated (initials on a color derived from user ID). No custom uploads in v1 — zero moderation needed.
+2. **Data retention**: wipe everything (including bans) 30 days after event end. Clean slate each edition. No data survives between editions.
+3. **Map tiles**: tappable link styled as a card ("Open in Maps"). Zero infrastructure.
+4. **GIF support**: deferred to v2. Text + images + emoji + location + meetups is enough for v1.
+5. **Notifications**: DM notifications (immediate) + meetup reminders (10 min before). No stage room notifications.
+
 ## Open Decisions
 
-1. **Avatars**: allow custom upload, or generate from display name (initials/identicon)? Custom uploads need moderation too.
-2. **User accounts after the festival**: wipe all chat data (users, messages, rooms) after the event ends? Or keep accounts for the next edition?
-3. **Admin tooling**: simple admin endpoint for reviewing reports and banning, or a full admin dashboard?
-4. **Map tiles**: OpenStreetMap static tiles for location messages, or just a tappable link to Google/Apple Maps?
-5. **GIF support**: add in first release or defer? Requires GIPHY API key (free) and server-side proxy.
-6. **Slow mode**: auto-activate in rooms with >100 messages/minute? Or leave stage rooms unthrottled?
+1. **Admin tooling**: minimal admin page at `/chat/admin` with pending reports + ban/dismiss buttons, or CLI/database access only?
+2. **Slow mode**: auto-activate in rooms with >100 messages/minute, or leave stage rooms unthrottled?
