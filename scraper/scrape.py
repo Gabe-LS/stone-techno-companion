@@ -617,6 +617,14 @@ def _ra_match_score(ra_profile: dict, db_artist) -> int:
     return score
 
 
+def _clean_ra_bio(text: str) -> str:
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    paragraphs = re.split(r"\n\n+", text)
+    return "\n\n".join(
+        " ".join(line.strip() for line in p.strip().splitlines()) for p in paragraphs
+    ).strip()
+
+
 def fetch_ra_profile(page, artist_name: str, db_artist) -> dict | None:
     """Search RA for an artist, validate via social link matching, return profile."""
     result = _ra_gql(page, _RA_SEARCH_QUERY, {"term": artist_name})
@@ -647,14 +655,14 @@ def fetch_ra_profile(page, artist_name: str, db_artist) -> dict | None:
             return {
                 "ra_url": f"https://ra.co{profile['contentUrl']}",
                 "ra_followers": profile.get("followerCount"),
-                "ra_bio": bio.get("content") or "",
+                "ra_bio": _clean_ra_bio(bio.get("content") or ""),
             }
         if not has_social_overlap and score >= 2:
             bio = profile.get("biography") or {}
             return {
                 "ra_url": f"https://ra.co{profile['contentUrl']}",
                 "ra_followers": profile.get("followerCount"),
-                "ra_bio": bio.get("content") or "",
+                "ra_bio": _clean_ra_bio(bio.get("content") or ""),
             }
 
     return None

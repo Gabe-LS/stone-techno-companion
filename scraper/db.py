@@ -159,7 +159,12 @@ def apply_overrides(db: sqlite3.Connection, overrides_path: Path) -> None:
     if not overrides:
         return
 
-    NON_ARTIST_SECTIONS = {"floor_curators"}
+    NON_ARTIST_SECTIONS = {
+        "floor_curators",
+        "youtube_names",
+        "youtube_videos",
+        "youtube_videos_add",
+    }
 
     applied = 0
     for artist_name, fields in overrides.items():
@@ -299,7 +304,7 @@ def load_assignments_from_db(db: sqlite3.Connection) -> dict[str, list[dict]]:
         "SELECT a.name, a.instagram, a.soundcloud, a.spotify, a.linktree, a.youtube, "
         "a.photo_local, a.ig_followers, a.sc_followers, a.spotify_listeners, "
         "s.timestamp_key, sa.location_id, a.overlay_id, sa.start_time, sa.end_time, "
-        "a.ra, a.ra_followers "
+        "a.ra, a.ra_followers, a.ra_bio "
         "FROM artist_sections sa "
         "JOIN artists a ON a.overlay_id = sa.overlay_id "
         "JOIN sections s ON s.timestamp_key = sa.timestamp_key "
@@ -324,6 +329,7 @@ def load_assignments_from_db(db: sqlite3.Connection) -> dict[str, list[dict]]:
                 "end_time": row[14],
                 "ra": row[15],
                 "ra_followers": row[16],
+                "ra_bio": row[17],
             }
         )
     return assignments

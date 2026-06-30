@@ -174,6 +174,7 @@ def main() -> None:
             all_locations,
             has_timetable=has_timetable,
             floor_curators=floor_curators,
+            output_dir=str(output_dir),
         )
 
         if has_timetable:

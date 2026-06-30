@@ -42,6 +42,29 @@ photo = "https://cdn.amsterdam-dance-event.nl/images/images/transforms/artists-s
 spotify = "https://open.spotify.com/artist/6eu3TBnYM3SrkUU59SFhgp"
 soundcloud = false
 
+# YouTube search names — override the name used when searching for DJ sets.
+# Key: lineup name, Value: YouTube search term.
+[youtube_names]
+"Serge" = "Serge Clone"
+
+# YouTube forced videos — use ONLY these, skip search entirely.
+# Key: lineup name, Value: list of video IDs.
+[youtube_videos]
+"Victor" = ["rmdI05pJ9rU", "T_b_f6sxvaQ", "t-KN20G0nPM", "EHTzAMj5TRI"]
+"Carrier" = ["E-YsbJJUoAo", "CeSvYv1pbFw", "zdD5iuCqdgA"]
+"Metrapha" = ["5MbFAx86nDI"]
+"Abs8lute" = ["XEDz8t4AfB8", "kRESzFYfi7U", "hii0cwzjHO0", "J2Awc6hb3H0"]
+"Martinou" = ["ms1STJ8eqzU", "3Y7mXiV7SnM"]
+"Powder" = ["2iW4Y0iPiYI"]
+
+# YouTube extra videos — add these to search results, then apply normal selection.
+# Key: lineup name, Value: list of video IDs.
+[youtube_videos_add]
+"Function" = ["YXk8ZH54cR8", "bC9_OKu6nBQ", "t47XrVW957w"]
+"Toru Ikemoto" = ["PxCvSoOHEQU"]
+"Nadia Struiwigh" = ["govyh3ZgLfM", "fS9NFzemZ94", "gA1wApdj-DI"]
+"ROD" = ["2e0mwlpBp7E", "QBKPqv-D06w", "FlY9_pjeuRU"]
+
 # Floor curators / hosts — per-day per-floor annotations.
 # Key format: "YYYY-MM-DD.location_id"
 # Value: full annotation text (e.g. "curated by Name" or "hosted by Name")

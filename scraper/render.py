@@ -153,6 +153,7 @@ def render_output_html(
     has_timetable: bool = False,
     photos_prefix: str = "photos/",
     floor_curators: dict[str, str] | None = None,
+    output_dir: str | None = None,
 ) -> str:
     def esc(text: str | None) -> str:
         return html.escape(text or "")
@@ -224,7 +225,8 @@ def render_output_html(
       --font-xs: 0.75em;
     }
     *, *::before, *::after { box-sizing: border-box; }
-    html { overscroll-behavior: none; }
+    html { overscroll-behavior: none; scrollbar-width: none; }
+    ::-webkit-scrollbar { display: none; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; line-height: 1.5; max-width: 960px; margin: 0 auto; padding: 0 24px; color: var(--color-text); background: var(--color-bg); }
     h1 { margin-bottom: 32px; font-size: var(--font-2xl); position: sticky; top: 28px; background: #fff; z-index: 30; padding: 12px 0 8px; border-bottom: 2px solid #222; }
     section.date-section { margin-bottom: 48px; }
@@ -239,7 +241,8 @@ def render_output_html(
     .artist-photo { width: 120px; height: 120px; object-fit: cover; border-radius: 6px; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
     .photo-placeholder { width: 120px; height: 120px; flex-shrink: 0; background: #eee; border-radius: 6px; }
     .artist-info { flex: 1; min-width: 0; }
-    .artist-name { font-weight: 700; font-size: var(--font-lg); display: block; margin-bottom: 3px; }
+    .artist-name { font-weight: 700; font-size: var(--font-lg); display: block; margin-bottom: 3px; cursor: pointer; }
+    .artist-photo { cursor: pointer; }
     .artist-schedule { color: var(--color-muted); font-size: var(--font-sm); display: block; margin-bottom: 6px; }
     .artist-also { color: var(--color-muted); font-size: var(--font-xs); line-height: 1; margin-top: 4px; }
     .links { display: flex; flex-wrap: wrap; column-gap: 18px; row-gap: 4px; align-items: center; }
@@ -281,11 +284,35 @@ def render_output_html(
     .filter-active .artist-item:not(.hearted) { display: none; }
     .filter-active .tt-block:not(.hearted):not(:has(.tt-artist-row.hearted)) { opacity: 0.15; }
 
+    /* --- Bio overlay --- */
+    .modal-box.bio-box { background:#fff; border-radius:14px; padding:0; width:480px; max-width:100%; color:#111; box-shadow:0 8px 24px rgba(0,0,0,.12); max-height:80vh; overflow:hidden; text-align:left; }
+    .bio-scroll { max-height:80vh; overflow-y:auto; padding:24px; -webkit-overflow-scrolling:touch; }
+    .bio-header { display:flex; gap:16px; align-items:flex-start; margin-bottom:16px; }
+    .bio-photo { width:128px; height:128px; border-radius:8px; object-fit:cover; flex-shrink:0; }
+    .bio-photo-placeholder { width:128px; height:128px; border-radius:8px; background:#eee; flex-shrink:0; }
+    .bio-name { font-weight:700; font-size:var(--font-xl); margin-top:4px; }
+    .bio-text { font-size:var(--font-sm); line-height:1.6; color:#333; white-space:pre-line; margin-bottom:-0.3em; }
+    .bio-text:empty { display:none; }
+    .bio-empty { font-size:var(--font-sm); color:var(--color-muted); font-style:italic; }
+    .bio-videos { margin-top:16px; }
+    .bio-videos-title { font-size:var(--font-sm); font-weight:600; margin-bottom:10px; color:#111; }
+    .bio-video { display:flex; gap:12px; align-items:flex-start; margin-bottom:10px; text-decoration:none; color:inherit; border-radius:6px; transition:background .15s; padding:4px; margin-left:-4px; margin-right:-4px; }
+    .bio-video:hover { background:#f5f5f5; }
+    .bio-video:last-child { margin-bottom:0; }
+    .bio-video-thumb { width:120px; height:90px; border-radius:4px; object-fit:cover; flex-shrink:0; background:#eee; }
+    .bio-video-info { flex:1; min-width:0; }
+    .bio-video-title { font-size:var(--font-xs); font-weight:600; line-height:1.3; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+    .bio-video-meta { font-size:var(--font-xs); color:var(--color-muted); margin-top:3px; }
+    @media (max-width:480px) {
+      .bio-box { padding:20px; border-radius:10px; }
+      .bio-photo, .bio-photo-placeholder { width:96px; height:96px; }
+      .bio-name { font-size:var(--font-lg); }
+      .bio-video-thumb { width:96px; height:72px; }
+    }
+
     /* --- Modals --- */
-    html.scroll-locked, html.scroll-locked body { overflow:hidden; }
-    html.scroll-locked body { position:fixed; left:0; right:0; }
     .modal-overlay { display:none; position:fixed; inset:0; z-index:100; background:rgba(0,0,0,.4); padding:24px; }
-    .modal-overlay.open { display:flex; justify-content:center; align-items:center; }
+    .modal-overlay.open { display:flex; justify-content:center; align-items:center; overflow-y:auto; overscroll-behavior:contain; }
     .modal-box { background:#fff; border-radius:14px; padding:24px; width:420px; max-width:100%; text-align:center; color:#111; box-shadow:0 8px 24px rgba(0,0,0,.12); }
     .modal-box h3 { margin:0 0 6px; font-size:var(--font-base); font-weight:600; text-wrap:balance; }
     .modal-box .sub { font-size:var(--font-xs); color:#888; margin:0 0 14px; text-wrap:balance; }
@@ -764,6 +791,22 @@ def render_output_html(
     parts.append("    </div>")
     parts.append("  </div>")
 
+    # Bio overlay
+    parts.append(
+        '  <div class="modal-overlay" id="m-bio" role="dialog" aria-modal="true">'
+    )
+    parts.append('    <div class="modal-box bio-box">')
+    parts.append('      <div class="bio-scroll">')
+    parts.append('        <div class="bio-header">')
+    parts.append('          <div id="bio-photo"></div>')
+    parts.append('          <div class="bio-name" id="bio-name"></div>')
+    parts.append("        </div>")
+    parts.append('        <div class="bio-text" id="bio-text"></div>')
+    parts.append('        <div class="bio-videos" id="bio-videos"></div>')
+    parts.append("      </div>")
+    parts.append("    </div>")
+    parts.append("  </div>")
+
     def _link(href: str, svg: str, label: str = "") -> str:
         txt = f"{svg} {esc(label)}" if label else svg
         return f'<a href="{esc(href)}" target="_blank" rel="noopener noreferrer" title="{esc(label)}">{txt}</a>'
@@ -787,19 +830,22 @@ def render_output_html(
             a.get("all_slots", []), cur_date, cur_period
         )
 
-        card_key = f"{a.get('overlay_id', '')}:{cur_date}:{cur_period}:{loc_id or ''}"
+        oid = a.get("overlay_id", "")
+        card_key = f"{oid}:{cur_date}:{cur_period}:{loc_id or ''}"
         artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, card_key))
         parts.append(
-            f'      <li class="artist-item" data-artist-id="{esc(artist_id)}">'
+            f'      <li class="artist-item" data-artist-id="{esc(artist_id)}" data-oid="{esc(oid)}">'
         )
         if photo_local:
             parts.append(
-                f'        <img class="artist-photo" src="photos/{esc(photo_local)}" alt="{esc(name)}" width="120" height="120" loading="lazy">'
+                f'        <img class="artist-photo" src="photos/{esc(photo_local)}" alt="{esc(name)}" width="120" height="120" loading="lazy" onclick="openBio(this)">'
             )
         else:
             parts.append('        <div class="photo-placeholder"></div>')
         parts.append('        <div class="artist-info">')
-        parts.append(f'        <span class="artist-name">{esc(name)}</span>')
+        parts.append(
+            f'        <span class="artist-name" onclick="openBio(this)">{esc(name)}</span>'
+        )
         if sched_main:
             parts.append(
                 f'        <span class="artist-schedule">{esc(sched_main)}</span>'
@@ -900,6 +946,57 @@ def render_output_html(
 
     if has_timetable:
         parts.append("  </div>")  # end #list-view
+
+    # Bio lookup (deduped by overlay_id)
+    def _strip_booking(text: str) -> str:
+        import re as _re
+
+        paragraphs = text.split("\n\n")
+        kept = []
+        for p in paragraphs:
+            lines = p.strip().splitlines()
+            if any(
+                _re.match(
+                    r"^(bookings?|management|press|promos?|agency|contact|licensing|selected performance)\b",
+                    line.strip(),
+                    _re.IGNORECASE,
+                )
+                or ("@" in line and (">" in line or ":" in line))
+                or _re.match(r"^https?://\S+$", line.strip())
+                or _re.match(r"^www\.\S+$", line.strip())
+                for line in lines
+            ):
+                break
+            kept.append(p)
+        return "\n\n".join(kept).strip()
+
+    # Load video data if available
+    videos_json_path = Path(output_dir) / "videos.json" if output_dir else None
+    artist_videos: dict[str, list[dict]] = {}
+    if videos_json_path and videos_json_path.exists():
+        import json as _json_load
+
+        artist_videos = _json_load.loads(videos_json_path.read_text(encoding="utf-8"))
+
+    bio_lookup: dict[str, dict] = {}
+    for artists in assignments.values():
+        for a in artists:
+            oid = a.get("overlay_id", "")
+            if oid and oid not in bio_lookup:
+                raw_bio = a.get("ra_bio") or ""
+                entry: dict = {
+                    "name": a.get("name", ""),
+                    "photo": f"photos/{a['photo_local']}"
+                    if a.get("photo_local")
+                    else "",
+                    "bio": _strip_booking(raw_bio),
+                }
+                if oid in artist_videos:
+                    entry["videos"] = artist_videos[oid]
+                bio_lookup[oid] = entry
+    parts.append(
+        f"  <script>var ARTIST_BIOS={_json.dumps(bio_lookup, separators=(',', ':'))};</script>"
+    )
 
     # --- Timetable view ---
     if has_timetable:
@@ -1710,8 +1807,6 @@ def render_output_html(
     }
     function openDialog(id) {
       _modalTrigger = document.activeElement;
-      document.body.style.top = '-' + window.scrollY + 'px';
-      document.documentElement.classList.add('scroll-locked');
       document.getElementById(id).classList.add('open');
       if (window.visualViewport) {
         visualViewport.addEventListener('resize', _fitToViewport);
@@ -1730,17 +1825,11 @@ def render_output_html(
       if (_syncTimer) { clearInterval(_syncTimer); _syncTimer = null; }
       pinField.value = '';
       syncPinDisplay();
-      const scrollY = document.body.style.top;
-      document.body.style.top = '';
-      document.documentElement.classList.remove('scroll-locked');
-      window.scrollTo(0, parseInt(scrollY || '0') * -1);
       if (_modalTrigger) { _modalTrigger.blur(); _modalTrigger = null; }
     }
     document.querySelectorAll('.modal-overlay').forEach(ov => {
       ov.addEventListener('click', e => { if (e.target === ov) closeDialog(ov.id); });
-      ov.addEventListener('touchmove', e => {
-        if (!e.target.closest('.modal-box')) e.preventDefault();
-      }, { passive: false });
+      ov.addEventListener('wheel', e => { if (!e.target.closest('.modal-box')) e.preventDefault(); }, { passive: false });
     });
     document.addEventListener('keydown', e => {
       const modal = document.querySelector('.modal-overlay.open');
@@ -1892,6 +1981,52 @@ def render_output_html(
         applyHearts();
         if (sessionId) connectWS(sessionId);
       } catch {}
+    }
+
+    // Bio overlay
+    function _formatViews(n) {
+      if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\\.0$/, '') + 'M';
+      if (n >= 1000) return (n / 1000).toFixed(1).replace(/\\.0$/, '') + 'K';
+      return String(n);
+    }
+    function openBio(el) {
+      const li = el.closest('.artist-item');
+      if (!li) return;
+      const oid = li.dataset.oid;
+      const data = ARTIST_BIOS[oid];
+      if (!data) return;
+      const photoEl = document.getElementById('bio-photo');
+      if (data.photo) {
+        photoEl.outerHTML = '<img class="bio-photo" id="bio-photo" src="' + data.photo + '" alt="' + data.name + '">';
+      } else {
+        photoEl.outerHTML = '<div class="bio-photo-placeholder" id="bio-photo"></div>';
+      }
+      document.getElementById('bio-name').textContent = data.name;
+      const bioText = document.getElementById('bio-text');
+      if (data.bio) {
+        bioText.textContent = data.bio;
+      } else {
+        bioText.innerHTML = '<span class="bio-empty">No biography available</span>';
+      }
+      const videosEl = document.getElementById('bio-videos');
+      if (data.videos && data.videos.length) {
+        let html = '<div class="bio-videos-title">Sets</div>';
+        data.videos.forEach(function(v) {
+          html += '<a class="bio-video" href="' + v.url + '" target="_blank" rel="noopener noreferrer">';
+          html += '<img class="bio-video-thumb" src="thumbs/' + v.id + '.avif" alt="" loading="lazy">';
+          html += '<div class="bio-video-info">';
+          html += '<div class="bio-video-title">' + v.title + '</div>';
+          var dateStr = '';
+          if (v.date) { var ds = String(v.date); dateStr = ' \\u00b7 ' + ds.slice(0,4) + '-' + ds.slice(4,6) + '-' + ds.slice(6); }
+          html += '<div class="bio-video-meta">' + _formatViews(v.views) + ' views \\u00b7 ' + v.duration + ' min' + dateStr + '</div>';
+          html += '</div></a>';
+        });
+        videosEl.innerHTML = html;
+      } else {
+        videosEl.innerHTML = '';
+      }
+      openDialog('m-bio');
+      document.querySelector('.bio-scroll').scrollTop = 0;
     }
 
     // Hamburger menu
