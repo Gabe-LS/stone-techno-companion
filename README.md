@@ -1,68 +1,86 @@
 # Stone Techno Companion
 
-A scraper, enrichment pipeline, and static site generator for the [Stone Techno](https://www.stone-techno.com/) festival lineup. Produces an interactive single-page lineup with artist photos, social links, follower counts, a favorites system that syncs across devices in real time, and push notifications for scheduled sets.
+A multi-event festival companion tool: scraper, enrichment pipeline, and static site generator with real-time favorites, cross-device sync, and push notifications.
 
 **Live at:** [stonetechno.deftlab.dev](https://stonetechno.deftlab.dev/)
 
 ## What It Does
 
-1. **Scrapes** the official Stone Techno lineup page using Playwright (headless Chromium)
-2. **Enriches** each artist by visiting their SoundCloud, Instagram, and Spotify profiles to collect follower/listener counts and discover missing social links
-3. **Processes photos** — downloads, resizes to 240x240 with adaptive sharpening, and encodes to AVIF using binary search to hit a target ssimulacra2 quality score of 78
-4. **Generates** a single self-contained HTML file (~580KB) with inline CSS, JS, and SVG sprite
-5. **Serves** the page via a FastAPI backend with a favorites API, WebSocket-based real-time sync, and push notifications
+1. **Scrapes** the festival lineup page using Playwright (headless Chromium)
+2. **Enriches** each artist via SoundCloud, Instagram, Spotify, and Resident Advisor — collects follower counts, discovers missing social links, fetches biographies
+3. **Discovers YouTube sets** via yt-dlp — selects top DJ sets per artist with thumbnail downloads
+4. **Processes photos** — downloads, resizes to 240x240, encodes to AVIF targeting ssimulacra2 quality score 78
+5. **Generates** an interactive page (~650 KB) with lazy-loaded bios (~200 KB) and timetable data
+6. **Serves** via a FastAPI backend with favorites API, WebSocket sync, push notifications, and ICS calendar export
 
 ## Project Structure
 
 ```
 stone-techno-companion/
 ├── stone_techno_companion.py    # CLI entry point — orchestrates the full pipeline
+├── fetch_videos.py              # YouTube set discovery via yt-dlp → artist_sets table
+├── seed_timetable.py            # Seeds fake timetable data for development
+├── migrate_db.py                # One-time DB migration (old schema → current)
 ├── scraper/
-│   ├── scrape.py                # Lineup page parser + SC/IG/Spotify scrapers
-│   ├── db.py                    # SQLite schema, upserts, queries, overrides
+│   ├── scrape.py                # Lineup parser + SC/IG/Spotify/RA scrapers
+│   ├── db.py                    # SQLite schema, upserts, queries — all event-scoped
 │   ├── images.py                # Photo download, resize (pyvips), AVIF encoding
-│   ├── render.py                # HTML generation — line-up list + timetable grid, SVG sprite
-│   ├── timetable_json.py        # Generates timetable.json for push scheduler + ICS endpoint
-│   ├── overrides.toml           # Manual corrections for wrong/missing links
-│   ├── qrcode.min.js            # QR code generator (bundled into HTML)
-│   └── icons/                   # SVG icons for Instagram, SoundCloud, Spotify,
-│       ├── instagram-square-round.svg      Linktree, YouTube — deduplicated via SVG sprite
-│       ├── soundcloud-square-round.svg
-│       ├── spotify-square-round.svg
-│       ├── linktree-square-round.svg
-│       ├── youtube-square-round.svg
-│       ├── favicon.svg              # Favicon (calendar + music note)
-│       └── favicon.png              # PNG version for OG image previews
+│   ├── render.py                # HTML generation — lineup + timetable + modals + JS
+│   ├── timetable_json.py        # Generates timetable.json for push scheduler + ICS
+│   ├── overrides.toml           # Manual corrections for links, curators, YouTube
+│   └── icons/                   # SVG icons — deduplicated via <symbol>/<use> sprite
 ├── server/
-│   ├── api.py                   # FastAPI app — favorites + schedule + push + ICS export
+│   ├── api.py                   # FastAPI — favorites + schedule + push + ICS + sync
 │   ├── static/
 │   │   ├── sw.js                # Service worker for push notifications
 │   │   └── manifest.json        # PWA manifest
 │   ├── generate_vapid_keys.py   # One-time VAPID key pair generator
 │   ├── Dockerfile               # Python 3.12 slim + uvicorn
-│   ├── docker-compose.yml       # Container config with volume mounts + .env
+│   ├── docker-compose.yml       # Container config with volume mounts
 │   └── requirements.txt         # fastapi, uvicorn[standard], pywebpush
 ├── .github/workflows/
 │   └── deploy.yml               # Auto-deploy server to VPS on push to main
 ├── output/                      # Generated (gitignored)
-│   ├── lineup.html              # The final page (~580KB)
-│   ├── timetable.json           # Slot UUID → set time mapping for push scheduler
-│   └── photos/*.avif            # Processed artist photos (~100 files)
-├── seed_timetable.py            # Seeds fake timetable data (5 day + 2 night floors)
-└── lineup.db                    # SQLite cache (gitignored)
+│   ├── lineup.html              # The final page (~650 KB)
+│   ├── bios.json                # Artist bios + sets, lazy-loaded (~200 KB)
+│   ├── timetable.json           # Slot UUID → set time mapping
+│   ├── photos/*.avif            # Processed artist photos
+│   └── thumbs/*.avif            # YouTube video thumbnails
+└── lineup.db                    # SQLite database (gitignored)
 ```
+
+## Database Schema
+
+```
+events            — id, name, edition, source_url, website, start/end_date, timezone, address, lat/lng
+artists           — id, name, photo_url, photo_file, bio (markdown)
+artist_links      — artist_id, platform, url, follower_count, position
+artist_sets       — id, artist_id, platform, url, title, view_count, duration_min, upload_date, position
+locations         — id, event_id, name, color (RGB), about (markdown), address, lat/lng
+location_notes    — location_id, date, note, position
+location_details  — location_id, label, value, position
+schedule          — artist_id, event_id, location_id, start_time, end_time, date, period, set_type
+```
+
+- **Artists, links, and sets are global** — shared across events. Schedule and locations are per-event.
+- **artist_links** normalizes all platforms — adding Mixcloud or Bandcamp is just an INSERT
+- **artist_sets** normalizes all media sources — `platform` column for YouTube, SoundCloud, etc.
+- **events** split `name` ("Stone Techno") and `edition` ("2026") — page title derived as `"{name} {edition} Companion"`
+- **SQLite**: WAL mode, foreign key enforcement, `sqlite3.Row` everywhere
 
 ## Requirements
 
 - Python 3.12+
 - [Playwright](https://playwright.dev/python/) with Chromium (`playwright install chromium`)
-- [pyvips](https://github.com/libvips/pyvips) (requires libvips system library)
+- [pyvips](https://github.com/libvips/pyvips) (requires libvips: `brew install vips`)
 - [ssimulacra2](https://github.com/cloudinary/ssimulacra2) binary in PATH
 - [BeautifulSoup4](https://www.crummy.com/software/BeautifulSoup/)
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+- [markdown](https://python-markdown.github.io/)
 
 ## Usage
 
-### Full pipeline (scrape + enrich + photos + generate)
+### Full pipeline
 
 ```bash
 python stone_techno_companion.py
@@ -78,17 +96,34 @@ python stone_techno_companion.py
 | `--refresh-followers` | Clear all cached counts and re-fetch |
 | `--refresh-photos` | Clear all cached photos and re-process |
 | `--deploy` | Rsync output to the production VPS after generating |
+| `--event-id ID` | Event identifier (default: `stone-techno-2026`) |
+| `--event-name NAME` | Event name (default: `Stone Techno`) |
+| `--event-edition ED` | Event edition (default: `2026`) |
 | `--url URL` | Override the source lineup URL |
 | `--output-dir DIR` | Override the output directory (default: `output/`) |
-| `--title TEXT` | Override the page title |
 
 ### Quick regeneration
-
-To tweak the HTML template or CSS without re-scraping:
 
 ```bash
 python stone_techno_companion.py --render-only --no-photos
 ```
+
+### Local preview
+
+```bash
+cd output && python3 -m http.server 8321
+# Open http://localhost:8321/lineup.html
+```
+
+Do not use `file://` — fetch-based features (bios, API) require HTTP.
+
+### YouTube sets
+
+```bash
+python fetch_videos.py
+```
+
+Run separately from the main pipeline (~50 min for 100 artists). Results stored in `artist_sets` table.
 
 ### Deploy to production
 
@@ -96,78 +131,43 @@ python stone_techno_companion.py --render-only --no-photos
 python stone_techno_companion.py --render-only --deploy
 ```
 
-This rsyncs `output/lineup.html`, `output/timetable.json`, `output/photos/`, plus `server/static/sw.js` and `server/static/manifest.json` to the VPS. No container restart needed — static files are volume-mounted.
+Rsyncs HTML, bios.json, timetable.json, photos, thumbs, sw.js, and manifest.json to the VPS.
 
-## Data Pipeline
+## Overrides
 
-### Scraping
-
-The scraper visits `stone-techno.com` and extracts:
-
-- **Artists** — name, photo URL, social links (Instagram, SoundCloud, Spotify, YouTube)
-- **Sections** — date + period (day 12:00-23:59 / night 23:00-07:00)
-- **Locations** — venue name + description (e.g. Grand Hall, Mischanlage) for night events
-- **Assignments** — which artist plays which section at which location
-
-### Enrichment
-
-After scraping the lineup, each artist's social profiles are visited in order:
-
-1. **SoundCloud** — follower count + discovers IG/Spotify/Linktree/YouTube links from bio
-2. **Instagram** — exact follower count via GraphQL API + discovers SC/Spotify/Linktree/YouTube from bio links
-3. **Spotify** — monthly listener count
-
-All data is cached in `lineup.db`. Counts are only fetched for artists that don't have them yet, unless `--refresh-followers` is used.
-
-### Overrides
-
-`scraper/overrides.toml` provides manual corrections for wrong or missing links. Applied after scraping, before follower fetching. When a link is changed, its associated count is automatically cleared for re-fetch.
+`scraper/overrides.toml` provides manual corrections applied after scraping.
 
 ```toml
 [Amoral]
-instagram = "https://www.instagram.com/amoral___dj/"
+ra = "https://ra.co/dj/amoral"
 
 [ROD]
 soundcloud = "https://soundcloud.com/bennyrodrigues"
-photo = "https://cdn.amsterdam-dance-event.nl/images/.../photo.webp"
-```
+photo = "https://cdn.example.com/photo.webp"
 
-Supported fields: `instagram`, `soundcloud`, `spotify`, `linktree`, `youtube`, `photo`.
+[youtube_names]
+"Serge" = "Serge Clone"
 
-A separate `[floor_curators]` section stores per-day per-floor "curated by" / "hosted by" annotations, rendered below the floor name pill in timetable headers:
+[youtube_videos]
+"Function" = ["abc123", "def456"]
 
-```toml
+[youtube_videos_add]
+"Rødhåd" = ["ghi789"]
+
 [floor_curators]
 "2026-07-11.koksofenbatterie" = "curated by Freddy K"
 "2026-07-12.werksschwimmbad" = "hosted by Clone Records"
 ```
 
-### Image Processing
-
-Photos go through:
-
-1. Download from source URL
-2. Auto-rotate based on EXIF
-3. Flatten alpha channel (white background)
-4. Resize to 240x240 using lanczos3, center crop
-5. Adaptive post-downscale sharpening in LAB space (intensity scales with downscale ratio)
-6. AVIF encoding via binary search on quality parameter to hit ssimulacra2 score of 78
-
 ## Favorites System
 
-The generated page includes a hearts/favorites feature with no sign-up required.
+No sign-up required. First heart tap auto-creates a session.
 
-### How it works
-
-1. User taps a heart on any artist card
-2. First tap auto-creates a session — no signup, no login, no personal data
-3. Each session gets two 128-bit URL-safe tokens (`secrets.token_urlsafe(16)`):
-   - **Session ID** — stored in localStorage, grants read + write access
-   - **Share token** — used in share URLs, grants read-only access
-4. Cross-device sync uses ephemeral 6-digit PINs (5-min TTL, single-use) — the PIN appears in the QR code and dialog, never the session ID
-5. Hearts sync across devices in real time via WebSocket
-6. Users can share a read-only link with friends (shows only picked artists)
-7. When a sync PIN is used, the sender gets a real-time confirmation via WebSocket
+- **Sessions**: 128-bit URL-safe tokens — `session_id` (read+write), `share_token` (read-only)
+- **Cross-device sync**: ephemeral 6-digit PINs (5-min TTL, single-use) via QR code or manual entry
+- **Real-time**: WebSocket sync — hearts and schedule changes appear instantly on all connected devices
+- **Sharing**: read-only links show only picked artists
+- **Offline**: hearts persist in localStorage, reconcile on next successful sync
 
 ### API Endpoints
 
@@ -175,92 +175,59 @@ Base URL: `https://stonetechno.deftlab.dev/api`
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/session` | Create a new session (returns session_id + share_token) |
-| `GET` | `/api/session/{code}` | Load picks (works with session_id or share_token) |
-| `POST` | `/api/session/{code}/pick/{artist_id}` | Add an artist pick |
-| `DELETE` | `/api/session/{code}/pick/{artist_id}` | Remove an artist pick |
-| `POST` | `/api/session/{code}/schedule/{slot_id}` | Add a slot to personal schedule |
-| `DELETE` | `/api/session/{code}/schedule/{slot_id}` | Remove a slot from personal schedule |
-| `POST` | `/api/session/{code}/sync-pin` | Generate a 6-digit sync PIN (5-min TTL, single-use) |
-| `POST` | `/api/sync/{pin}` | Exchange a sync PIN for session credentials |
-| `GET` | `/api/push/vapid-key` | VAPID public key for push subscription |
-| `POST` | `/api/session/{code}/push/subscribe` | Store a push subscription |
-| `DELETE` | `/api/session/{code}/push/subscribe` | Remove a push subscription |
-| `GET` | `/api/session/{code}/push/status` | Check if push subscriptions exist |
-| `GET` | `/ics/{slot_id}` | Download .ics calendar file for a timetable slot |
-| `WS` | `/ws/{code}` | WebSocket for real-time sync |
-
-Pick operations are atomic — they use `json_group_array` with `json_each` and `UNION`/`WHERE` to avoid read-modify-write races.
+| `POST` | `/api/session` | Create a new session |
+| `GET` | `/api/session/{code}` | Load picks (session_id or share_token) |
+| `POST` | `/api/session/{code}/pick/{artist_id}` | Add a pick |
+| `DELETE` | `/api/session/{code}/pick/{artist_id}` | Remove a pick |
+| `POST` | `/api/session/{code}/schedule/{slot_id}` | Add to schedule |
+| `DELETE` | `/api/session/{code}/schedule/{slot_id}` | Remove from schedule |
+| `POST` | `/api/session/{code}/sync-pin` | Generate sync PIN |
+| `POST` | `/api/sync/{pin}` | Exchange PIN for credentials |
+| `GET` | `/api/push/vapid-key` | VAPID public key |
+| `POST` | `/api/session/{code}/push/subscribe` | Store push subscription |
+| `DELETE` | `/api/session/{code}/push/subscribe` | Remove push subscription |
+| `GET` | `/ics/{slot_id}` | Download .ics calendar file |
+| `WS` | `/ws/{code}` | WebSocket real-time sync |
 
 ### Rate Limits
 
 | Endpoint | Limit |
 |---|---|
-| Session creation | 10 per hour per IP |
-| Pick add/remove | 600 per hour per IP |
-| Schedule add/remove | 600 per hour per IP |
-| Session load | 600 per hour per IP |
+| Session creation | 10/hour/IP |
+| Pick/schedule operations | 600/hour/IP |
+| Session load | 600/hour/IP |
 
-### Offline Resilience
+## Push Notifications
 
-Hearts toggle immediately in the UI and persist in localStorage. If the API call fails, the local state survives. On the next successful sync (tab focus or next toggle), local and server state are reconciled by diffing and replaying missed operations.
+Sends notifications 10 minutes before scheduled sets.
+
+- **Scheduler**: background task in `api.py` runs every 60s, matches `timetable.json` against sessions' schedules
+- **Dedup**: `sent_notifications` table, pruned after 7 days. Dead subscriptions auto-removed.
+- **iOS**: requires Safari + Add to Home Screen. Notification click uses Cache Storage flag (service worker can't access localStorage).
+- **Brave**: requires enabling Google push messaging in `brave://settings/privacy`
 
 ## Deployment Architecture
-
-### Infrastructure
 
 | Component | Detail |
 |---|---|
 | VPS | DigitalOcean, Ubuntu 24.04 |
 | Domain | `stonetechno.deftlab.dev` |
 | DNS | Cloudflare A record |
-| Reverse proxy | Caddy (auto-TLS via Let's Encrypt, zstd/gzip compression) |
+| Reverse proxy | Caddy (auto-TLS, zstd/gzip compression) |
 | App | FastAPI + uvicorn in Docker |
 | Database | SQLite (WAL mode) volume-mounted at `data/hearts.db` |
 
-### Two deploy paths
-
-**Content deploys** (HTML + photos) are triggered locally:
+### Content deploys (local)
 
 ```bash
 python stone_techno_companion.py --deploy
 ```
 
-Rsyncs files to the VPS. No container restart — static files are volume-mounted.
+### Code deploys (automatic)
 
-**Code deploys** (server changes) are automatic via GitHub Actions:
-
-When changes to `server/**` are pushed to `main`, the workflow SSHs into the VPS, pulls the latest code, and rebuilds the Docker container:
-
-```yaml
-# .github/workflows/deploy.yml
-name: Deploy server
-on:
-  push:
-    branches: [main]
-    paths: [server/**]
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy to VPS
-        uses: appleboy/ssh-action@v1
-        with:
-          host: 209.38.244.136
-          username: root
-          key: ${{ secrets.VPS_SSH_KEY }}
-          script: |
-            cd /root/services/stone-techno
-            git pull origin main
-            cd server
-            docker compose up -d --build
-```
-
-Requires one GitHub secret: `VPS_SSH_KEY` (SSH private key for root access).
+Push to `main` with changes in `server/` triggers GitHub Actions → SSH → `git pull` + `docker compose up -d --build --force-recreate`.
 
 ### Caddy configuration
-
-Add to `/root/services/caddy/Caddyfile` on the VPS:
 
 ```caddyfile
 stonetechno.deftlab.dev {
@@ -270,71 +237,30 @@ stonetechno.deftlab.dev {
 }
 ```
 
-Caddy auto-provisions the TLS certificate. The `stone-techno` container and Caddy share the external Docker network `apps`.
-
 ### First-time VPS setup
 
-1. Add Cloudflare DNS A record: `stonetechno` → `209.38.244.136`
-
-2. Clone the repo on the VPS:
-   ```bash
-   ssh root@209.38.244.136 "cd /root/services && git clone git@github.com:Gabe-LS/stone-techno-companion.git stone-techno"
-   ```
-
-3. Deploy static files from your local machine:
-   ```bash
-   python stone_techno_companion.py --render-only --no-photos --deploy
-   ```
-
-4. Generate VAPID keys and create `.env` on the VPS:
-   ```bash
-   pip install py-vapid cryptography
-   python server/generate_vapid_keys.py
-   # Copy vapid_private.pem to VPS: server/data/vapid_private.pem
-   # Create server/.env with VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY=/app/data/vapid_private.pem, VAPID_SUBJECT
-   ```
-
-5. Start the container:
-   ```bash
-   ssh root@209.38.244.136 "cd /root/services/stone-techno/server && docker compose up -d"
-   ```
-
-6. Add the Caddy block above and reload:
-   ```bash
-   ssh root@209.38.244.136 "docker exec caddy caddy reload --config /etc/caddy/Caddyfile"
-   ```
-
-7. Add the deploy secret to GitHub:
-   ```bash
-   gh secret set VPS_SSH_KEY < ~/.ssh/id_ed25519
-   ```
+1. DNS: Cloudflare A record `stonetechno` → VPS IP
+2. Clone repo on VPS: `cd /root/services && git clone ... stone-techno`
+3. Deploy static files: `python stone_techno_companion.py --render-only --no-photos --deploy`
+4. Generate VAPID keys, create `server/.env`
+5. Start container: `cd server && docker compose up -d`
+6. Add Caddy block, reload: `docker exec caddy caddy reload --config /etc/caddy/Caddyfile`
+7. GitHub secret: `gh secret set VPS_SSH_KEY < ~/.ssh/id_ed25519`
 
 ## Generated HTML Features
 
-- Single self-contained file (~580KB) with inline CSS, JS, and SVG sprite (`<symbol>`/`<use>`)
-- Artist popup data stored in a single JS lookup table (not duplicated per DOM element)
-- Responsive layout with mobile breakpoint at 480px
-- Sticky section headers (date, period, location) with gradient fade effect using IntersectionObserver
-- Artist cards with photo, name, schedule annotation, social links + follower counts
-- Lazy-loaded AVIF photos
-- **Timetable view** with CSS grid (desktop) and HTML table with native scroll + sticky `<thead>` (mobile)
-- Dynamic row height via `--row-h` CSS variable (10px or 14px based on artist density)
-- Grid lines via CSS `repeating-linear-gradient` (no JS)
-- Per-artist hearts on photo thumbnails, calendar icon for personal schedule
-- B2B sets render as multi-artist cards
-- "Add to calendar" via server-side ICS endpoint (`/ics/{slot_id}`) for native iOS/Android calendar integration
-- Mobile: hamburger menu, native overflow scroll
-- CSS variables for colors and font scale, WCAG 2.1 AA compliant contrast ratios
-- 7 floor colors (rainbow pastels, evenly spaced, colorblind-aware) with per-day curator/host annotations
-- Artist schedule notes: floor + time on every card, "Also" cross-references for multi-slot artists
-- Artists sorted chronologically by set time within each section
-- Command bar: Line-up | Timetable | Show My Picks | Show My Schedule | Share | Sync | 🔔
-- Share modal with readonly URL input and copy-to-clipboard
-- Sync modal with QR code, 6-digit PIN, live countdown timer, and success confirmation via WebSocket
-- Push notifications via service worker (10 min before scheduled sets)
-- PWA manifest for iOS Add to Home Screen support
-- Browser-specific notification modals (Brave settings, iOS Safari instructions, copy-link for non-Safari iOS)
-- Read-only share views auto-filter to show only picked artists
-- Favicon (SVG inline + PNG for OG image) and Open Graph / Twitter Card metadata
-- Accessible: `aria-label`, `aria-pressed`, keyboard navigation, focus management in modals
-- Escape key closes modals, tab trapping within open modals, scroll lock
+- Single page (~650 KB) with inline CSS, JS, SVG sprite, lazy-loaded bios
+- **Lineup view**: artist cards with photos, social links (dynamic from DB), follower counts, schedule annotations
+- **Timetable view**: CSS grid (desktop) / HTML table with native scroll (mobile), sticky headers, now-line, dynamic row height
+- **Bio overlay**: markdown-rendered biography, YouTube sets with thumbnails, lazy-loaded on first tap
+- **Scroll position**: saved per view — switching lineup ↔ timetable restores position
+- **Popup → Bio**: clicking artist name/photo in timetable popup opens bio modal
+- **Body scroll lock**: `position: fixed` technique for iOS Safari compatibility
+- **Accessibility**: `tabindex`/`role="button"` on all interactive elements, ARIA attributes on modals/popups, keyboard navigation, focus trapping, meaningful alt text
+- **Responsive**: mobile breakpoint at 480px, hamburger menu, `@media (hover: hover)` guards
+- **PWA**: manifest, service worker, Add to Home Screen support
+- **WCAG 2.1 AA**: contrast ratios, 12px minimum font size, no text below accessible floor
+
+## Multi-Event Support
+
+The DB supports multiple events. Artists and their links/sets are global (shared across events). Schedule, locations, and notes are scoped per `event_id`. Each event needs its own scraper module — the scraper output format (`parsed` dict with `artists`, `sections`, `locations`, `assignments`) is the stable interface between event-specific scrapers and the generic pipeline.
