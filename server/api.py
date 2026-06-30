@@ -384,22 +384,27 @@ async def lifespan(app: FastAPI):
     task = asyncio.create_task(_prune_rate_limits())
     prune_task = asyncio.create_task(_prune_expired_sessions())
     push_task = asyncio.create_task(_push_notification_scheduler())
+    chat_purge_task = None
+    try:
+        from chat_api import mount_chat
+
+        chat_purge_coro = mount_chat(app)
+        chat_purge_task = asyncio.create_task(chat_purge_coro())
+    except Exception:
+        logging.getLogger(__name__).warning("Chat module not loaded", exc_info=True)
     yield
     task.cancel()
     prune_task.cancel()
     push_task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
-    try:
-        await prune_task
-    except asyncio.CancelledError:
-        pass
-    try:
-        await push_task
-    except asyncio.CancelledError:
-        pass
+    if chat_purge_task:
+        chat_purge_task.cancel()
+    for t in [task, prune_task, push_task] + (
+        [chat_purge_task] if chat_purge_task else []
+    ):
+        try:
+            await t
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(lifespan=lifespan)
