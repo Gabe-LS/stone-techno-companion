@@ -217,7 +217,8 @@ def main():
         yt_add = overrides.get("youtube_videos_add", {})
 
     cached_ids = {
-        row[0] for row in db.execute("SELECT DISTINCT artist_id FROM videos").fetchall()
+        row[0]
+        for row in db.execute("SELECT DISTINCT artist_id FROM artist_sets").fetchall()
     }
 
     THUMBS_DIR.mkdir(parents=True, exist_ok=True)
@@ -233,7 +234,7 @@ def main():
 
         if aid in cached_ids:
             count = db.execute(
-                "SELECT COUNT(*) FROM videos WHERE artist_id = ?", (aid,)
+                "SELECT COUNT(*) FROM artist_sets WHERE artist_id = ?", (aid,)
             ).fetchone()[0]
             skipped += 1
             print(f"  [{i}/{total}] {name}: cached ({count} videos)")
@@ -257,14 +258,14 @@ def main():
 
         for pos, v in enumerate(selected):
             db.execute(
-                "INSERT OR REPLACE INTO videos "
-                "(video_id, artist_id, title, url, views, duration, upload_date, position) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT OR REPLACE INTO artist_sets "
+                "(id, artist_id, platform, url, title, view_count, duration_min, upload_date, position) "
+                "VALUES (?, ?, 'youtube', ?, ?, ?, ?, ?, ?)",
                 (
                     v["id"],
                     aid,
-                    v["title"],
                     v["url"],
+                    v["title"],
                     v["views"],
                     v["duration"],
                     v.get("date"),

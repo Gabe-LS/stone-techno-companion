@@ -81,24 +81,31 @@ def _format_hhmm(minutes: int) -> str:
     return f"{h:02d}:{m:02d}"
 
 
+PLATFORM_ICONS = {
+    "instagram": "i-ig",
+    "soundcloud": "i-sc",
+    "spotify": "i-sp",
+    "youtube": "i-yt",
+    "ra": "i-ra",
+    "linktree": "i-lt",
+}
+
+
 def _artists_json(group: list[dict], photos_prefix: str) -> str:
     return _json.dumps(
         [
             {
                 "name": a.get("name", ""),
-                "photo": photos_prefix + a["photo_local"]
-                if a.get("photo_local")
-                else "",
-                "ig": a.get("instagram") or "",
-                "sc": a.get("soundcloud") or "",
-                "sp": a.get("spotify") or "",
-                "lt": a.get("linktree") or "",
-                "yt": a.get("youtube") or "",
-                "ra": a.get("ra") or "",
-                "igF": format_followers(a.get("ig_followers")) or "",
-                "scF": format_followers(a.get("sc_followers")) or "",
-                "spL": format_followers(a.get("spotify_listeners")) or "",
-                "raF": format_followers(a.get("ra_followers")) or "",
+                "photo": photos_prefix + a["photo_file"] if a.get("photo_file") else "",
+                "links": [
+                    {
+                        "p": lnk["platform"],
+                        "u": lnk["url"],
+                        "f": format_followers(lnk.get("follower_count")) or "",
+                    }
+                    for lnk in a.get("links", [])
+                    if lnk.get("url")
+                ],
             }
             for a in group
         ]
@@ -842,17 +849,8 @@ def render_output_html(
         a: dict, cur_date: str, cur_period: str, loc_id: str | None = None
     ) -> None:
         name = a.get("name") or ""
-        photo_local = a.get("photo_local")
-        ig = a.get("instagram")
-        sc = a.get("soundcloud")
-        sp = a.get("spotify")
-        lt = a.get("linktree")
-        yt = a.get("youtube")
-        ra = a.get("ra")
-        ig_f = format_followers(a.get("ig_followers"))
-        sc_f = format_followers(a.get("sc_followers"))
-        sp_l = format_followers(a.get("spotify_listeners"))
-        ra_f = format_followers(a.get("ra_followers"))
+        photo_file = a.get("photo_file")
+        links = a.get("links", [])
         sched_main, sched_also = _format_artist_schedule(
             a.get("all_slots", []), cur_date, cur_period
         )
@@ -863,9 +861,9 @@ def render_output_html(
         parts.append(
             f'      <li class="artist-item" data-artist-id="{esc(artist_id)}" data-oid="{esc(oid)}">'
         )
-        if photo_local:
+        if photo_file:
             parts.append(
-                f'        <img class="artist-photo" src="photos/{esc(photo_local)}" alt="{esc(name)}" width="120" height="120" loading="lazy" tabindex="0" role="button" onclick="openBio(this)" onkeydown="if(event.key===\'Enter\')openBio(this)">'
+                f'        <img class="artist-photo" src="photos/{esc(photo_file)}" alt="{esc(name)}" width="120" height="120" loading="lazy" tabindex="0" role="button" onclick="openBio(this)" onkeydown="if(event.key===\'Enter\')openBio(this)">'
             )
         else:
             parts.append('        <div class="photo-placeholder"></div>')
@@ -878,31 +876,14 @@ def render_output_html(
                 f'        <span class="artist-schedule">{esc(sched_main)}</span>'
             )
         parts.append('        <div class="links">')
-        if ig:
-            parts.append(
-                f"          {_link(ig, _use_svg('i-ig', width='18', height='18'), ig_f or '')}"
-            )
-        if sc:
-            parts.append(
-                f"          {_link(sc, _use_svg('i-sc', width='18', height='18'), sc_f or '')}"
-            )
-        if sp:
-            parts.append(
-                f"          {_link(sp, _use_svg('i-sp', width='18', height='18'), sp_l or '')}"
-            )
-        if yt:
-            parts.append(
-                f"          {_link(yt, _use_svg('i-yt', width='18', height='18'))}"
-            )
-        if ra:
-            parts.append(
-                f"          {_link(ra, _use_svg('i-ra', width='18', height='18'), ra_f or '')}"
-            )
-        if lt:
-            parts.append(
-                f"          {_link(lt, _use_svg('i-lt', width='18', height='18'))}"
-            )
-        if not ig and not sc and not sp and not lt and not yt and not ra:
+        for lnk in links:
+            icon_id = PLATFORM_ICONS.get(lnk["platform"])
+            if icon_id:
+                fc = format_followers(lnk.get("follower_count")) or ""
+                parts.append(
+                    f"          {_link(lnk['url'], _use_svg(icon_id, width='18', height='18'), fc)}"
+                )
+        if not links:
             parts.append('          <span class="missing">No links</span>')
         parts.append("        </div>")
         if sched_also:
@@ -1004,12 +985,10 @@ def render_output_html(
         for a in artists_list:
             oid = a.get("id", "")
             if oid and oid not in bio_lookup:
-                raw_bio = a.get("ra_bio") or ""
+                raw_bio = a.get("bio") or ""
                 entry: dict = {
                     "name": a.get("name", ""),
-                    "photo": f"photos/{a['photo_local']}"
-                    if a.get("photo_local")
-                    else "",
+                    "photo": f"photos/{a['photo_file']}" if a.get("photo_file") else "",
                     "bio": _render_markdown(_strip_booking(raw_bio)) if raw_bio else "",
                 }
                 if oid in artist_videos:
@@ -1241,15 +1220,15 @@ def render_output_html(
                         f'<div class="tt-time-row"><span class="tt-time">{esc(s_display)}–{esc(e_display)}</span>{cal_btn}</div>'
                     )
                     for a in group:
-                        photo_local = a.get("photo_local") or ""
+                        photo_file = a.get("photo_file") or ""
                         name = a.get("name", "")
                         loc_for_id = fid if is_night else ""
                         a_card_key = (
                             f"{a.get('id', '')}:{tt_date_str}:{period}:{loc_for_id}"
                         )
                         a_artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, a_card_key))
-                        if photo_local:
-                            photo_el = f'<img class="tt-photo" src="{esc(photos_prefix + photo_local)}" alt="{esc(name)}" loading="lazy">'
+                        if photo_file:
+                            photo_el = f'<img class="tt-photo" src="{esc(photos_prefix + photo_file)}" alt="{esc(name)}" loading="lazy">'
                         else:
                             photo_el = '<div class="tt-photo-placeholder"></div>'
                         heart_btn = (
@@ -1363,15 +1342,15 @@ def render_output_html(
                         f'<div class="tt-time-row"><span class="tt-time">{esc(s_display)}–{esc(e_display)}</span>{cal_btn}</div>'
                     )
                     for a in group:
-                        photo_local = a.get("photo_local") or ""
+                        photo_file = a.get("photo_file") or ""
                         name = a.get("name", "")
                         loc_for_id = fid if is_night else ""
                         a_card_key = (
                             f"{a.get('id', '')}:{tt_date_str}:{period}:{loc_for_id}"
                         )
                         a_artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, a_card_key))
-                        if photo_local:
-                            photo_el = f'<img class="tt-photo" src="{esc(photos_prefix + photo_local)}" alt="{esc(name)}" loading="lazy">'
+                        if photo_file:
+                            photo_el = f'<img class="tt-photo" src="{esc(photos_prefix + photo_file)}" alt="{esc(name)}" loading="lazy">'
                         else:
                             photo_el = '<div class="tt-photo-placeholder"></div>'
                         heart_btn = (
@@ -2352,12 +2331,14 @@ def render_output_html(
     }
     """)
         parts.append("""
-    const SVG_IG_JS = '<svg width="18" height="18"><use href="#i-ig"/></svg>';
-    const SVG_SC_JS = '<svg width="18" height="18"><use href="#i-sc"/></svg>';
-    const SVG_SP_JS = '<svg width="18" height="18"><use href="#i-sp"/></svg>';
-    const SVG_LT_JS = '<svg width="18" height="18"><use href="#i-lt"/></svg>';
-    const SVG_YT_JS = '<svg width="18" height="18"><use href="#i-yt"/></svg>';
-    const SVG_RA_JS = '<svg width="18" height="18"><use href="#i-ra"/></svg>';""")
+    const PLATFORM_SVG = {
+      instagram: '<svg width="18" height="18"><use href="#i-ig"/></svg>',
+      soundcloud: '<svg width="18" height="18"><use href="#i-sc"/></svg>',
+      spotify: '<svg width="18" height="18"><use href="#i-sp"/></svg>',
+      linktree: '<svg width="18" height="18"><use href="#i-lt"/></svg>',
+      youtube: '<svg width="18" height="18"><use href="#i-yt"/></svg>',
+      ra: '<svg width="18" height="18"><use href="#i-ra"/></svg>'
+    };""")
         parts.append("""
     let _popupJustOpened = false;
     document.querySelectorAll('.tt-block').forEach(block => {
@@ -2386,12 +2367,10 @@ def render_output_html(
               ? '<img class="popup-photo" src="' + a.photo + '" alt="' + a.name + '">'
               : '<div class="popup-photo-placeholder"></div>';
             let links = '';
-            if (a.ig) links += _popupLink(a.ig, SVG_IG_JS, a.igF);
-            if (a.sc) links += _popupLink(a.sc, SVG_SC_JS, a.scF);
-            if (a.sp) links += _popupLink(a.sp, SVG_SP_JS, a.spL);
-            if (a.yt) links += _popupLink(a.yt, SVG_YT_JS, '');
-            if (a.ra) links += _popupLink(a.ra, SVG_RA_JS, a.raF);
-            if (a.lt) links += _popupLink(a.lt, SVG_LT_JS, '');
+            (a.links || []).forEach(function(l) {
+              var svg = PLATFORM_SVG[l.p] || '';
+              if (svg) links += _popupLink(l.u, svg, l.f || '');
+            });
             artistsHtml += '<div class="popup-artist">' + photo + '<div><div class="popup-name">' + a.name + '</div><div class="links">' + links + '</div></div></div>';
           });
           document.getElementById('popup-artists').innerHTML = artistsHtml;

@@ -15,7 +15,7 @@ from scraper.db import (
     apply_overrides,
     ensure_event,
     init_db,
-    load_all_videos,
+    load_all_sets,
     load_assignments_from_db,
     load_floor_curators,
     load_location_colors,
@@ -167,7 +167,7 @@ def main() -> None:
             apply_overrides(db, OVERRIDES_PATH, event_id)
 
         if args.refresh_photos:
-            db.execute("UPDATE artists SET photo_local = NULL")
+            db.execute("UPDATE artists SET photo_file = NULL")
             db.commit()
 
         if not args.no_photos:
@@ -176,7 +176,7 @@ def main() -> None:
         ordered_sections = load_sections_from_db(db, event_id)
         all_locations = load_locations_from_db(db, event_id)
         all_assignments = load_assignments_from_db(db, event_id)
-        all_videos = load_all_videos(db)
+        all_videos = load_all_sets(db)
         floor_curators = load_floor_curators(db, event_id)
         floor_colors = load_location_colors(db, event_id)
 

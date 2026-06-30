@@ -9,7 +9,15 @@ from urllib.parse import parse_qs, unquote, urlparse
 from bs4 import BeautifulSoup
 from playwright.sync_api import BrowserContext
 
-from .db import get_artist, get_artists_without_ra, get_missing, update_artist_field
+from .db import (
+    get_artist,
+    get_artists_without_platform,
+    get_missing_links,
+    update_artist_field,
+    update_link_follower_count,
+    upsert_artist_link,
+    PLATFORM_POSITIONS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -254,8 +262,26 @@ def fetch_sc_profile(ctx: BrowserContext, url: str) -> dict:
     return result
 
 
+def _get_link_url(db: sqlite3.Connection, artist_id: str, platform: str) -> str | None:
+    row = db.execute(
+        "SELECT url FROM artist_links WHERE artist_id = ? AND platform = ?",
+        (artist_id, platform),
+    ).fetchone()
+    return row["url"] if row else None
+
+
+def _get_link_count(
+    db: sqlite3.Connection, artist_id: str, platform: str
+) -> int | None:
+    row = db.execute(
+        "SELECT follower_count FROM artist_links WHERE artist_id = ? AND platform = ?",
+        (artist_id, platform),
+    ).fetchone()
+    return row["follower_count"] if row else None
+
+
 def fetch_all_sc(ctx: BrowserContext, db: sqlite3.Connection) -> None:
-    missing = get_missing(db, "soundcloud", "sc_followers")
+    missing = get_missing_links(db, "soundcloud")
     if not missing:
         return
 
@@ -263,27 +289,24 @@ def fetch_all_sc(ctx: BrowserContext, db: sqlite3.Connection) -> None:
     print(f"Fetching {total} SoundCloud profiles ...")
     ig_corrections: list[tuple[str, str]] = []
 
-    for i, (oid, sc_url) in enumerate(missing, 1):
+    for i, row in enumerate(missing, 1):
+        oid, sc_url = row["artist_id"], row["url"]
         artist = get_artist(db, oid)
         print(f"  [{i}/{total}] SC: {artist['name']}", end="", flush=True)
 
         profile = fetch_sc_profile(ctx, sc_url)
 
         if profile["followers"] is not None:
-            update_artist_field(db, oid, "sc_followers", profile["followers"])
+            update_link_follower_count(db, oid, "soundcloud", profile["followers"])
 
-        if profile["instagram"] and not artist["instagram"]:
-            update_artist_field(db, oid, "instagram", profile["instagram"])
-        if profile["spotify"] and not artist["spotify"]:
-            update_artist_field(db, oid, "spotify", profile["spotify"])
-        if profile["linktree"] and not artist["linktree"]:
-            update_artist_field(db, oid, "linktree", profile["linktree"])
-        if profile["youtube"] and not artist["youtube"]:
-            update_artist_field(db, oid, "youtube", profile["youtube"])
+        for platform in ("instagram", "spotify", "linktree", "youtube"):
+            if profile[platform] and not _get_link_url(db, oid, platform):
+                upsert_artist_link(db, oid, platform, profile[platform])
 
-        if profile["instagram"] and artist["instagram"]:
+        existing_ig = _get_link_url(db, oid, "instagram")
+        if profile["instagram"] and existing_ig:
             sc_ig = profile["instagram"].rstrip("/").lower()
-            site_ig = artist["instagram"].rstrip("/").lower()
+            site_ig = existing_ig.rstrip("/").lower()
             if sc_ig != site_ig:
                 ig_corrections.append((oid, profile["instagram"]))
 
@@ -297,20 +320,14 @@ def fetch_all_sc(ctx: BrowserContext, db: sqlite3.Connection) -> None:
     if ig_corrections:
         print(f"\nFound {len(ig_corrections)} different IG links from SoundCloud:")
         for oid, new_ig in ig_corrections:
-            artist = get_artist(db, oid)
-            if artist["ig_followers"] is None:
-                db.execute(
-                    "UPDATE artists SET instagram = ?, ig_followers = NULL WHERE id = ?",
-                    (new_ig, oid),
-                )
-                db.commit()
-                print(
-                    f"  {artist['name']}: {artist['instagram']} -> {new_ig} (replaced)"
-                )
+            a = get_artist(db, oid)
+            old_ig = _get_link_url(db, oid, "instagram") or ""
+            ig_count = _get_link_count(db, oid, "instagram")
+            if ig_count is None:
+                upsert_artist_link(db, oid, "instagram", new_ig)
+                print(f"  {a['name']}: {old_ig} -> {new_ig} (replaced)")
             else:
-                print(
-                    f"  {artist['name']}: kept {artist['instagram']} (has followers), SC says {new_ig}"
-                )
+                print(f"  {a['name']}: kept {old_ig} (has followers), SC says {new_ig}")
 
 
 # ---------------------------------------------------------------------------
@@ -441,13 +458,13 @@ def fetch_ig_profile(ctx: BrowserContext, url: str) -> dict:
 
 
 def fetch_all_ig(ctx: BrowserContext, db: sqlite3.Connection) -> None:
-    missing = get_missing(db, "instagram", "ig_followers")
+    missing = get_missing_links(db, "instagram")
     if not missing:
         return
 
     url_to_oids: dict[str, list[str]] = {}
-    for oid, ig_url in missing:
-        url_to_oids.setdefault(ig_url, []).append(oid)
+    for row in missing:
+        url_to_oids.setdefault(row["url"], []).append(row["artist_id"])
 
     unique_urls = list(url_to_oids.keys())
     total = len(unique_urls)
@@ -462,18 +479,12 @@ def fetch_all_ig(ctx: BrowserContext, db: sqlite3.Connection) -> None:
 
         if profile["followers"] is not None:
             for o in url_to_oids[ig_url]:
-                update_artist_field(db, o, "ig_followers", profile["followers"])
+                update_link_follower_count(db, o, "instagram", profile["followers"])
 
         for o in url_to_oids[ig_url]:
-            a = get_artist(db, o)
-            if profile["soundcloud"] and not a["soundcloud"]:
-                update_artist_field(db, o, "soundcloud", profile["soundcloud"])
-            if profile["spotify"] and not a["spotify"]:
-                update_artist_field(db, o, "spotify", profile["spotify"])
-            if profile["linktree"] and not a["linktree"]:
-                update_artist_field(db, o, "linktree", profile["linktree"])
-            if profile["youtube"] and not a["youtube"]:
-                update_artist_field(db, o, "youtube", profile["youtube"])
+            for platform in ("soundcloud", "spotify", "linktree", "youtube"):
+                if profile[platform] and not _get_link_url(db, o, platform):
+                    upsert_artist_link(db, o, platform, profile[platform])
 
         fc_str = f"{profile['followers']:,}" if profile["followers"] else "?"
         extras = [
@@ -510,13 +521,13 @@ def fetch_spotify_listeners(ctx: BrowserContext, url: str) -> int | None:
 
 
 def fetch_all_spotify(ctx: BrowserContext, db: sqlite3.Connection) -> None:
-    missing = get_missing(db, "spotify", "spotify_listeners")
+    missing = get_missing_links(db, "spotify")
     if not missing:
         return
 
     url_to_oids: dict[str, list[str]] = {}
-    for oid, sp_url in missing:
-        url_to_oids.setdefault(sp_url, []).append(oid)
+    for row in missing:
+        url_to_oids.setdefault(row["url"], []).append(row["artist_id"])
 
     unique_urls = list(url_to_oids.keys())
     total = len(unique_urls)
@@ -530,7 +541,7 @@ def fetch_all_spotify(ctx: BrowserContext, db: sqlite3.Connection) -> None:
         listeners = fetch_spotify_listeners(ctx, sp_url)
         if listeners is not None:
             for o in url_to_oids[sp_url]:
-                update_artist_field(db, o, "spotify_listeners", listeners)
+                update_link_follower_count(db, o, "spotify", listeners)
 
         print(f" -> {listeners:,}" if listeners else " -> ?")
 
@@ -598,11 +609,11 @@ def _normalize_social_url(url: str | None) -> str | None:
     return f"{host}{path}"
 
 
-def _ra_match_score(ra_profile: dict, db_artist) -> int:
+def _ra_match_score(ra_profile: dict, db_artist, db_links: dict[str, str]) -> int:
     score = 0
     for field in ("soundcloud", "instagram"):
         ra_val = _normalize_social_url(ra_profile.get(field))
-        db_val = _normalize_social_url(db_artist[field])
+        db_val = _normalize_social_url(db_links.get(field, ""))
         if ra_val and db_val:
             if ra_val == db_val:
                 score += 3
@@ -625,8 +636,9 @@ def _clean_ra_bio(text: str) -> str:
     ).strip()
 
 
-def fetch_ra_profile(page, artist_name: str, db_artist) -> dict | None:
-    """Search RA for an artist, validate via social link matching, return profile."""
+def fetch_ra_profile(
+    page, artist_name: str, db_artist, db_links: dict[str, str]
+) -> dict | None:
     result = _ra_gql(page, _RA_SEARCH_QUERY, {"term": artist_name})
     hits = (result.get("data") or {}).get("search") or []
     if not hits:
@@ -643,11 +655,11 @@ def fetch_ra_profile(page, artist_name: str, db_artist) -> dict | None:
         if not profile:
             continue
 
-        score = _ra_match_score(profile, db_artist)
+        score = _ra_match_score(profile, db_artist, db_links)
 
         has_social_overlap = any(
             _normalize_social_url(profile.get(f))
-            and _normalize_social_url(db_artist[f])
+            and _normalize_social_url(db_links.get(f, ""))
             for f in ("soundcloud", "instagram")
         )
         if has_social_overlap and score >= 3:
@@ -669,7 +681,7 @@ def fetch_ra_profile(page, artist_name: str, db_artist) -> dict | None:
 
 
 def fetch_all_ra(ctx: BrowserContext, db: sqlite3.Connection) -> None:
-    missing = get_artists_without_ra(db)
+    missing = get_artists_without_platform(db, "ra")
     if not missing:
         return
 
@@ -685,22 +697,31 @@ def fetch_all_ra(ctx: BrowserContext, db: sqlite3.Connection) -> None:
         for i, artist in enumerate(missing, 1):
             print(f"  [{i}/{total}] RA: {artist['name']}", end="", flush=True)
 
-            profile = fetch_ra_profile(page, artist["name"], artist)
+            artist_links = {
+                row["platform"]: row["url"]
+                for row in db.execute(
+                    "SELECT platform, url FROM artist_links WHERE artist_id = ?",
+                    (artist["id"],),
+                )
+            }
+            profile = fetch_ra_profile(page, artist["name"], artist, artist_links)
 
             if profile:
                 matched += 1
-                update_artist_field(db, artist["id"], "ra", profile["ra_url"])
-                update_artist_field(
-                    db, artist["id"], "ra_followers", profile["ra_followers"]
+                upsert_artist_link(
+                    db,
+                    artist["id"],
+                    "ra",
+                    profile["ra_url"],
+                    profile["ra_followers"],
                 )
                 bio = profile["ra_bio"].strip()
                 if bio:
-                    update_artist_field(db, artist["id"], "ra_bio", bio)
+                    update_artist_field(db, artist["id"], "bio", bio)
                 fc = f"{profile['ra_followers']:,}" if profile["ra_followers"] else "?"
                 print(f" -> {fc} followers ({profile['ra_url']})")
             else:
-                update_artist_field(db, artist["id"], "ra", "")
-                update_artist_field(db, artist["id"], "ra_followers", 0)
+                upsert_artist_link(db, artist["id"], "ra", "", 0)
                 print(" -> not found")
     finally:
         page.close()

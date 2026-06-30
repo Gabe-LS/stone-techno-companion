@@ -8,7 +8,7 @@ from urllib.request import Request, urlopen
 
 import pyvips
 
-from .db import get_artists_missing_photos, save_photo_local
+from .db import get_artists_missing_photos, save_photo_file
 
 SSIMULACRA2_TARGET = 78.0
 
@@ -121,7 +121,7 @@ def process_artist_photos(db: sqlite3.Connection, photos_dir: Path) -> None:
                         f.write(data)
                 ref_im = resize_and_crop(raw_path, 240)
                 score = encode_avif_to_target(ref_im, str(out_path), SSIMULACRA2_TARGET)
-            save_photo_local(db, artist_id, filename)
+            save_photo_file(db, artist_id, filename)
             print(f" -> {out_path.stat().st_size / 1024:.1f}KB ssim2={score:.1f}")
         except Exception as e:
             print(f" -> ERROR: {e}")
