@@ -14,6 +14,7 @@ from playwright.sync_api import sync_playwright
 from scraper.db import (
     apply_overrides,
     init_db,
+    load_all_videos,
     load_assignments_from_db,
     load_floor_curators,
     load_locations_from_db,
@@ -115,6 +116,7 @@ def main() -> None:
     output_path = output_dir / "lineup.html"
 
     db = sqlite3.connect(str(DB_PATH))
+    db.row_factory = sqlite3.Row
     try:
         init_db(db)
 
@@ -164,9 +166,9 @@ def main() -> None:
         ordered_sections = load_sections_from_db(db)
         all_locations = load_locations_from_db(db)
         all_assignments = load_assignments_from_db(db)
+        all_videos = load_all_videos(db)
         floor_curators = load_floor_curators(OVERRIDES_PATH)
 
-        # Enable timetable view when any artist has start_time
         has_timetable = any(
             a.get("start_time") for artists in all_assignments.values() for a in artists
         )
@@ -179,6 +181,7 @@ def main() -> None:
             has_timetable=has_timetable,
             floor_curators=floor_curators,
             output_dir=str(output_dir),
+            videos=all_videos,
         )
 
         if has_timetable:

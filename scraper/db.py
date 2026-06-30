@@ -10,117 +10,91 @@ OVERRIDE_FIELDS = {
     "spotify",
     "linktree",
     "youtube",
-    "photo",
+    "photo_url",
     "ra",
 }
+
+OVERRIDE_ALIASES = {"photo": "photo_url"}
 
 
 def init_db(db: sqlite3.Connection) -> None:
     db.executescript("""
         CREATE TABLE IF NOT EXISTS artists (
-            overlay_id        TEXT PRIMARY KEY,
+            id                TEXT PRIMARY KEY,
             name              TEXT NOT NULL,
+            photo_url         TEXT,
+            photo_local       TEXT,
             instagram         TEXT,
             soundcloud        TEXT,
             spotify           TEXT,
-            linktree          TEXT,
             youtube           TEXT,
-            photo             TEXT,
+            linktree          TEXT,
+            ra                TEXT,
             ig_followers      INTEGER,
             sc_followers      INTEGER,
             spotify_listeners INTEGER,
-            photo_local       TEXT
-        );
-        CREATE TABLE IF NOT EXISTS sections (
-            timestamp_key TEXT PRIMARY KEY,
-            date          TEXT NOT NULL,
-            period        TEXT NOT NULL,
-            position      INTEGER NOT NULL
+            ra_followers      INTEGER,
+            ra_bio            TEXT
         );
         CREATE TABLE IF NOT EXISTS locations (
-            location_id   TEXT PRIMARY KEY,
-            name          TEXT NOT NULL,
-            description   TEXT
+            id          TEXT PRIMARY KEY,
+            name        TEXT NOT NULL,
+            description TEXT
         );
-        CREATE TABLE IF NOT EXISTS artist_sections (
-            overlay_id    TEXT NOT NULL,
-            timestamp_key TEXT NOT NULL,
-            location_id   TEXT,
-            PRIMARY KEY (overlay_id, timestamp_key),
-            FOREIGN KEY (overlay_id) REFERENCES artists(overlay_id),
-            FOREIGN KEY (timestamp_key) REFERENCES sections(timestamp_key),
-            FOREIGN KEY (location_id) REFERENCES locations(location_id)
+        CREATE TABLE IF NOT EXISTS schedule (
+            artist_id   TEXT NOT NULL REFERENCES artists(id),
+            location_id TEXT,
+            start_time  TEXT NOT NULL,
+            end_time    TEXT NOT NULL,
+            date        TEXT NOT NULL,
+            period      TEXT NOT NULL CHECK (period IN ('day', 'night')),
+            PRIMARY KEY (artist_id, start_time)
         );
+        CREATE INDEX IF NOT EXISTS idx_schedule_date ON schedule(date, period);
+        CREATE TABLE IF NOT EXISTS videos (
+            video_id    TEXT PRIMARY KEY,
+            artist_id   TEXT NOT NULL REFERENCES artists(id),
+            title       TEXT NOT NULL,
+            url         TEXT NOT NULL,
+            views       INTEGER NOT NULL DEFAULT 0,
+            duration    INTEGER NOT NULL DEFAULT 0,
+            upload_date INTEGER,
+            position    INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_videos_artist ON videos(artist_id);
     """)
-    artist_cols = {row[1] for row in db.execute("PRAGMA table_info(artists)")}
-    for col, typ in [
-        ("photo_local", "TEXT"),
-        ("linktree", "TEXT"),
-        ("youtube", "TEXT"),
-        ("spotify_listeners", "INTEGER"),
-        ("ra", "TEXT"),
-        ("ra_followers", "INTEGER"),
-        ("ra_bio", "TEXT"),
-    ]:
-        if col not in artist_cols:
-            db.execute(f"ALTER TABLE artists ADD COLUMN {col} {typ}")
-    as_cols = {row[1] for row in db.execute("PRAGMA table_info(artist_sections)")}
-    if "location_id" not in as_cols:
-        db.execute("ALTER TABLE artist_sections ADD COLUMN location_id TEXT")
-    if "start_time" not in as_cols:
-        db.execute("ALTER TABLE artist_sections ADD COLUMN start_time TEXT")
-    if "end_time" not in as_cols:
-        db.execute("ALTER TABLE artist_sections ADD COLUMN end_time TEXT")
-    sec_cols = {row[1] for row in db.execute("PRAGMA table_info(sections)")}
-    if "label" in sec_cols and "date" not in sec_cols:
-        db.execute("DROP TABLE sections")
-        db.execute("""
-            CREATE TABLE sections (
-                timestamp_key TEXT PRIMARY KEY,
-                date          TEXT NOT NULL,
-                period        TEXT NOT NULL,
-                position      INTEGER NOT NULL
-            )
-        """)
     db.commit()
 
 
 def upsert_lineup(db: sqlite3.Connection, parsed: dict) -> None:
-    for pos, sec in enumerate(parsed["sections"]):
-        db.execute(
-            "INSERT INTO sections (timestamp_key, date, period, position) VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(timestamp_key) DO UPDATE SET date=excluded.date, period=excluded.period, position=excluded.position",
-            (sec["key"], sec["date"], sec["period"], pos),
-        )
-    if parsed["sections"]:
-        current_keys = [sec["key"] for sec in parsed["sections"]]
-        db.execute(
-            f"DELETE FROM sections WHERE timestamp_key NOT IN ({','.join('?' * len(current_keys))})",
-            current_keys,
-        )
+    section_lookup = {
+        sec["key"]: (sec["date"], sec["period"]) for sec in parsed["sections"]
+    }
+
     for loc_id, loc in parsed["locations"].items():
         db.execute(
-            "INSERT INTO locations (location_id, name, description) VALUES (?, ?, ?) "
-            "ON CONFLICT(location_id) DO UPDATE SET name=excluded.name, description=excluded.description",
+            "INSERT INTO locations (id, name, description) VALUES (?, ?, ?) "
+            "ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description",
             (loc_id, loc["name"], loc.get("description")),
         )
     if parsed["locations"]:
         current_locs = list(parsed["locations"].keys())
         db.execute(
-            f"DELETE FROM locations WHERE location_id NOT IN ({','.join('?' * len(current_locs))})",
+            f"DELETE FROM locations WHERE id NOT IN ({','.join('?' * len(current_locs))})",
             current_locs,
         )
+
     for oid, d in parsed["artists"].items():
         db.execute(
-            "INSERT INTO artists (overlay_id, name, instagram, soundcloud, spotify, youtube, photo) "
+            "INSERT INTO artists (id, name, instagram, soundcloud, spotify, youtube, photo_url) "
             "VALUES (?, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(overlay_id) DO UPDATE SET "
+            "ON CONFLICT(id) DO UPDATE SET "
             "name=excluded.name, instagram=excluded.instagram, soundcloud=excluded.soundcloud, "
-            "spotify=excluded.spotify, youtube=excluded.youtube, photo=excluded.photo, "
+            "spotify=excluded.spotify, youtube=excluded.youtube, photo_url=excluded.photo_url, "
             "ig_followers = CASE WHEN instagram IS NOT excluded.instagram THEN NULL ELSE ig_followers END, "
             "sc_followers = CASE WHEN soundcloud IS NOT excluded.soundcloud THEN NULL ELSE sc_followers END, "
             "spotify_listeners = CASE WHEN spotify IS NOT excluded.spotify THEN NULL ELSE spotify_listeners END, "
-            "photo_local = CASE WHEN photo IS NOT excluded.photo THEN NULL ELSE photo_local END",
+            "photo_local = CASE WHEN photo_url IS NOT excluded.photo_url THEN NULL ELSE photo_local END",
             (
                 oid,
                 d["name"],
@@ -131,15 +105,23 @@ def upsert_lineup(db: sqlite3.Connection, parsed: dict) -> None:
                 d.get("photo"),
             ),
         )
+
     if parsed["assignments"]:
-        db.execute("DELETE FROM artist_sections")
+        db.execute("DELETE FROM schedule")
         for assignment in parsed["assignments"]:
+            ts_key = assignment["timestamp_key"]
+            date, period = section_lookup.get(ts_key, ("", "day"))
             db.execute(
-                "INSERT OR IGNORE INTO artist_sections (overlay_id, timestamp_key, location_id) VALUES (?, ?, ?)",
+                "INSERT OR IGNORE INTO schedule "
+                "(artist_id, location_id, start_time, end_time, date, period) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
                 (
                     assignment["overlay_id"],
-                    assignment["timestamp_key"],
                     assignment.get("location_id"),
+                    ts_key,
+                    "",
+                    date,
+                    period,
                 ),
             )
     elif parsed["artists"]:
@@ -171,46 +153,46 @@ def apply_overrides(db: sqlite3.Connection, overrides_path: Path) -> None:
         if artist_name in NON_ARTIST_SECTIONS:
             continue
         row = db.execute(
-            "SELECT overlay_id FROM artists WHERE name = ?", (artist_name,)
+            "SELECT id FROM artists WHERE name = ?", (artist_name,)
         ).fetchone()
         if not row:
             print(f"  Override skipped: artist '{artist_name}' not found in DB")
             continue
-        oid = row[0]
+        aid = row["id"]
         for field, value in fields.items():
-            if field not in OVERRIDE_FIELDS:
+            col = OVERRIDE_ALIASES.get(field, field)
+            if col not in OVERRIDE_FIELDS:
                 print(f"  Override skipped: unknown field '{field}' for {artist_name}")
                 continue
-            # false means "no profile" — clear the URL and mark count as fetched
             if value is False:
                 value = ""
             dependent_col = {
                 "instagram": "ig_followers",
                 "soundcloud": "sc_followers",
                 "spotify": "spotify_listeners",
-                "photo": "photo_local",
+                "photo_url": "photo_local",
                 "ra": "ra_followers",
-            }.get(field)
+            }.get(col)
             current = db.execute(
-                f"SELECT {field} FROM artists WHERE overlay_id = ?", (oid,)
+                f"SELECT {col} FROM artists WHERE id = ?", (aid,)
             ).fetchone()[0]
             if current != value:
-                if field == "ra":
+                if col == "ra":
                     count_val = 0 if value == "" else None
                     db.execute(
-                        "UPDATE artists SET ra = ?, ra_followers = ?, ra_bio = ? WHERE overlay_id = ?",
-                        (value, count_val, None if count_val is None else "", oid),
+                        "UPDATE artists SET ra = ?, ra_followers = ?, ra_bio = ? WHERE id = ?",
+                        (value, count_val, None if count_val is None else "", aid),
                     )
                 elif dependent_col:
                     count_val = 0 if value == "" else None
                     db.execute(
-                        f"UPDATE artists SET {field} = ?, {dependent_col} = ? WHERE overlay_id = ?",
-                        (value, count_val, oid),
+                        f"UPDATE artists SET {col} = ?, {dependent_col} = ? WHERE id = ?",
+                        (value, count_val, aid),
                     )
                 else:
                     db.execute(
-                        f"UPDATE artists SET {field} = ? WHERE overlay_id = ?",
-                        (value, oid),
+                        f"UPDATE artists SET {col} = ? WHERE id = ?",
+                        (value, aid),
                     )
                 applied += 1
     if applied:
@@ -230,68 +212,72 @@ def load_floor_curators(overrides_path: Path) -> dict[str, str]:
 
 def get_missing(
     db: sqlite3.Connection, url_col: str, count_col: str
-) -> list[tuple[str, str]]:
+) -> list[sqlite3.Row]:
     return db.execute(
-        f"SELECT overlay_id, {url_col} FROM artists WHERE {url_col} IS NOT NULL AND {url_col} != '' AND {count_col} IS NULL"
+        f"SELECT id, {url_col} FROM artists "
+        f"WHERE {url_col} IS NOT NULL AND {url_col} != '' AND {count_col} IS NULL"
     ).fetchall()
 
 
 def get_artists_without_ra(db: sqlite3.Connection) -> list[sqlite3.Row]:
-    cur = db.cursor()
-    cur.row_factory = sqlite3.Row
-    return cur.execute(
+    return db.execute(
         "SELECT * FROM artists WHERE (ra IS NULL OR ra = '') AND ra_followers IS NULL"
     ).fetchall()
 
 
-def get_artists_missing_photos(db: sqlite3.Connection) -> list[tuple[str, str]]:
+def get_artists_missing_photos(db: sqlite3.Connection) -> list[sqlite3.Row]:
     return db.execute(
-        "SELECT overlay_id, photo FROM artists WHERE photo IS NOT NULL AND photo_local IS NULL"
+        "SELECT id, photo_url FROM artists "
+        "WHERE photo_url IS NOT NULL AND photo_local IS NULL"
     ).fetchall()
 
 
-def save_photo_local(db: sqlite3.Connection, overlay_id: str, filename: str) -> None:
+def save_photo_local(db: sqlite3.Connection, artist_id: str, filename: str) -> None:
     db.execute(
-        "UPDATE artists SET photo_local = ? WHERE overlay_id = ?",
-        (filename, overlay_id),
+        "UPDATE artists SET photo_local = ? WHERE id = ?",
+        (filename, artist_id),
     )
     db.commit()
 
 
 def load_sections_from_db(db: sqlite3.Connection) -> list[dict]:
     return [
-        {"key": row[0], "date": row[1], "period": row[2]}
+        {
+            "key": f"{row['date']}:{row['period']}",
+            "date": row["date"],
+            "period": row["period"],
+        }
         for row in db.execute(
-            "SELECT timestamp_key, date, period FROM sections ORDER BY position"
+            "SELECT DISTINCT date, period FROM schedule "
+            "ORDER BY date, CASE period WHEN 'day' THEN 0 ELSE 1 END"
         )
     ]
 
 
 def load_locations_from_db(db: sqlite3.Connection) -> dict[str, dict]:
     return {
-        row[0]: {"name": row[1], "description": row[2]}
-        for row in db.execute("SELECT location_id, name, description FROM locations")
+        row["id"]: {"name": row["name"], "description": row["description"]}
+        for row in db.execute("SELECT id, name, description FROM locations")
     }
 
 
 def _load_artist_all_slots(db: sqlite3.Connection) -> dict[str, list[dict]]:
     slots: dict[str, list[dict]] = {}
-    for oid, date, period, loc_id, loc_name, start_time, end_time in db.execute(
-        "SELECT sa.overlay_id, s.date, s.period, sa.location_id, l.name, "
-        "sa.start_time, sa.end_time "
-        "FROM artist_sections sa "
-        "JOIN sections s ON s.timestamp_key = sa.timestamp_key "
-        "LEFT JOIN locations l ON l.location_id = sa.location_id "
-        "ORDER BY s.position"
+    for row in db.execute(
+        "SELECT s.artist_id, s.date, s.period, s.location_id, l.name AS location_name, "
+        "s.start_time, s.end_time "
+        "FROM schedule s "
+        "LEFT JOIN locations l ON l.id = s.location_id "
+        "ORDER BY s.date, CASE s.period WHEN 'day' THEN 0 ELSE 1 END, s.start_time"
     ):
-        slots.setdefault(oid, []).append(
+        slots.setdefault(row["artist_id"], []).append(
             {
-                "date": date,
-                "period": period,
-                "location_id": loc_id,
-                "location_name": loc_name,
-                "start_time": start_time,
-                "end_time": end_time,
+                "date": row["date"],
+                "period": row["period"],
+                "location_id": row["location_id"],
+                "location_name": row["location_name"],
+                "start_time": row["start_time"],
+                "end_time": row["end_time"],
             }
         )
     return slots
@@ -301,38 +287,58 @@ def load_assignments_from_db(db: sqlite3.Connection) -> dict[str, list[dict]]:
     all_slots = _load_artist_all_slots(db)
     assignments: dict[str, list[dict]] = {}
     for row in db.execute(
-        "SELECT a.name, a.instagram, a.soundcloud, a.spotify, a.linktree, a.youtube, "
-        "a.photo_local, a.ig_followers, a.sc_followers, a.spotify_listeners, "
-        "s.timestamp_key, sa.location_id, a.overlay_id, sa.start_time, sa.end_time, "
-        "a.ra, a.ra_followers, a.ra_bio "
-        "FROM artist_sections sa "
-        "JOIN artists a ON a.overlay_id = sa.overlay_id "
-        "JOIN sections s ON s.timestamp_key = sa.timestamp_key "
-        "ORDER BY s.position, sa.start_time, a.name"
+        "SELECT a.id, a.name, a.instagram, a.soundcloud, a.spotify, a.linktree, "
+        "a.youtube, a.photo_local, a.ig_followers, a.sc_followers, a.spotify_listeners, "
+        "a.ra, a.ra_followers, a.ra_bio, "
+        "s.date, s.period, s.location_id, s.start_time, s.end_time "
+        "FROM schedule s "
+        "JOIN artists a ON a.id = s.artist_id "
+        "ORDER BY s.date, CASE s.period WHEN 'day' THEN 0 ELSE 1 END, "
+        "s.start_time, a.name"
     ):
-        assignments.setdefault(row[10], []).append(
+        section_key = f"{row['date']}:{row['period']}"
+        assignments.setdefault(section_key, []).append(
             {
-                "name": row[0],
-                "instagram": row[1],
-                "soundcloud": row[2],
-                "spotify": row[3],
-                "linktree": row[4],
-                "youtube": row[5],
-                "photo_local": row[6],
-                "ig_followers": row[7],
-                "sc_followers": row[8],
-                "spotify_listeners": row[9],
-                "location_id": row[11],
-                "overlay_id": row[12],
-                "all_slots": all_slots.get(row[12], []),
-                "start_time": row[13],
-                "end_time": row[14],
-                "ra": row[15],
-                "ra_followers": row[16],
-                "ra_bio": row[17],
+                "name": row["name"],
+                "instagram": row["instagram"],
+                "soundcloud": row["soundcloud"],
+                "spotify": row["spotify"],
+                "linktree": row["linktree"],
+                "youtube": row["youtube"],
+                "photo_local": row["photo_local"],
+                "ig_followers": row["ig_followers"],
+                "sc_followers": row["sc_followers"],
+                "spotify_listeners": row["spotify_listeners"],
+                "location_id": row["location_id"],
+                "id": row["id"],
+                "all_slots": all_slots.get(row["id"], []),
+                "start_time": row["start_time"],
+                "end_time": row["end_time"],
+                "ra": row["ra"],
+                "ra_followers": row["ra_followers"],
+                "ra_bio": row["ra_bio"],
             }
         )
     return assignments
+
+
+def load_all_videos(db: sqlite3.Connection) -> dict[str, list[dict]]:
+    videos: dict[str, list[dict]] = {}
+    for row in db.execute(
+        "SELECT video_id, artist_id, title, url, views, duration, upload_date, position "
+        "FROM videos ORDER BY artist_id, position"
+    ):
+        videos.setdefault(row["artist_id"], []).append(
+            {
+                "id": row["video_id"],
+                "title": row["title"],
+                "url": row["url"],
+                "views": row["views"],
+                "duration": row["duration"],
+                "date": row["upload_date"],
+            }
+        )
+    return videos
 
 
 _VALID_FIELDS = {
@@ -351,14 +357,14 @@ _VALID_FIELDS = {
 }
 
 
-def update_artist_field(db: sqlite3.Connection, oid: str, field: str, value) -> None:
+def update_artist_field(
+    db: sqlite3.Connection, artist_id: str, field: str, value
+) -> None:
     if field not in _VALID_FIELDS:
         raise ValueError(f"Invalid field: {field}")
-    db.execute(f"UPDATE artists SET {field} = ? WHERE overlay_id = ?", (value, oid))
+    db.execute(f"UPDATE artists SET {field} = ? WHERE id = ?", (value, artist_id))
     db.commit()
 
 
-def get_artist(db: sqlite3.Connection, oid: str) -> sqlite3.Row | tuple:
-    cur = db.cursor()
-    cur.row_factory = sqlite3.Row
-    return cur.execute("SELECT * FROM artists WHERE overlay_id = ?", (oid,)).fetchone()
+def get_artist(db: sqlite3.Connection, artist_id: str) -> sqlite3.Row | None:
+    return db.execute("SELECT * FROM artists WHERE id = ?", (artist_id,)).fetchone()

@@ -300,7 +300,7 @@ def fetch_all_sc(ctx: BrowserContext, db: sqlite3.Connection) -> None:
             artist = get_artist(db, oid)
             if artist["ig_followers"] is None:
                 db.execute(
-                    "UPDATE artists SET instagram = ?, ig_followers = NULL WHERE overlay_id = ?",
+                    "UPDATE artists SET instagram = ?, ig_followers = NULL WHERE id = ?",
                     (new_ig, oid),
                 )
                 db.commit()
@@ -689,18 +689,18 @@ def fetch_all_ra(ctx: BrowserContext, db: sqlite3.Connection) -> None:
 
             if profile:
                 matched += 1
-                update_artist_field(db, artist["overlay_id"], "ra", profile["ra_url"])
+                update_artist_field(db, artist["id"], "ra", profile["ra_url"])
                 update_artist_field(
-                    db, artist["overlay_id"], "ra_followers", profile["ra_followers"]
+                    db, artist["id"], "ra_followers", profile["ra_followers"]
                 )
                 bio = profile["ra_bio"].strip()
                 if bio:
-                    update_artist_field(db, artist["overlay_id"], "ra_bio", bio)
+                    update_artist_field(db, artist["id"], "ra_bio", bio)
                 fc = f"{profile['ra_followers']:,}" if profile["ra_followers"] else "?"
                 print(f" -> {fc} followers ({profile['ra_url']})")
             else:
-                update_artist_field(db, artist["overlay_id"], "ra", "")
-                update_artist_field(db, artist["overlay_id"], "ra_followers", 0)
+                update_artist_field(db, artist["id"], "ra", "")
+                update_artist_field(db, artist["id"], "ra_followers", 0)
                 print(" -> not found")
     finally:
         page.close()

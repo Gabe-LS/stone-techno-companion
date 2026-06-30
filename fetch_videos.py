@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch top YouTube sets for all artists and save to output/videos.json."""
+"""Fetch top YouTube sets for all artists and save to the videos table."""
 
 from __future__ import annotations
 
@@ -16,9 +16,7 @@ from urllib.request import urlretrieve
 import pyvips
 
 DB_PATH = Path(__file__).resolve().parent / "lineup.db"
-OUTPUT_DIR = Path(__file__).resolve().parent / "output"
-VIDEOS_JSON = OUTPUT_DIR / "videos.json"
-THUMBS_DIR = OUTPUT_DIR / "thumbs"
+THUMBS_DIR = Path(__file__).resolve().parent / "output" / "thumbs"
 OVERRIDES_PATH = Path(__file__).resolve().parent / "scraper" / "overrides.toml"
 
 MIN_DURATION = 2700  # 45 min
@@ -29,7 +27,6 @@ MAX_YEARS = 15
 
 
 def fetch_video_metadata(video_ids: list[str]) -> list[dict]:
-    """Fetch metadata for specific video IDs via yt-dlp."""
     results = []
     for vid_id in video_ids:
         url = f"https://www.youtube.com/watch?v={vid_id}"
@@ -114,7 +111,6 @@ def search_artist_videos(name: str, search_name: str | None = None) -> list[dict
 
 
 def _cap_per_channel(videos: list[dict], max_per: int = 2) -> list[dict]:
-    """Keep at most max_per videos per channel, preferring highest views."""
     sorted_vids = sorted(videos, key=lambda x: x["views"], reverse=True)
     counts: dict[str, int] = {}
     kept = []
@@ -139,13 +135,11 @@ def select_videos(candidates: list[dict]) -> list[dict]:
         (datetime.now() - timedelta(days=MAX_YEARS * 365)).strftime("%Y%m%d")
     )
 
-    # If 5+ qualifying videos in the last 5 years, keep all of them
     recent = [r for r in candidates if r["date"] >= cutoff_5y and r["views"] >= 5000]
     if len(recent) >= TARGET:
         recent.sort(key=lambda x: x["views"], reverse=True)
         return recent
 
-    # Otherwise expand to MAX_YEARS and use threshold ladder
     pool = [r for r in candidates if r["date"] >= cutoff_max]
 
     big = [r for r in pool if r["views"] >= 50000]
@@ -203,12 +197,13 @@ def download_thumb(vid_id: str) -> bool:
 def main():
     db = sqlite3.connect(str(DB_PATH))
     db.row_factory = sqlite3.Row
-    artists = db.execute(
-        "SELECT overlay_id, name FROM artists ORDER BY name"
-    ).fetchall()
-    db.close()
 
-    # Load YouTube overrides
+    from scraper.db import init_db
+
+    init_db(db)
+
+    artists = db.execute("SELECT id, name FROM artists ORDER BY name").fetchall()
+
     yt_names: dict[str, str] = {}
     yt_forced: dict[str, list[str]] = {}
     yt_add: dict[str, list[str]] = {}
@@ -221,26 +216,27 @@ def main():
         yt_forced = overrides.get("youtube_videos", {})
         yt_add = overrides.get("youtube_videos_add", {})
 
-    # Load existing videos.json to skip already-fetched artists
-    existing: dict[str, list[dict]] = {}
-    if VIDEOS_JSON.exists():
-        existing = json.loads(VIDEOS_JSON.read_text(encoding="utf-8"))
+    cached_ids = {
+        row[0] for row in db.execute("SELECT DISTINCT artist_id FROM videos").fetchall()
+    }
 
     THUMBS_DIR.mkdir(parents=True, exist_ok=True)
 
     total = len(artists)
-    results = dict(existing)
     fetched = 0
     skipped = 0
 
     for i, artist in enumerate(artists, 1):
-        oid = artist["overlay_id"]
+        aid = artist["id"]
         name = artist["name"]
         search_name = yt_names.get(name)
 
-        if oid in existing:
+        if aid in cached_ids:
+            count = db.execute(
+                "SELECT COUNT(*) FROM videos WHERE artist_id = ?", (aid,)
+            ).fetchone()[0]
             skipped += 1
-            print(f"  [{i}/{total}] {name}: cached ({len(existing[oid])} videos)")
+            print(f"  [{i}/{total}] {name}: cached ({count} videos)")
             continue
 
         print(f"  [{i}/{total}] {name}", end="", flush=True)
@@ -256,23 +252,27 @@ def main():
                 selected.extend(e for e in extra if e["id"] not in seen_ids)
                 selected.sort(key=lambda x: x["views"], reverse=True)
 
-        # Download thumbnails
         for v in selected:
             download_thumb(v["id"])
 
-        clean = [
-            {
-                "id": v["id"],
-                "title": v["title"],
-                "url": v["url"],
-                "views": v["views"],
-                "duration": v["duration"],
-                "date": v["date"],
-            }
-            for v in selected
-        ]
+        for pos, v in enumerate(selected):
+            db.execute(
+                "INSERT OR REPLACE INTO videos "
+                "(video_id, artist_id, title, url, views, duration, upload_date, position) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    v["id"],
+                    aid,
+                    v["title"],
+                    v["url"],
+                    v["views"],
+                    v["duration"],
+                    v.get("date"),
+                    pos,
+                ),
+            )
+        db.commit()
 
-        results[oid] = clean
         fetched += 1
 
         if selected:
@@ -280,21 +280,10 @@ def main():
         else:
             print(" -> no videos found")
 
-        # Save incrementally
-        if fetched % 10 == 0:
-            VIDEOS_JSON.write_text(
-                json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
+    db.close()
 
-    # Final save
-    VIDEOS_JSON.write_text(
-        json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
-
-    with_videos = sum(1 for v in results.values() if v)
-    total_videos = sum(len(v) for v in results.values())
-    print(f"\nDone: {with_videos}/{total} artists have videos ({total_videos} total)")
-    print(f"Fetched: {fetched}, Cached: {skipped}")
+    with_videos = len(cached_ids) + sum(1 for a in artists if a["id"] not in cached_ids)
+    print(f"\nDone: fetched {fetched}, cached {skipped}")
 
 
 if __name__ == "__main__":

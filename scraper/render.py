@@ -154,6 +154,7 @@ def render_output_html(
     photos_prefix: str = "photos/",
     floor_curators: dict[str, str] | None = None,
     output_dir: str | None = None,
+    videos: dict[str, list[dict]] | None = None,
 ) -> str:
     def esc(text: str | None) -> str:
         return html.escape(text or "")
@@ -845,7 +846,7 @@ def render_output_html(
             a.get("all_slots", []), cur_date, cur_period
         )
 
-        oid = a.get("overlay_id", "")
+        oid = a.get("id", "")
         card_key = f"{oid}:{cur_date}:{cur_period}:{loc_id or ''}"
         artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, card_key))
         parts.append(
@@ -962,7 +963,7 @@ def render_output_html(
     if has_timetable:
         parts.append("  </div>")  # end #list-view
 
-    # Bio lookup (deduped by overlay_id)
+    # Bio lookup (deduped by artist id)
     def _strip_booking(text: str) -> str:
         import re as _re
 
@@ -985,18 +986,12 @@ def render_output_html(
             kept.append(p)
         return "\n\n".join(kept).strip()
 
-    # Load video data if available
-    videos_json_path = Path(output_dir) / "videos.json" if output_dir else None
-    artist_videos: dict[str, list[dict]] = {}
-    if videos_json_path and videos_json_path.exists():
-        import json as _json_load
-
-        artist_videos = _json_load.loads(videos_json_path.read_text(encoding="utf-8"))
+    artist_videos = videos or {}
 
     bio_lookup: dict[str, dict] = {}
-    for artists in assignments.values():
-        for a in artists:
-            oid = a.get("overlay_id", "")
+    for artists_list in assignments.values():
+        for a in artists_list:
+            oid = a.get("id", "")
             if oid and oid not in bio_lookup:
                 raw_bio = a.get("ra_bio") or ""
                 entry: dict = {
@@ -1205,8 +1200,7 @@ def render_output_html(
                     loc_name = locations.get(fid, {}).get("name", fid)
 
                     card_key = ":".join(
-                        [a.get("overlay_id", "") for a in group]
-                        + [tt_date_str, period, fid]
+                        [a.get("id", "") for a in group] + [tt_date_str, period, fid]
                     )
                     artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, card_key))
 
@@ -1239,7 +1233,9 @@ def render_output_html(
                         photo_local = a.get("photo_local") or ""
                         name = a.get("name", "")
                         loc_for_id = fid if is_night else ""
-                        a_card_key = f"{a.get('overlay_id', '')}:{tt_date_str}:{period}:{loc_for_id}"
+                        a_card_key = (
+                            f"{a.get('id', '')}:{tt_date_str}:{period}:{loc_for_id}"
+                        )
                         a_artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, a_card_key))
                         if photo_local:
                             photo_el = f'<img class="tt-photo" src="{esc(photos_prefix + photo_local)}" alt="{esc(name)}" loading="lazy">'
@@ -1326,8 +1322,7 @@ def render_output_html(
                     loc_name = locations.get(fid, {}).get("name", fid)
 
                     card_key = ":".join(
-                        [a.get("overlay_id", "") for a in group]
-                        + [tt_date_str, period, fid]
+                        [a.get("id", "") for a in group] + [tt_date_str, period, fid]
                     )
                     artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, card_key))
                     names = " b2b ".join(a.get("name", "") for a in group)
@@ -1360,7 +1355,9 @@ def render_output_html(
                         photo_local = a.get("photo_local") or ""
                         name = a.get("name", "")
                         loc_for_id = fid if is_night else ""
-                        a_card_key = f"{a.get('overlay_id', '')}:{tt_date_str}:{period}:{loc_for_id}"
+                        a_card_key = (
+                            f"{a.get('id', '')}:{tt_date_str}:{period}:{loc_for_id}"
+                        )
                         a_artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, a_card_key))
                         if photo_local:
                             photo_el = f'<img class="tt-photo" src="{esc(photos_prefix + photo_local)}" alt="{esc(name)}" loading="lazy">'

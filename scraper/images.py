@@ -52,7 +52,10 @@ def encode_avif_to_target(ref_im: pyvips.Image, out_path: str, target: float) ->
             )
             decoded = f"{tmp_dir}/decoded.png"
             subprocess.run(
-                ["vips", "copy", candidate, decoded], check=True, capture_output=True, timeout=30
+                ["vips", "copy", candidate, decoded],
+                check=True,
+                capture_output=True,
+                timeout=30,
             )
             result = subprocess.run(
                 ["ssimulacra2", ref_png, decoded],
@@ -72,7 +75,10 @@ def encode_avif_to_target(ref_im: pyvips.Image, out_path: str, target: float) ->
         )
         decoded = f"{tmp_dir}/final_decoded.png"
         subprocess.run(
-            ["vips", "copy", out_path, decoded], check=True, capture_output=True, timeout=30
+            ["vips", "copy", out_path, decoded],
+            check=True,
+            capture_output=True,
+            timeout=30,
         )
         result = subprocess.run(
             ["ssimulacra2", ref_png, decoded],
@@ -92,18 +98,17 @@ def process_artist_photos(db: sqlite3.Connection, photos_dir: Path) -> None:
     photos_dir.mkdir(parents=True, exist_ok=True)
     total = len(missing)
     print(f"Processing {total} artist photos ...")
-    for i, (overlay_id, photo_url) in enumerate(missing, 1):
-        name = (
-            db.execute(
-                "SELECT name FROM artists WHERE overlay_id = ?", (overlay_id,)
-            ).fetchone()
-            or [overlay_id]
-        )[0]
+    for i, row in enumerate(missing, 1):
+        artist_id, photo_url = row["id"], row["photo_url"]
+        name_row = db.execute(
+            "SELECT name FROM artists WHERE id = ?", (artist_id,)
+        ).fetchone()
+        name = name_row["name"] if name_row else artist_id
         print(f"  [{i}/{total}] {name}", end="", flush=True)
-        filename = f"{overlay_id}.avif"
+        filename = f"{artist_id}.avif"
         out_path = (photos_dir / filename).resolve()
         if out_path.parent != photos_dir.resolve():
-            raise ValueError(f"Unsafe overlay_id: {overlay_id}")
+            raise ValueError(f"Unsafe artist id: {artist_id}")
         try:
             with tempfile.TemporaryDirectory() as tmp_dir:
                 raw_path = f"{tmp_dir}/original"
@@ -116,7 +121,7 @@ def process_artist_photos(db: sqlite3.Connection, photos_dir: Path) -> None:
                         f.write(data)
                 ref_im = resize_and_crop(raw_path, 240)
                 score = encode_avif_to_target(ref_im, str(out_path), SSIMULACRA2_TARGET)
-            save_photo_local(db, overlay_id, filename)
+            save_photo_local(db, artist_id, filename)
             print(f" -> {out_path.stat().st_size / 1024:.1f}KB ssim2={score:.1f}")
         except Exception as e:
             print(f" -> ERROR: {e}")

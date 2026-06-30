@@ -35,25 +35,27 @@ SET_LENGTHS = [60, 75, 90, 105, 120]
 def seed(db: sqlite3.Connection) -> None:
     for loc_id, name, desc in ALL_FLOORS:
         db.execute(
-            "INSERT INTO locations (location_id, name, description) VALUES (?, ?, ?) "
-            "ON CONFLICT(location_id) DO UPDATE SET name=excluded.name, description=excluded.description",
+            "INSERT INTO locations (id, name, description) VALUES (?, ?, ?) "
+            "ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description",
             (loc_id, name, desc),
         )
 
-    sections = db.execute(
-        "SELECT timestamp_key, date, period FROM sections ORDER BY position"
+    date_periods = db.execute(
+        "SELECT DISTINCT date, period FROM schedule "
+        "ORDER BY date, CASE period WHEN 'day' THEN 0 ELSE 1 END"
     ).fetchall()
 
-    for ts_key, date, period in sections:
+    for row in date_periods:
+        date, period = row["date"], row["period"]
         artists = db.execute(
-            "SELECT overlay_id FROM artist_sections WHERE timestamp_key = ?",
-            (ts_key,),
+            "SELECT artist_id FROM schedule WHERE date = ? AND period = ?",
+            (date, period),
         ).fetchall()
         if not artists:
             continue
 
-        overlay_ids = [r[0] for r in artists]
-        random.shuffle(overlay_ids)
+        artist_ids = [r["artist_id"] for r in artists]
+        random.shuffle(artist_ids)
 
         is_night = period == "night"
         if is_night:
@@ -65,23 +67,22 @@ def seed(db: sqlite3.Connection) -> None:
             start_hour = DAY_START_HOUR
             end_hour = DAY_END_HOUR
 
-        per_floor = len(overlay_ids) // len(floor_ids)
-        remainder = len(overlay_ids) % len(floor_ids)
+        per_floor = len(artist_ids) // len(floor_ids)
+        remainder = len(artist_ids) % len(floor_ids)
         chunks: list[list[str]] = []
         idx = 0
         for i in range(len(floor_ids)):
             n = per_floor + (1 if i < remainder else 0)
-            chunks.append(overlay_ids[idx : idx + n])
+            chunks.append(artist_ids[idx : idx + n])
             idx += n
+
+        db.execute("DELETE FROM schedule WHERE date = ? AND period = ?", (date, period))
 
         for floor_id, chunk in zip(floor_ids, chunks):
             if not chunk:
                 continue
             total_minutes = (end_hour - start_hour) * 60
-            slot_minutes = total_minutes // len(chunk)
-            slot_minutes = max(60, min(slot_minutes, 120))
 
-            # Group some artists into B2B pairs
             slots: list[list[str]] = []
             i = 0
             while i < len(chunk):
@@ -92,7 +93,6 @@ def seed(db: sqlite3.Connection) -> None:
                     slots.append([chunk[i]])
                     i += 1
 
-            total_minutes = (end_hour - start_hour) * 60
             slot_minutes = total_minutes // len(slots)
             slot_minutes = max(60, min(slot_minutes, 120))
 
@@ -108,11 +108,12 @@ def seed(db: sqlite3.Connection) -> None:
                 start_time = f"{date}T{s_h % 24:02d}:{s_m:02d}"
                 end_time = f"{date}T{e_h % 24:02d}:{e_m:02d}"
 
-                for oid in group:
+                for aid in group:
                     db.execute(
-                        "UPDATE artist_sections SET location_id = ?, start_time = ?, end_time = ? "
-                        "WHERE overlay_id = ? AND timestamp_key = ?",
-                        (floor_id, start_time, end_time, oid, ts_key),
+                        "INSERT INTO schedule "
+                        "(artist_id, location_id, start_time, end_time, date, period) "
+                        "VALUES (?, ?, ?, ?, ?, ?)",
+                        (aid, floor_id, start_time, end_time, date, period),
                     )
                 cursor += length
 
@@ -122,6 +123,7 @@ def seed(db: sqlite3.Connection) -> None:
 
 if __name__ == "__main__":
     db = sqlite3.connect(str(DB_PATH))
+    db.row_factory = sqlite3.Row
     try:
         from scraper.db import init_db
 
