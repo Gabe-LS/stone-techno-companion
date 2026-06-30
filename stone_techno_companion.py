@@ -64,6 +64,9 @@ def deploy_to_vps(output_dir: Path, output_path: Path) -> None:
         photos_src = output_dir / "photos"
         if photos_src.is_dir():
             shutil.copytree(photos_src, staging_path / "photos")
+        thumbs_src = output_dir / "thumbs"
+        if thumbs_src.is_dir():
+            shutil.copytree(thumbs_src, staging_path / "thumbs")
         subprocess.run(
             [
                 "rsync",
