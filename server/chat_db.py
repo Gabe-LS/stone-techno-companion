@@ -33,6 +33,7 @@ def init_chat_db(db: sqlite3.Connection) -> None:
             display_name       TEXT NOT NULL,
             country            TEXT NOT NULL DEFAULT '',
             avatar_url         TEXT NOT NULL DEFAULT '',
+            color_index        INTEGER NOT NULL DEFAULT 0,
             session_id         TEXT,
             device_fingerprint TEXT,
             muted_until        TEXT,
@@ -178,12 +179,15 @@ def create_user(
     device_fingerprint: str | None = None,
     session_id: str | None = None,
 ) -> dict:
+    import random
+
     user_id = _uuid()
     now = _now()
+    color_index = random.randint(0, 11)
     db.execute(
         "INSERT INTO users (id, provider, provider_id, display_name, "
-        "device_fingerprint, session_id, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "device_fingerprint, session_id, color_index, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (
             user_id,
             provider,
@@ -191,6 +195,7 @@ def create_user(
             display_name,
             device_fingerprint,
             session_id,
+            color_index,
             now,
         ),
     )
@@ -200,6 +205,7 @@ def create_user(
         "provider": provider,
         "provider_id": provider_id,
         "display_name": display_name,
+        "color_index": color_index,
         "created_at": now,
     }
 
@@ -383,7 +389,7 @@ def get_room_messages(
     db: sqlite3.Connection, room_id: str, limit: int = 100
 ) -> list[sqlite3.Row]:
     return db.execute(
-        "SELECT m.*, u.display_name, "
+        "SELECT m.*, u.display_name, u.color_index, u.avatar_url, "
         "rm.content AS reply_content, rm.type AS reply_type, "
         "ru.display_name AS reply_display_name "
         "FROM messages m "

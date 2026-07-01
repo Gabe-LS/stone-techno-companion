@@ -63,6 +63,7 @@
   --user-10: #7E22CE; --user-10-bg: #F3E8FF;
   --user-11: #A21CAF; --user-11-bg: #FAE8FF;
   --user-12: #BE185D; --user-12-bg: #FCE7F3;
+  --user-self: #64748B; --user-self-bg: #E2E8F0;
 
   /* Shadow */
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
@@ -352,16 +353,18 @@ const USER_COLORS = [
   { vivid: '#A21CAF', pastel: '#FAE8FF' },
   { vivid: '#BE185D', pastel: '#FCE7F3' },
 ];
-function userColorIndex(id) {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash);
-  return Math.abs(hash) % USER_COLORS.length;
+const SELF_COLOR = { vivid: '#64748B', pastel: '#E2E8F0' };
+function msgColor(m) {
+  if (m.user_id === currentUser?.id) return SELF_COLOR;
+  const idx = (m.color_index != null) ? m.color_index : 0;
+  return USER_COLORS[idx % USER_COLORS.length];
 }
-function userColor(id) { return USER_COLORS[userColorIndex(id)]; }
-function avatarHtml(name, id, small) {
+function avatarHtml(name, colorIndex, small, avatarUrl) {
   const cls = small ? 'avatar-sm' : 'avatar';
+  if (avatarUrl) return `<div class="${cls}"><img src="${avatarUrl}" style="width:100%;height:100%;border-radius:50%;object-fit:cover"></div>`;
   const initials = (name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-  return `<div class="${cls}" style="background:${userColor(id).vivid}">${initials}</div>`;
+  const color = USER_COLORS[(colorIndex || 0) % USER_COLORS.length];
+  return `<div class="${cls}" style="background:${color.vivid}">${initials}</div>`;
 }
 
 // --- Toast ---
@@ -911,7 +914,7 @@ async function loadDMs() {
     if (!dms.length) { el.innerHTML = '<div class="empty">No conversations yet</div>'; return; }
     el.innerHTML = dms.map(dm => `
       <li class="room-item" onclick="openRoom('${dm.room_id}','${esc(dm.other_name)}','dm')">
-        ${avatarHtml(dm.other_name, dm.other_user_id)}
+        ${avatarHtml(dm.other_name, 0)}
         <div class="room-info"><div class="room-name">${esc(dm.other_name)}</div></div>
       </li>`).join('');
   } catch { el.innerHTML = '<div class="empty">Could not load DMs</div>'; }
@@ -1096,9 +1099,11 @@ function renderMessage(m) {
 
   const time = `<span class="msg-time">${fmtTime(m.created_at)}</span>`;
 
+  const color = msgColor(m);
+
   if (isMe) {
     return `<div class="msg msg-mine${pendingCls}" data-msg-id="${m.id}" ontouchstart="msgTouchStart('${m.id}',event)" ontouchmove="msgTouchMove(event)" ontouchend="msgTouchEnd()" ondblclick="msgDblClick('${m.id}')">
-      <div class="msg-bubble msg-mine-bubble" oncontextmenu="event.preventDefault();showMsgMenu(this.closest('.msg').getAttribute('data-msg-id'),true)">
+      <div class="msg-bubble msg-mine-bubble" style="background:${color.pastel}" oncontextmenu="event.preventDefault();showMsgMenu(this.closest('.msg').getAttribute('data-msg-id'),true)">
         ${reactBtn}
         ${replyHtml}${contentHtml}
         ${time}${reactionsHtml}
@@ -1107,11 +1112,11 @@ function renderMessage(m) {
   }
 
   return `<div class="msg msg-other${pendingCls}" data-msg-id="${m.id}" ontouchstart="msgTouchStart('${m.id}',event)" ontouchmove="msgTouchMove(event)" ontouchend="msgTouchEnd()" ondblclick="msgDblClick('${m.id}')">
-    ${avatarHtml(name, uid, true)}
-    <div class="msg-bubble msg-other-bubble" style="background:${userColor(uid).pastel}" oncontextmenu="event.preventDefault();showMsgMenu(this.closest('.msg').getAttribute('data-msg-id'),false)">
+    ${avatarHtml(name, m.color_index, true, m.avatar_url)}
+    <div class="msg-bubble msg-other-bubble" style="background:${color.pastel}" oncontextmenu="event.preventDefault();showMsgMenu(this.closest('.msg').getAttribute('data-msg-id'),false)">
       ${reactBtn}
       <div class="msg-header">
-        <span class="msg-name" style="color:${userColor(uid).vivid}" onclick="event.stopPropagation();showUserMenu('${uid}','${escapeHtml(name)}')">${escapeHtml(name)}</span>
+        <span class="msg-name" style="color:${color.vivid}" onclick="event.stopPropagation();showUserMenu('${uid}','${escapeHtml(name)}')">${escapeHtml(name)}</span>
       </div>
       ${replyHtml}${contentHtml}
       ${time}${reactionsHtml}

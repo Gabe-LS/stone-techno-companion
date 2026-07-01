@@ -325,6 +325,7 @@ async def auth_me(request: Request):
         "display_name": user["display_name"],
         "country": (user["country"] if "country" in user.keys() else ""),
         "avatar_url": (user["avatar_url"] if "avatar_url" in user.keys() else ""),
+        "color_index": (user["color_index"] if "color_index" in user.keys() else 0),
         "provider": user["provider"],
     }
 
