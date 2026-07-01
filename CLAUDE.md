@@ -41,9 +41,9 @@ python -m pytest tests/ -v
 
 **For lineup only**: `cd output && python3 -m http.server 8321` — expected 404s for `/manifest.json`, `/sw.js`, `/api/me`.
 
-**For lineup + chat**: run the full FastAPI server: `cd server && export $(cat .env | xargs) && uvicorn api:app --port 8080`. Requires `OPENAI_API_KEY` in `server/.env` for chat moderation. Symlinks in `server/static/` point to `output/` files so lineup reflects latest build.
+**For lineup + chat**: run the full FastAPI server: `cd server && export $(cat .env | xargs) && uvicorn api:app --port 8080`. Symlinks in `server/static/` point to `output/` files so lineup reflects latest build.
 
-**Chat requires auth**: create a test user via `python3 -c "from chat_db import ...; create_user(...)"` and set the session cookie in the browser console.
+**Chat requires auth**: sign in via email magic link at `/chat`. For local dev, set `CHAT_BASE_URL=http://localhost:8080` in `.env` so the magic link points to localhost.
 
 ## System Dependencies
 
@@ -53,7 +53,9 @@ Not pip-installable, must be present on the system:
 - **libvips**: `brew install vips` (macOS) — required by pyvips for image processing
 - **ssimulacra2**: binary must be in PATH — perceptual quality targeting for AVIF encoding
 
-Python dependencies: `playwright`, `beautifulsoup4`, `pyvips` (scraper); `fastapi`, `uvicorn[standard]`, `pywebpush` (server); `yt-dlp` (video discovery); `markdown` (bio rendering).
+Python dependencies: `playwright`, `beautifulsoup4`, `pyvips` (scraper); `fastapi`, `uvicorn[standard]`, `pywebpush` (server); `yt-dlp` (video discovery); `markdown` (bio rendering); `email-validator` (auth); `maileroo` (magic link emails).
+
+System: `ffmpeg` + `ffprobe` must be in PATH for video upload (frame extraction for moderation).
 
 ## Architecture
 
@@ -225,7 +227,38 @@ FastAPI (`server/api.py`). Sessions via 128-bit URL-safe tokens. Cross-device sy
 
 Static file routes (`/bios.json`, `/timetable.json`, `/manifest.json`, `/sw.js`, `/favicon.*`) are explicit endpoints before the catch-all `/{path:path}` (which serves `index.html`). New static files need an explicit route in `api.py`.
 
-Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DB at `server/data/hearts.db` volume-mounted. VAPID keys in `.env`.
+Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DB at `server/data/hearts.db` volume-mounted.
+
+### Environment Variables (`server/.env`)
+
+| Variable | Required | Description |
+|---|---|---|
+| `OPENAI_API_KEY` | Yes | Chat moderation (omni-moderation + GPT drug detection) |
+| `MAILEROO_API_KEY` | Yes | Magic link email delivery (was Resend, switched July 2026) |
+| `CHAT_EMAIL_FROM` | No | From address for magic links (default: `no-reply@deftlab.dev`) |
+| `CHAT_BASE_URL` | Dev only | Set to `http://localhost:<port>` for local dev. Omit in production. |
+| `VAPID_PRIVATE_KEY` | Yes | Push notification signing |
+| `VAPID_PUBLIC_KEY` | Yes | Push notification subscription |
+| `VAPID_CLAIMS_EMAIL` | Yes | VAPID contact email |
+| `GOOGLE_CLIENT_ID` | No | Google OAuth (not wired in frontend yet) |
+
+### DNS for Email (deftlab.dev)
+
+- **SPF**: `v=spf1 include:_spf.mx.cloudflare.net include:_spf.maileroo.com ~all`
+- **DKIM**: TXT record at `mta._domainkey.deftlab.dev` (from Maileroo dashboard)
+- **DMARC**: existing `_dmarc.deftlab.dev` record works as-is
+
+### Deploy Checklist (when merging chat-prototype)
+
+1. Add `MAILEROO_API_KEY` to production `.env` (replace `RESEND_API_KEY`)
+2. Remove `RESEND_API_KEY` from production `.env`
+3. Remove `CHAT_BASE_URL` from production `.env` (or don't set it)
+4. Update DNS: replace `include:amazonses.com` with `include:_spf.maileroo.com` in SPF
+5. Add DKIM record `mta._domainkey.deftlab.dev` if not already done
+6. Ensure `ffmpeg` + `ffprobe` are in the Docker image (video upload)
+7. Install new Python deps: `pip install email-validator maileroo`
+8. `chat/disposable_domains.txt` is committed — ships with the code
+9. `chat/uploads/` directory is auto-created — no manual setup needed
 
 ## Push Notifications
 
@@ -265,14 +298,14 @@ strikes            — id, user_id, reason, detail
 
 ### Auth
 
-Three passwordless providers: Google OAuth, Apple Sign-In, Email magic link (via Resend, disposable domains blocked). Device fingerprinting for ban enforcement. Session cookies (HTTP-only, Secure, SameSite=Strict).
+Three passwordless providers: Google OAuth, Apple Sign-In, Email magic link (via Maileroo, 3,000/mo free). Disposable domains blocked via 7,860-domain blocklist (`chat/disposable_domains.txt`). Email validation via `email-validator` library (RFC 5322 + DNS MX check). Device fingerprinting for ban enforcement. Session cookies (non-httpOnly for WS access, Secure in production, SameSite=Strict in production / Lax in dev).
 
 ### Moderation Pipeline
 
 Every message passes through three layers before broadcast:
 
 1. **Word filter** (instant) — in-memory set from `chat/blocklist.txt`. Drug terms, slurs, spam. Character substitution normalization (@→a, 0→o, etc.).
-2. **OpenAI omni-moderation-latest** (free) — harassment, hate, violence, sexual content, images. Via raw httpx.
+2. **OpenAI omni-moderation-latest** (free) — harassment, hate, violence, sexual content. Supports images (WebP data URI) and video (3 frames at 25/50/75% extracted by ffmpeg). Via raw httpx.
 3. **GPT-5.4-nano drug detection** (Responses API, reasoning=none, ~$4.65/festival) — custom prompt catches subtle drug slang (party favors, rolling, just dropped, etc.).
 
 Layers 2 and 3 run in parallel via `asyncio.gather`. Word filter blocks before AI calls (saves API round-trips).
@@ -287,14 +320,19 @@ WhatsApp-style three-screen flow: room list → chat → back. Single HTML file 
 
 - **Bubble style**: pastel blue (own) / pastel purple (others), dark text, time bottom-right
 - **Replies**: double-click on desktop, swipe toward center on mobile. Quote shown inside bubble.
-- **Reactions**: long-press (mobile) / hover button (desktop) → 6-emoji picker (👍❤️😂🔥😮👏). Pills positioned half-outside bubble border.
-- **Input bar**: + button (photo, location, meetup) on left, emoji icon on right
-- **Meetup creation**: modal with title, datetime picker, GPS location, note
-- **User menu**: bottom action sheet (Send Message, Block User, Cancel)
+- **Reactions**: hover-based on desktop (200ms dismiss), long-press on mobile. 6-emoji picker. Button outside bubble with 88px hover zone.
+- **Input bar**: + button (meetup, location, photo, video) on left, emoji picker icon inside input, send button on right. All SVG icons.
+- **Images**: client-side resize via createImageBitmap (high quality), WebP storage, image viewer overlay on click
+- **Videos**: client-side processing via Mediabunny + WebCodecs. HEVC with H.264 fallback, hardware-accelerated. Auto re-encodes if >1080p, >10Mbps, >30fps, or non-AAC audio. Trim editor for >60s. Inline playback (click play/pause, fullscreen icon), expanded viewer with frame sync.
+- **Location sharing**: GPS with confirmation dialog, card with map pin icon
+- **Meetup creation**: modal with title, date + hour/minute selects (15-min intervals), GPS location, note. Card with calendar icon.
+- **Message delete**: right-click bubble (desktop) or long-press (mobile), confirmation in same action sheet, 120s window, server enforced
+- **User menu**: action sheet (Send Message, Block User with inline confirmation, Cancel). Centered modal on desktop.
 - **Optimistic messaging**: messages appear instantly with pending state, confirmed on ack, removed if moderation rejects
+- **Scroll**: messages pushed to bottom via flex justify-content, app hidden until routing completes, ResizeObserver locks scroll for 1.5s after render
 - **Desktop**: sidebar + chat panel side-by-side (768px breakpoint)
 - **Font scale**: 15px (base) → 13px (secondary) → 11px (tertiary) → 10px (timestamps)
-- **Self-verifying debug**: `verify()` function checks DOM state after every action. Console shows ✓/✗ for each operation.
+- **Debug**: `dbg()` with timecodes, `verify()` checks DOM state after every action
 
 ### Chat Tests
 
