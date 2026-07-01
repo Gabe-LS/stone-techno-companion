@@ -669,7 +669,7 @@ function renderCountryList(query, hlIdx) {
   if (!list) return;
   const q = query.toLowerCase();
   const matchStart = (haystack, needle) => haystack.toLowerCase().startsWith(needle) || haystack.split(/[\s-]+/).some(w => w.toLowerCase().startsWith(needle));
-  const filtered = COUNTRIES.filter(([code, name, alt]) => matchStart(name, q) || code.toLowerCase().startsWith(q) || (alt && alt.split(/\s+/).some(w => w.toLowerCase().startsWith(q))));
+  const filtered = COUNTRIES.filter(([code, name, alt]) => matchStart(name, q) || code.toLowerCase() === q || (alt && q.length >= 3 && alt.split(/\s+/).some(w => w.toLowerCase().startsWith(q))));
   list.innerHTML = filtered.map(([code, name], i) =>
     `<div class="country-item${i === (hlIdx || 0) ? ' highlighted' : ''}" data-code="${code}" onclick="selectCountry('${code}')"><span class="flag">${FLAG(code)}</span>${escapeHtml(name)}</div>`
   ).join('') || '<div class="country-item" style="color:var(--color-muted)">No results</div>';
@@ -2330,7 +2330,7 @@ function renderEditCountryList(query, hlIdx) {
   if (!list) return;
   const q = query.toLowerCase();
   const matchStart = (haystack, needle) => haystack.toLowerCase().startsWith(needle) || haystack.split(/[\s-]+/).some(w => w.toLowerCase().startsWith(needle));
-  const filtered = COUNTRIES.filter(([code, name, alt]) => matchStart(name, q) || code.toLowerCase().startsWith(q) || (alt && alt.split(/\s+/).some(w => w.toLowerCase().startsWith(q))));
+  const filtered = COUNTRIES.filter(([code, name, alt]) => matchStart(name, q) || code.toLowerCase() === q || (alt && q.length >= 3 && alt.split(/\s+/).some(w => w.toLowerCase().startsWith(q))));
   list.innerHTML = filtered.map(([code, name], i) =>
     `<div class="country-item${i === (hlIdx || 0) ? ' highlighted' : ''}" data-code="${code}" onclick="selectEditCountry('${code}')">`
     + `<span class="flag">${FLAG(code)}</span>${escapeHtml(name)}</div>`
