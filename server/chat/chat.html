@@ -1156,14 +1156,18 @@ async function loadMeetups() {
   try {
     const meetups = await api('/meetups');
     if (!meetups.length) { el.innerHTML = '<div class="empty">No active meetups</div>'; return; }
-    el.innerHTML = meetups.map(m => `
-      <li class="room-item" onclick="openRoom('${m.id}','${esc(m.title)}','meetup')">
+    el.innerHTML = meetups.map(m => {
+      const unread = unreadByRoom[m.id] || 0;
+      const badgeHtml = unread > 0 ? `<span class="unread-badge">${unread > 99 ? '99+' : unread}</span>` : '';
+      return `<li class="room-item" data-room-id="${m.id}" onclick="openRoom('${m.id}','${esc(m.title)}','meetup')">
         <div class="room-dot online"></div>
         <div class="room-info">
           <div class="room-name">${esc(m.title)}</div>
-          <div class="room-preview">${fmtTime(m.meetup_time)} · ${m.attendee_count} going${m.location_label ? ' · ' + esc(m.location_label) : ''}</div>
+          <div class="room-count">${fmtTime(m.meetup_time)} · ${m.attendee_count} going</div>
         </div>
-      </li>`).join('');
+        <div class="room-meta">${badgeHtml}</div>
+      </li>`;
+    }).join('');
   } catch { el.innerHTML = '<div class="empty">Could not load meetups</div>'; }
 }
 
@@ -1174,11 +1178,15 @@ async function loadDMs() {
   try {
     const dms = await api('/dms');
     if (!dms.length) { el.innerHTML = '<div class="empty">No conversations yet</div>'; return; }
-    el.innerHTML = dms.map(dm => `
-      <li class="room-item" onclick="openRoom('${dm.room_id}','${esc(dm.other_name)}','dm')">
+    el.innerHTML = dms.map(dm => {
+      const unread = unreadByRoom[dm.room_id] || 0;
+      const badgeHtml = unread > 0 ? `<span class="unread-badge">${unread > 99 ? '99+' : unread}</span>` : '';
+      return `<li class="room-item" data-room-id="${dm.room_id}" onclick="openRoom('${dm.room_id}','${esc(dm.other_name)}','dm')">
         ${avatarHtml(dm.other_name, 0)}
         <div class="room-info"><div class="room-name">${esc(dm.other_name)}</div></div>
-      </li>`).join('');
+        <div class="room-meta">${badgeHtml}</div>
+      </li>`;
+    }).join('');
   } catch { el.innerHTML = '<div class="empty">Could not load DMs</div>'; }
 }
 
