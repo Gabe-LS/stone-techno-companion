@@ -293,13 +293,28 @@ async def auth_delete_account(request: Request, response: Response):
 async def auth_update_profile(request: Request):
     user, db = _get_user_from_cookie(request)
     body = await request.json()
+    updates = []
+    params = []
     name = body.get("display_name")
     if name:
         name = name.strip()[:30]
         if len(name) < 3:
             raise HTTPException(400, "Display name must be at least 3 characters")
-        update_display_name(db, user["id"], name)
-    return {"id": user["id"], "display_name": name or user["display_name"]}
+        updates.append("display_name = ?")
+        params.append(name)
+    country = body.get("country")
+    if country is not None:
+        updates.append("country = ?")
+        params.append(country.strip()[:2].upper())
+    avatar_url = body.get("avatar_url")
+    if avatar_url is not None:
+        updates.append("avatar_url = ?")
+        params.append(avatar_url)
+    if updates:
+        params.append(user["id"])
+        db.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", params)
+        db.commit()
+    return {"ok": True}
 
 
 @router.get("/auth/me")
@@ -308,6 +323,8 @@ async def auth_me(request: Request):
     return {
         "id": user["id"],
         "display_name": user["display_name"],
+        "country": (user["country"] if "country" in user.keys() else ""),
+        "avatar_url": (user["avatar_url"] if "avatar_url" in user.keys() else ""),
         "provider": user["provider"],
     }
 
@@ -520,6 +537,67 @@ async def unblock_user_endpoint(user_id: str, request: Request):
 
 
 # --- Media ---
+
+
+@router.post("/upload/avatar")
+async def upload_avatar(request: Request, file: UploadFile = File(...)):
+    user, db = _get_user_from_cookie(request)
+
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(400, "Only image files allowed")
+
+    data = await file.read()
+    if len(data) > 2 * 1024 * 1024:
+        raise HTTPException(400, "Max file size is 2MB")
+
+    try:
+        import pyvips
+
+        img = pyvips.Image.new_from_buffer(data, "")
+        img = img.autorot()
+        if img.hasalpha():
+            img = img.flatten(background=[255, 255, 255])
+        if img.width != 128 or img.height != 128:
+            img = img.thumbnail_image(
+                128, height=128, crop=pyvips.enums.Interesting.CENTRE
+            )
+        avif_bytes = img.heifsave_buffer(
+            compression=pyvips.enums.ForeignHeifCompression.AV1, Q=60
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Image processing failed: {e}")
+
+    db.execute(
+        "UPDATE users SET avatar_url = ? WHERE id = ?",
+        (f"/chat/api/avatar/{user['id']}", user["id"]),
+    )
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS avatars (user_id TEXT PRIMARY KEY, data BLOB NOT NULL)"
+    )
+    db.execute(
+        "INSERT OR REPLACE INTO avatars (user_id, data) VALUES (?, ?)",
+        (user["id"], avif_bytes),
+    )
+    db.commit()
+
+    return {"url": f"/chat/api/avatar/{user['id']}"}
+
+
+@router.get("/avatar/{user_id}")
+async def get_avatar(user_id: str):
+    db = _get_db()
+    row = db.execute(
+        "SELECT data FROM avatars WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "Avatar not found")
+    from starlette.responses import Response as RawResponse
+
+    return RawResponse(
+        content=row["data"],
+        media_type="image/avif",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @router.post("/upload/image")

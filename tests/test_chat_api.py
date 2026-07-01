@@ -130,7 +130,7 @@ class TestAuth:
             json={"display_name": "NewAlice"},
         )
         assert r.status_code == 200
-        assert r.json()["display_name"] == "NewAlice"
+        assert r.json()["ok"] is True
 
     def test_update_profile_too_short(self, auth_client):
         r = auth_client.put(

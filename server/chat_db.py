@@ -31,6 +31,8 @@ def init_chat_db(db: sqlite3.Connection) -> None:
             provider           TEXT NOT NULL,
             provider_id        TEXT NOT NULL,
             display_name       TEXT NOT NULL,
+            country            TEXT NOT NULL DEFAULT '',
+            avatar_url         TEXT NOT NULL DEFAULT '',
             session_id         TEXT,
             device_fingerprint TEXT,
             muted_until        TEXT,

@@ -199,10 +199,30 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .auth-btn:active { background: var(--color-surface); }
 .auth-input { width: 280px; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius); font-size: var(--font-base); outline: none; text-align: center; }
 
-/* --- Name prompt --- */
-.name-prompt { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 32px; flex: 1; justify-content: center; }
-.name-prompt input { width: 280px; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius); font-size: var(--font-base); text-align: center; outline: none; }
-.name-prompt button { padding: 12px 32px; background: #111; color: #fff; border: none; border-radius: var(--radius); font-size: var(--font-base); cursor: pointer; font-family: inherit; }
+/* --- Profile prompt --- */
+.profile-prompt { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 32px; flex: 1; justify-content: center; }
+.profile-prompt input { width: 280px; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius); font-size: var(--font-base); text-align: center; outline: none; font-family: inherit; }
+.country-picker { position: relative; width: 280px; }
+.country-picker input { width: 100%; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius); font-size: var(--font-base); outline: none; font-family: inherit; cursor: pointer; }
+.country-picker input:focus { border-color: #999; }
+.country-list { position: absolute; top: 100%; left: 0; right: 0; max-height: 200px; overflow-y: auto; background: var(--color-bg); border: 1px solid var(--color-border); border-top: none; border-radius: 0 0 var(--radius) var(--radius); z-index: 50; display: none; scrollbar-width: none; }
+.country-list::-webkit-scrollbar { display: none; }
+.country-picker.open .country-list { display: block; }
+.country-item { padding: 10px 12px; cursor: pointer; font-size: var(--font-sm); display: flex; align-items: center; gap: 8px; }
+.country-item:hover, .country-item.highlighted { background: var(--color-surface); }
+.country-item .flag { font-size: 18px; }
+.profile-prompt button { padding: 12px 32px; background: #111; color: #fff; border: none; border-radius: var(--radius); font-size: var(--font-base); cursor: pointer; font-family: inherit; }
+.avatar-upload { width: 80px; height: 80px; border-radius: 50%; background: var(--color-surface); border: 2px dashed var(--color-border); display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; }
+.avatar-upload img { width: 100%; height: 100%; object-fit: cover; }
+.avatar-upload svg { width: 32px; height: 32px; color: var(--color-muted); }
+.crop-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 300; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
+.crop-container { position: relative; max-width: 90vw; max-height: 70vh; overflow: hidden; touch-action: none; }
+.crop-container img { display: block; max-width: 90vw; max-height: 70vh; user-select: none; -webkit-user-drag: none; }
+.crop-square { position: absolute; border: 2px solid #fff; box-shadow: 0 0 0 9999px rgba(0,0,0,0.5); cursor: move; }
+.crop-actions { display: flex; gap: 12px; }
+.crop-actions button { padding: 10px 28px; border: none; border-radius: var(--radius); font-size: var(--font-base); cursor: pointer; font-family: inherit; }
+.crop-actions .crop-cancel { background: rgba(255,255,255,0.15); color: #fff; }
+.crop-actions .crop-confirm { background: #fff; color: #111; font-weight: 600; }
 
 /* --- Empty state --- */
 .empty { text-align: center; padding: 48px 24px; color: var(--color-muted); }
@@ -346,26 +366,234 @@ async function authEmail() {
   } catch (e) { showToast(e.message); }
 }
 
-function renderNamePrompt() {
-  dbg('renderNamePrompt');
+const COUNTRIES = [
+  ['AF','Afghanistan','Afganistan'],['AL','Albania','Shqiperia'],['DZ','Algeria','Algerie Dzayer'],['AD','Andorra'],['AO','Angola'],['AG','Antigua and Barbuda'],['AR','Argentina'],['AM','Armenia','Hayastan'],['AU','Australia'],['AT','Austria','Oesterreich Osterreich'],['AZ','Azerbaijan','Azerbaycan'],
+  ['BS','Bahamas'],['BH','Bahrain'],['BD','Bangladesh'],['BB','Barbados'],['BY','Belarus','Bielarus'],['BE','Belgium','Belgique Belgie Belgien'],['BZ','Belize'],['BJ','Benin'],['BT','Bhutan'],['BO','Bolivia'],['BA','Bosnia and Herzegovina','Bosna i Hercegovina'],['BW','Botswana'],['BR','Brazil','Brasil'],['BN','Brunei'],['BG','Bulgaria'],['BF','Burkina Faso'],['BI','Burundi'],
+  ['KH','Cambodia','Kampuchea'],['CM','Cameroon','Cameroun Kamerun'],['CA','Canada'],['CV','Cape Verde','Cabo Verde'],['CF','Central African Republic','Centrafrique'],['TD','Chad','Tchad'],['CL','Chile'],['CN','China','Zhongguo'],['CO','Colombia'],['KM','Comoros','Comores'],['CG','Congo'],['CD','DR Congo'],['CR','Costa Rica'],['CI','Ivory Coast','Cote d Ivoire'],['HR','Croatia','Hrvatska'],['CU','Cuba'],['CY','Cyprus','Kypros Kibris'],['CZ','Czech Republic','Cesko Czechia'],
+  ['DK','Denmark','Danmark'],['DJ','Djibouti'],['DM','Dominica'],['DO','Dominican Republic','Republica Dominicana'],
+  ['EC','Ecuador'],['EG','Egypt','Misr Masr'],['SV','El Salvador'],['GQ','Equatorial Guinea','Guinea Ecuatorial'],['ER','Eritrea'],['EE','Estonia','Eesti'],['SZ','Eswatini','Swaziland'],['ET','Ethiopia','Ityopya'],
+  ['FJ','Fiji'],['FI','Finland','Suomi'],['FR','France'],
+  ['GA','Gabon'],['GM','Gambia'],['GE','Georgia','Sakartvelo'],['DE','Germany','Deutschland'],['GH','Ghana'],['GR','Greece','Hellas Ellada'],['GD','Grenada'],['GT','Guatemala'],['GN','Guinea','Guinee'],['GW','Guinea-Bissau'],['GY','Guyana'],
+  ['HT','Haiti'],['HN','Honduras'],['HU','Hungary','Magyarorszag'],
+  ['IS','Iceland','Island'],['IN','India','Bharat'],['ID','Indonesia'],['IR','Iran'],['IQ','Iraq'],['IE','Ireland','Eire'],['IL','Israel','Yisrael'],['IT','Italy','Italia'],
+  ['JM','Jamaica'],['JP','Japan','Nihon Nippon'],['JO','Jordan','Al-Urdun'],
+  ['KZ','Kazakhstan','Qazaqstan'],['KE','Kenya'],['KI','Kiribati'],['KP','North Korea'],['KR','South Korea','Hanguk'],['KW','Kuwait'],['KG','Kyrgyzstan'],
+  ['LA','Laos'],['LV','Latvia','Latvija'],['LB','Lebanon','Lubnan'],['LS','Lesotho'],['LR','Liberia'],['LY','Libya'],['LI','Liechtenstein'],['LT','Lithuania','Lietuva'],['LU','Luxembourg','Letzebuerg'],
+  ['MG','Madagascar','Madagasikara'],['MW','Malawi'],['MY','Malaysia'],['MV','Maldives'],['ML','Mali'],['MT','Malta'],['MH','Marshall Islands'],['MR','Mauritania','Muritaniya'],['MU','Mauritius','Maurice'],['MX','Mexico'],['FM','Micronesia'],['MD','Moldova'],['MC','Monaco'],['MN','Mongolia','Mongol'],['ME','Montenegro','Crna Gora'],['MA','Morocco','Maroc Al-Maghrib'],['MZ','Mozambique','Mocambique'],['MM','Myanmar','Burma'],
+  ['NA','Namibia'],['NR','Nauru'],['NP','Nepal'],['NL','Netherlands','Nederland Holland'],['NZ','New Zealand','Aotearoa'],['NI','Nicaragua'],['NE','Niger'],['NG','Nigeria'],['MK','North Macedonia','Severna Makedonija'],['NO','Norway','Norge'],
+  ['OM','Oman'],
+  ['PK','Pakistan'],['PW','Palau'],['PS','Palestine','Filastin'],['PA','Panama'],['PG','Papua New Guinea'],['PY','Paraguay'],['PE','Peru'],['PH','Philippines','Pilipinas'],['PL','Poland','Polska'],['PT','Portugal'],
+  ['QA','Qatar'],
+  ['RO','Romania'],['RU','Russia','Rossiya'],['RW','Rwanda'],
+  ['KN','Saint Kitts and Nevis'],['LC','Saint Lucia'],['VC','Saint Vincent'],['WS','Samoa'],['SM','San Marino'],['ST','Sao Tome and Principe'],['SA','Saudi Arabia','Al-Arabiyya'],['SN','Senegal'],['RS','Serbia','Srbija'],['SC','Seychelles'],['SL','Sierra Leone'],['SG','Singapore','Singapura'],['SK','Slovakia','Slovensko'],['SI','Slovenia','Slovenija'],['SB','Solomon Islands'],['SO','Somalia'],['ZA','South Africa','Suid-Afrika'],['SS','South Sudan'],['ES','Spain','Espana'],['LK','Sri Lanka'],['SD','Sudan'],['SR','Suriname'],['SE','Sweden','Sverige'],['CH','Switzerland','Schweiz Suisse Svizzera'],['SY','Syria','Suriya'],
+  ['TW','Taiwan'],['TJ','Tajikistan','Tojikiston'],['TZ','Tanzania'],['TH','Thailand','Prathet Thai'],['TL','Timor-Leste'],['TG','Togo'],['TO','Tonga'],['TT','Trinidad and Tobago'],['TN','Tunisia','Tunis'],['TR','Turkey','Turkiye'],['TM','Turkmenistan'],['TV','Tuvalu'],
+  ['UG','Uganda'],['UA','Ukraine','Ukraina'],['AE','UAE','Emirates Emirat'],['GB','United Kingdom','UK England Scotland Wales'],['US','United States','USA America'],['UY','Uruguay'],['UZ','Uzbekistan','Ozbekiston'],
+  ['VU','Vanuatu'],['VA','Vatican City'],['VE','Venezuela'],['VN','Vietnam'],
+  ['YE','Yemen'],
+  ['ZM','Zambia'],['ZW','Zimbabwe'],
+];
+const FLAG = (cc) => cc ? String.fromCodePoint(...[...cc.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65)) : '';
+
+let _profileAvatarUrl = '';
+
+let _selectedCountry = '';
+
+function renderProfilePrompt() {
+  dbg('renderProfilePrompt');
+  _selectedCountry = currentUser?.country || '';
+  const countryDisplay = _selectedCountry ? FLAG(_selectedCountry) + ' ' + (COUNTRIES.find(c => c[0] === _selectedCountry)?.[1] || '') : '';
   document.getElementById('app').innerHTML = `
-    <div class="name-prompt">
-      <h2>Choose a name</h2>
-      <p style="color:var(--color-muted)">Pick a display name for chat</p>
-      <input id="name-input" placeholder="Your name" maxlength="30" value="${currentUser?.display_name || ''}" onkeydown="if(event.key==='Enter')setName()">
-      <button onclick="setName()">Continue</button>
+    <div class="profile-prompt">
+      <h2>Set up your profile</h2>
+      <div class="avatar-upload" id="avatar-upload" onclick="uploadAvatar()">
+        ${currentUser?.avatar_url ? '<img src="' + currentUser.avatar_url + '">' : '<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="6" r="4" stroke="currentColor" stroke-width="1.5"/><path d="M20 17.5C20 19.9853 20 22 12 22C4 22 4 19.9853 4 17.5C4 15.0147 7.58172 13 12 13C16.4183 13 20 15.0147 20 17.5Z" stroke="currentColor" stroke-width="1.5"/></svg>'}
+      </div>
+      <input id="name-input" placeholder="Your name" maxlength="30" value="${currentUser?.display_name || ''}">
+      <div class="country-picker" id="country-picker">
+        <input id="country-input" placeholder="Select country" value="${countryDisplay}" readonly onclick="toggleCountryPicker()">
+        <div class="country-list" id="country-list"></div>
+      </div>
+      <button onclick="submitProfile()">Continue</button>
     </div>`;
+  _profileAvatarUrl = currentUser?.avatar_url || '';
   document.getElementById('name-input').focus();
-  verify('renderNamePrompt', document.querySelector('.name-prompt'), 'name prompt rendered');
-  verify('renderNamePrompt', document.getElementById('name-input'), 'name input exists');
 }
 
-async function setName() {
-  const name = document.getElementById('name-input').value.trim();
-  if (name.length < 3) { showToast('Name must be at least 3 characters'); return; }
+function toggleCountryPicker() {
+  const picker = document.getElementById('country-picker');
+  if (picker.classList.contains('open')) { closeCountryPicker(); return; }
+  picker.classList.add('open');
+  const input = document.getElementById('country-input');
+  input.readOnly = false;
+  input.value = '';
+  input.placeholder = 'Search country...';
+  input.focus();
+  renderCountryList('');
+  input.oninput = () => renderCountryList(input.value);
+  input.onkeydown = (e) => {
+    if (e.key === 'Escape') closeCountryPicker();
+    if (e.key === 'Enter') {
+      const first = document.querySelector('.country-item');
+      if (first) first.click();
+    }
+  };
+  setTimeout(() => document.addEventListener('click', _countryOutsideClick), 10);
+}
+
+function _countryOutsideClick(e) {
+  if (!e.target.closest('#country-picker')) closeCountryPicker();
+}
+
+function closeCountryPicker() {
+  const picker = document.getElementById('country-picker');
+  if (!picker) return;
+  picker.classList.remove('open');
+  const input = document.getElementById('country-input');
+  input.readOnly = true;
+  input.placeholder = 'Select country';
+  input.oninput = null;
+  input.onkeydown = null;
+  if (_selectedCountry) {
+    const name = COUNTRIES.find(c => c[0] === _selectedCountry)?.[1] || '';
+    input.value = FLAG(_selectedCountry) + ' ' + name;
+  } else {
+    input.value = '';
+  }
+  document.removeEventListener('click', _countryOutsideClick);
+}
+
+function renderCountryList(query) {
+  const list = document.getElementById('country-list');
+  if (!list) return;
+  const q = query.toLowerCase();
+  const filtered = COUNTRIES.filter(([code, name, alt]) => name.toLowerCase().includes(q) || code.toLowerCase().includes(q) || (alt && alt.toLowerCase().includes(q)));
+  list.innerHTML = filtered.map(([code, name]) =>
+    `<div class="country-item" onclick="selectCountry('${code}')"><span class="flag">${FLAG(code)}</span>${escapeHtml(name)}</div>`
+  ).join('') || '<div class="country-item" style="color:var(--color-muted)">No results</div>';
+}
+
+function selectCountry(code) {
+  _selectedCountry = code;
+  closeCountryPicker();
+}
+
+function uploadAvatar() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = 'image/*';
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    const bmp = await createImageBitmap(file);
+    const w = bmp.width, h = bmp.height;
+    bmp.close();
+    if (w < 128 || h < 128) { showToast('Image must be at least 128x128'); return; }
+    if (w > 1024 || h > 1024) {
+      const scale = 1024 / Math.max(w, h);
+      const resized = await resizeImage(file, 1024);
+      showAvatarCrop(resized);
+    } else {
+      showAvatarCrop(file);
+    }
+  };
+  input.click();
+}
+
+function showAvatarCrop(file) {
+  document.getElementById('avatar-crop')?.remove();
+  const url = URL.createObjectURL(file);
+  const overlay = document.createElement('div');
+  overlay.id = 'avatar-crop';
+  overlay.className = 'crop-overlay';
+  overlay.innerHTML = `
+    <div style="color:#fff;font-size:var(--font-sm);opacity:0.7">Drag to position the crop</div>
+    <div class="crop-container" id="crop-container">
+      <img src="${url}" id="crop-img">
+      <div class="crop-square" id="crop-square"></div>
+    </div>
+    <div class="crop-actions">
+      <button class="crop-cancel" onclick="closeCrop()">Cancel</button>
+      <button class="crop-confirm" onclick="confirmCrop()">Use photo</button>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const img = document.getElementById('crop-img');
+  img.onload = () => {
+    const rect = img.getBoundingClientRect();
+    const size = Math.min(rect.width, rect.height);
+    const sq = document.getElementById('crop-square');
+    sq.style.width = size + 'px';
+    sq.style.height = size + 'px';
+    sq.style.left = ((rect.width - size) / 2) + 'px';
+    sq.style.top = ((rect.height - size) / 2) + 'px';
+    sq._file = file;
+    sq._imgW = img.naturalWidth;
+    sq._imgH = img.naturalHeight;
+    sq._dispW = rect.width;
+    sq._dispH = rect.height;
+
+    let startX, startY, origLeft, origTop;
+    const onMove = (e) => {
+      const x = (e.touches ? e.touches[0].clientX : e.clientX) - startX + origLeft;
+      const y = (e.touches ? e.touches[0].clientY : e.clientY) - startY + origTop;
+      sq.style.left = Math.max(0, Math.min(x, rect.width - size)) + 'px';
+      sq.style.top = Math.max(0, Math.min(y, rect.height - size)) + 'px';
+    };
+    const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.removeEventListener('touchmove', onMove); document.removeEventListener('touchend', onUp); };
+    sq.onmousedown = (e) => { e.preventDefault(); startX = e.clientX; startY = e.clientY; origLeft = parseFloat(sq.style.left); origTop = parseFloat(sq.style.top); document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp); };
+    sq.ontouchstart = (e) => { e.preventDefault(); startX = e.touches[0].clientX; startY = e.touches[0].clientY; origLeft = parseFloat(sq.style.left); origTop = parseFloat(sq.style.top); document.addEventListener('touchmove', onMove); document.addEventListener('touchend', onUp); };
+  };
+}
+
+function closeCrop() {
+  const overlay = document.getElementById('avatar-crop');
+  if (overlay) { URL.revokeObjectURL(overlay.querySelector('img')?.src); overlay.remove(); }
+}
+
+async function confirmCrop() {
+  const sq = document.getElementById('crop-square');
+  if (!sq) return;
+  const file = sq._file;
+  const scaleX = sq._imgW / sq._dispW;
+  const scaleY = sq._imgH / sq._dispH;
+  const cropX = parseFloat(sq.style.left) * scaleX;
+  const cropY = parseFloat(sq.style.top) * scaleY;
+  const cropSize = parseFloat(sq.style.width) * scaleX;
+
+  const bmp = await createImageBitmap(file, cropX, cropY, cropSize, cropSize, { resizeWidth: 128, resizeHeight: 128, resizeQuality: 'high' });
+  const canvas = new OffscreenCanvas(128, 128);
+  canvas.getContext('bitmaprenderer').transferFromImageBitmap(bmp);
+  const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.9 });
+
+  closeCrop();
+  showToast('Uploading...');
   try {
-    await api('/auth/profile', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ display_name: name }) });
+    const form = new FormData();
+    form.append('file', new File([blob], 'avatar.webp', { type: 'image/webp' }));
+    const resp = await fetch(API + '/upload/avatar', { method: 'POST', body: form, credentials: 'include' });
+    if (!resp.ok) throw new Error('Upload failed');
+    const result = await resp.json();
+    _profileAvatarUrl = result.url;
+    const el = document.getElementById('avatar-upload');
+    if (el) el.innerHTML = '<img src="' + result.url + '">';
+    dbg('[PROFILE] avatar uploaded:', result.url);
+  } catch (e) { showToast(e.message || 'Upload failed'); }
+}
+
+async function submitProfile() {
+  const name = document.getElementById('name-input').value.trim();
+  const country = _selectedCountry;
+  if (name.length < 3) { showToast('Name must be at least 3 characters'); return; }
+  if (!country) { showToast('Please select your country'); return; }
+  if (!_profileAvatarUrl) { showToast('Please upload a profile photo'); return; }
+  try {
+    await api('/auth/profile', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ display_name: name, country, avatar_url: _profileAvatarUrl }),
+    });
     currentUser.display_name = name;
+    currentUser.country = country;
+    currentUser.avatar_url = _profileAvatarUrl;
     await connectWS();
     await loadRooms();
     if (rooms.length === 1) {
@@ -1664,7 +1892,7 @@ async function route() {
 
   const authed = await checkAuth();
   if (!authed) { renderAuth(); return; }
-  if (!currentUser.display_name || currentUser.display_name.length < 3) { renderNamePrompt(); return; }
+  if (!currentUser.display_name || currentUser.display_name.length < 3 || !currentUser.country || !currentUser.avatar_url) { renderProfilePrompt(); return; }
   if (!ws || ws.readyState !== 1) await connectWS();
   await loadRooms();
 
