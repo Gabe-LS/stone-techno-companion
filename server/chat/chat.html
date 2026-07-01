@@ -83,7 +83,7 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .header .header-info { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
 .header .header-info .title { font-size: var(--font-sm); line-height: 1.2; }
 .header .header-info .online { display: block; line-height: 1.2; }
-.header .header-avatar { width: 30px; height: 30px; border-radius: 50%; overflow: hidden; cursor: pointer; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.3); }
+.header .header-avatar { width: 30px; height: 30px; border-radius: 50%; overflow: hidden; cursor: pointer; flex-shrink: 0; border: 1.5px solid rgba(255,255,255,0.5); }
 .header .header-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .icon-user { vertical-align: -3px; }
 .content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; overflow-anchor: none; scrollbar-width: none; }
@@ -1128,7 +1128,7 @@ async function openRoom(roomId, roomName, roomType) {
     renderRoomList();
   }
   renderChatView(roomName);
-  location.hash = 'chat/room/' + roomId;
+  if (rooms.length > 1) location.hash = 'chat/room/' + roomId;
   const historyReady = new Promise(r => { window._roomHistoryResolve = r; setTimeout(r, 3000); });
   if (ws && ws.readyState === 1) {
     wsSend('join_room', { room_id: roomId });

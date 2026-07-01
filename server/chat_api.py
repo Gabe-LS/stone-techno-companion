@@ -231,7 +231,7 @@ async def auth_email_start(request: Request):
             base_url = os.environ.get(
                 "CHAT_BASE_URL", "https://stonetechno.deftlab.dev"
             )
-            verify_url = f"{base_url}/chat/api/auth/email/verify?token={token}"
+            verify_url = f"{base_url}/chat/api/v?t={token}"
             from_addr = os.environ.get("CHAT_EMAIL_FROM", "no-reply@deftlab.dev")
             client.send_basic_email(
                 {
@@ -249,6 +249,11 @@ async def auth_email_start(request: Request):
         logger.warning("MAILEROO_API_KEY not set — magic link token: %s", token)
 
     return {"sent": True}
+
+
+@router.get("/v")
+async def verify_short(request: Request, t: str = ""):
+    return await auth_email_verify(request, t)
 
 
 @router.get("/auth/email/verify")
