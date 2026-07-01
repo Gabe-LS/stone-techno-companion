@@ -251,9 +251,10 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 /* --- Profile prompt --- */
 .profile-prompt { display: flex; flex-direction: column; align-items: center; gap: var(--space-lg); padding: var(--space-2xl); flex: 1; justify-content: center; }
 .profile-prompt h2 { margin: 0; font-size: var(--font-xl); }
-.profile-field { width: 280px; position: relative; }
-.profile-field input { width: 100%; padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--font-base); text-align: center; outline: none; font-family: inherit; }
+.profile-field { width: 320px; position: relative; }
+.profile-field input { width: 100%; padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--font-base); text-align: center; outline: none; font-family: inherit; transition: border-color 0.15s; }
 .profile-field input:focus { border-color: var(--gray-400); }
+.profile-field input.valid { border-color: var(--color-success); }
 .profile-field .field-status { position: absolute; right: var(--space-md); top: 50%; transform: translateY(-50%); font-size: var(--font-xs); }
 .profile-field .field-status.ok { color: var(--color-success); }
 .profile-field .field-status.err { color: var(--color-accent); }
@@ -261,23 +262,22 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .profile-field .field-hint.err { color: var(--color-accent); }
 .profile-preview { width: 320px; background: var(--gray-50); border-radius: var(--radius-md); padding: var(--space-lg); }
 .profile-preview-label { font-size: var(--font-xs); color: var(--color-muted); margin-bottom: var(--space-sm); text-align: center; }
-.profile-prompt input { width: 280px; padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--font-base); text-align: center; outline: none; font-family: inherit; }
-.profile-prompt input:focus { border-color: var(--gray-400); }
-.country-picker { position: relative; width: 280px; }
-.country-picker input { width: 100%; padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--font-base); outline: none; font-family: inherit; text-align: center; }
+.country-picker { position: relative; width: 320px; }
+.country-picker input { width: 100%; padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--font-base); outline: none; font-family: inherit; text-align: center; transition: border-color 0.15s; }
 .country-picker input:focus { border-color: var(--gray-400); }
+.country-picker input.valid { border-color: var(--color-success); }
 .country-list { position: absolute; top: 100%; left: 0; right: 0; max-height: 200px; overflow-y: auto; background: var(--color-bg); border: 1px solid var(--color-border); border-top: none; border-radius: 0 0 var(--radius-md) var(--radius-md); z-index: 50; display: none; scrollbar-width: none; }
 .country-list::-webkit-scrollbar { display: none; }
 .country-picker.open .country-list { display: block; }
 .country-item { padding: var(--space-md); cursor: pointer; font-size: var(--font-sm); display: flex; align-items: center; gap: var(--space-sm); }
 .country-item:hover, .country-item.highlighted { background: var(--color-surface); }
 .country-item .flag { font-size: 18px; }
-.profile-prompt button { padding: var(--space-md) var(--space-2xl); background: var(--gray-900); color: #fff; border: none; border-radius: var(--radius-md); font-size: var(--font-base); cursor: pointer; font-weight: 600; font-family: inherit; }
+.profile-prompt button { width: 320px; padding: var(--space-md); background: var(--gray-900); color: #fff; border: none; border-radius: var(--radius-md); font-size: var(--font-base); cursor: pointer; font-weight: 600; font-family: inherit; }
 .avatar-upload { width: 128px; height: 128px; border-radius: 50%; background: var(--color-surface); border: 2px dashed var(--color-border); display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; position: relative; }
 .avatar-upload img { width: 100%; height: 100%; object-fit: cover; }
 .avatar-upload svg { width: 32px; height: 32px; color: var(--color-disabled); }
 .avatar-edit { width: 128px; height: 128px; border-radius: 50%; overflow: hidden; position: relative; touch-action: none; }
-.avatar-edit img { position: absolute; user-select: none; -webkit-user-drag: none; }
+.avatar-edit img { position: absolute; user-select: none; -webkit-user-drag: none; will-change: transform, width, height; }
 .avatar-zoom { display: flex; align-items: center; gap: var(--space-xs); justify-content: center; align-self: center; }
 .avatar-zoom-track { width: 96px; height: 1px; background: var(--color-border); border-radius: 1px; position: relative; }
 .avatar-zoom-thumb { width: 10px; height: 10px; border-radius: 50%; background: var(--gray-400); position: absolute; top: -4.5px; transition: none; }
@@ -500,7 +500,7 @@ function renderProfilePrompt() {
         <div class="field-hint" id="displayname-hint">Shown in chat instead of username</div>
       </div>
       <div class="country-picker" id="country-picker">
-        <input id="country-input" placeholder="Country" value="${countryDisplay}" onclick="toggleCountryPicker()" onfocus="toggleCountryPicker()">
+        <input id="country-input" placeholder="Country" value="${countryDisplay}" onfocus="openCountryPicker()">
         <div class="country-list" id="country-list"></div>
       </div>
       <div class="profile-preview" id="profile-preview">
@@ -534,6 +534,8 @@ function onUsernameInput() {
       const r = await api('/auth/check-username?name=' + encodeURIComponent(val));
       if (document.getElementById('username-input').value !== val) return;
       _usernameOk = r.available;
+      const inp = document.getElementById('username-input');
+      inp.classList.toggle('valid', r.available);
       status.textContent = r.available ? 'ok' : '';
       status.className = 'field-status ' + (r.available ? 'ok' : 'err');
       hint.textContent = r.available ? 'Available' : r.reason;
@@ -564,6 +566,8 @@ function onDisplayNameInput() {
     try {
       const r = await api('/auth/check-displayname?name=' + encodeURIComponent(val));
       if (document.getElementById('displayname-input').value.trim() !== val) return;
+      const inp = document.getElementById('displayname-input');
+      inp.classList.toggle('valid', r.available);
       status.textContent = r.available ? 'ok' : '';
       status.className = 'field-status ' + (r.available ? 'ok' : 'err');
       hint.textContent = r.available ? 'Looks good' : r.reason;
@@ -591,9 +595,9 @@ function updateProfilePreview() {
   </div>`;
 }
 
-function toggleCountryPicker() {
+function openCountryPicker() {
   const picker = document.getElementById('country-picker');
-  if (picker.classList.contains('open')) { closeCountryPicker(); return; }
+  if (picker.classList.contains('open')) return;
   picker.classList.add('open');
   const input = document.getElementById('country-input');
   input.readOnly = false;
@@ -654,6 +658,8 @@ function highlightCountryItem(items, idx) {
 function selectCountry(code) {
   _selectedCountry = code;
   closeCountryPicker();
+  const inp = document.getElementById('country-input');
+  if (inp) inp.classList.toggle('valid', !!code);
 }
 
 let _avatarState = null;
@@ -745,8 +751,7 @@ function updateAvatarView() {
   const s = _avatarState;
   img.style.width = (s.natW * s.scale) + 'px';
   img.style.height = (s.natH * s.scale) + 'px';
-  img.style.left = s.x + 'px';
-  img.style.top = s.y + 'px';
+  img.style.transform = `translate(${s.x}px, ${s.y}px)`;
 }
 
 async function submitAvatarCrop() {
