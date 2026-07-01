@@ -191,8 +191,13 @@ async def auth_email_start(request: Request):
     body = await request.json()
     email = (body.get("email") or "").strip().lower()
     fingerprint = body.get("device_fingerprint")
-    if not email or "@" not in email:
-        raise HTTPException(400, "Valid email required")
+    try:
+        from email_validator import validate_email
+
+        result = validate_email(email, check_deliverability=True)
+        email = result.normalized
+    except Exception as e:
+        raise HTTPException(400, str(e))
 
     domain = email.split("@")[1]
     if domain in DISPOSABLE_DOMAINS:
@@ -213,22 +218,23 @@ async def auth_email_start(request: Request):
         "expires": datetime.now(timezone.utc) + timedelta(minutes=15),
     }
 
-    resend_key = os.environ.get("RESEND_API_KEY")
-    if resend_key:
+    maileroo_key = os.environ.get("MAILEROO_API_KEY")
+    if maileroo_key:
         try:
-            import resend
+            from maileroo import MailerooClient, EmailAddress
 
-            resend.api_key = resend_key
+            client = MailerooClient(api_key=maileroo_key)
             base_url = os.environ.get(
                 "CHAT_BASE_URL", "https://stonetechno.deftlab.dev"
             )
             verify_url = f"{base_url}/chat/api/auth/email/verify?token={token}"
-            resend.Emails.send(
+            from_addr = os.environ.get(
+                "CHAT_EMAIL_FROM", "chat@stonetechno.deftlab.dev"
+            )
+            client.send_basic_email(
                 {
-                    "from": os.environ.get(
-                        "CHAT_EMAIL_FROM", "chat@stonetechno.deftlab.dev"
-                    ),
-                    "to": email,
+                    "from": EmailAddress(from_addr),
+                    "to": [EmailAddress(email)],
                     "subject": "Sign in to Festival Chat",
                     "html": f'<p>Click to sign in:</p><p><a href="{verify_url}">{verify_url}</a></p>'
                     f"<p>This link expires in 15 minutes.</p>",
@@ -238,7 +244,7 @@ async def auth_email_start(request: Request):
             logger.error("Failed to send email: %s", e)
             raise HTTPException(500, "Failed to send email")
     else:
-        logger.warning("RESEND_API_KEY not set — magic link token: %s", token)
+        logger.warning("MAILEROO_API_KEY not set — magic link token: %s", token)
 
     return {"sent": True}
 

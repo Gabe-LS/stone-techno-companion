@@ -621,6 +621,46 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                         },
                     )
 
+            elif event == "delete_message":
+                message_id = data.get("message_id")
+                if not message_id:
+                    continue
+                msg_row = db.execute(
+                    "SELECT id, room_id, user_id, type, content, created_at FROM messages WHERE id = ?",
+                    (message_id,),
+                ).fetchone()
+                if msg_row and msg_row["user_id"] == user_id:
+                    age = (
+                        datetime.now(timezone.utc)
+                        - datetime.fromisoformat(msg_row["created_at"])
+                    ).total_seconds()
+                    if age > 120:
+                        continue
+                    room_id_del = msg_row["room_id"]
+                    if msg_row["type"] in ("image", "video"):
+                        try:
+                            url = json.loads(msg_row["content"]).get("url", "")
+                            filename = url.rsplit("/", 1)[-1]
+                            stem = filename.rsplit(".", 1)[0]
+                            (_UPLOADS_DIR / filename).unlink(missing_ok=True)
+                            (_UPLOADS_DIR / f"{stem}_mod.webp").unlink(missing_ok=True)
+                            for i in range(3):
+                                (_UPLOADS_DIR / f"{stem}_mod{i}.webp").unlink(
+                                    missing_ok=True
+                                )
+                        except Exception:
+                            pass
+                    db.execute("DELETE FROM messages WHERE id = ?", (message_id,))
+                    db.commit()
+                    await manager.broadcast_to_room(
+                        room_id_del,
+                        {
+                            "event": "message_removed",
+                            "id": message_id,
+                            "room_id": room_id_del,
+                        },
+                    )
+
             elif event == "report_message":
                 message_id = data.get("message_id")
                 reason = data.get("reason")

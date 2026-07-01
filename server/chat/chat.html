@@ -315,7 +315,6 @@ async function checkAuth() {
 function renderAuth() {
   dbg('renderAuth');
   document.getElementById('app').innerHTML = `
-    <div class="header"><span class="title">Join Chat</span></div>
     <div class="auth-screen">
       <h2>Sign in to chat</h2>
       <p>Choose how to sign in. No passwords needed.</p>
@@ -326,7 +325,7 @@ function renderAuth() {
         <span style="font-size:var(--font-xs);color:var(--color-muted)">or</span>
         <hr style="flex:1;border:none;border-top:1px solid var(--color-border)">
       </div>
-      <input class="auth-input" id="email-input" type="email" placeholder="your@email.com">
+      <input class="auth-input" id="email-input" type="email" placeholder="your@email.com" onkeydown="if(event.key==='Enter')authEmail()">
       <button class="auth-btn" onclick="authEmail()">Send magic link</button>
     </div>`;
   verify('renderAuth', document.querySelector('.auth-screen'), 'auth screen rendered');
@@ -336,13 +335,15 @@ function renderAuth() {
 async function authGoogle() { showToast('Google Sign-In not configured yet'); }
 async function authApple() { showToast('Apple Sign-In not configured yet'); }
 async function authEmail() {
-  const email = document.getElementById('email-input').value.trim();
-  if (!email) { dbg('authEmail: empty email'); return; }
+  const input = document.getElementById('email-input');
+  const email = input.value.trim();
+  if (!email) { showToast('Please enter your email'); return; }
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
+  if (!emailRegex.test(email)) { showToast('Please enter a valid email address'); input.focus(); return; }
   try {
     await api('/auth/email/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
-    verify('authEmail', true, 'magic link sent to ' + email);
     showToast('Check your email for the sign-in link');
-  } catch (e) { verify('authEmail', false, e.message); showToast(e.message); }
+  } catch (e) { showToast(e.message); }
 }
 
 function renderNamePrompt() {
@@ -776,7 +777,7 @@ function renderMessage(m) {
 
   if (isMe) {
     return `<div class="msg msg-mine${pendingCls}" data-msg-id="${m.id}" ontouchstart="msgTouchStart('${m.id}',event)" ontouchmove="msgTouchMove(event)" ontouchend="msgTouchEnd()" ondblclick="msgDblClick('${m.id}')">
-      <div class="msg-bubble msg-mine-bubble">
+      <div class="msg-bubble msg-mine-bubble" oncontextmenu="event.preventDefault();showMsgMenu(this.closest('.msg').getAttribute('data-msg-id'),true)">
         ${reactBtn}
         ${replyHtml}${contentHtml}
         ${time}${reactionsHtml}
@@ -786,7 +787,7 @@ function renderMessage(m) {
 
   return `<div class="msg msg-other${pendingCls}" data-msg-id="${m.id}" ontouchstart="msgTouchStart('${m.id}',event)" ontouchmove="msgTouchMove(event)" ontouchend="msgTouchEnd()" ondblclick="msgDblClick('${m.id}')">
     ${avatarHtml(name, uid, true)}
-    <div class="msg-bubble msg-other-bubble">
+    <div class="msg-bubble msg-other-bubble" oncontextmenu="event.preventDefault();showMsgMenu(this.closest('.msg').getAttribute('data-msg-id'),false)">
       ${reactBtn}
       <div class="msg-header">
         <span class="msg-name" onclick="event.stopPropagation();showUserMenu('${uid}','${escapeHtml(name)}')">${escapeHtml(name)}</span>
@@ -859,7 +860,12 @@ function msgTouchStart(msgId, e) {
   const touch = e.touches[0];
   _swipeStartX = touch.clientX;
   _swipeStartY = touch.clientY;
-  _longPressTimer = setTimeout(() => { _longPressTriggered = true; showReactionPicker(msgId); }, 500);
+  _longPressTimer = setTimeout(() => {
+    _longPressTriggered = true;
+    const msgs = messagesByRoom[currentRoom] || [];
+    const m = msgs.find(msg => msg.id === msgId);
+    showMsgMenu(msgId, m && m.user_id === currentUser?.id);
+  }, 500);
 }
 
 function msgTouchMove(e) {
@@ -1062,7 +1068,7 @@ function shareLocation() {
       showConfirm('Share your location?', `${lat.toFixed(5)}, ${lng.toFixed(5)}`, () => {
         sendChatMessage('location', JSON.stringify({ lat, lng, label: 'My location' }));
         showToast('Location shared');
-      });
+      }, 'Share');
     },
     err => {
       dbg('shareLocation: error', err.code, err.message);
@@ -1471,7 +1477,7 @@ function submitMeetup() {
   showToast('Meetup created!');
 }
 
-function showConfirm(title, detail, onConfirm) {
+function showConfirm(title, detail, onConfirm, btnLabel) {
   document.getElementById('confirm-dialog')?.remove();
   const dismiss = () => { overlay.classList.remove('open'); setTimeout(() => overlay.remove(), 200); };
   const overlay = document.createElement('div');
@@ -1486,7 +1492,7 @@ function showConfirm(title, detail, onConfirm) {
       ${detail ? '<div style="color:var(--color-muted);font-size:var(--font-sm)">' + escapeHtml(detail) + '</div>' : ''}
     </div>
     <div class="modal-footer">
-      <button class="modal-btn-primary" id="confirm-yes">Share</button>
+      <button class="modal-btn-primary" id="confirm-yes">${escapeHtml(btnLabel || 'Confirm')}</button>
     </div>
   </div>`;
   overlay.addEventListener('click', dismiss);
@@ -1531,10 +1537,51 @@ function closeActionSheet() {
 }
 
 function blockUserConfirm(userId, name) {
-  if (confirm(`Block ${name}? They won't be able to message you.`)) {
-    wsSend('block_user', { target_user_id: userId });
-    showToast(`${name} blocked`);
+  document.getElementById('action-sheet')?.remove();
+  const sheet = document.createElement('div');
+  sheet.id = 'action-sheet';
+  sheet.className = 'action-sheet-overlay';
+  sheet.innerHTML = `<div class="action-sheet" onclick="event.stopPropagation()">
+    <div class="action-sheet-title">Block ${escapeHtml(name)}?</div>
+    <button class="action-sheet-btn action-sheet-danger" onclick="closeActionSheet();wsSend('block_user',{target_user_id:'${userId}'});showToast('${escapeHtml(name)} blocked')">Block</button>
+    <button class="action-sheet-btn action-sheet-cancel" onclick="closeActionSheet()">Cancel</button>
+  </div>`;
+  sheet.addEventListener('click', closeActionSheet);
+  document.body.appendChild(sheet);
+  requestAnimationFrame(() => sheet.classList.add('open'));
+}
+
+// --- Message context menu ---
+function showMsgMenu(msgId, isOwn) {
+  closeActionSheet();
+  const msgs = messagesByRoom[currentRoom] || [];
+  const m = msgs.find(msg => msg.id === msgId);
+  let canUnsend = false;
+  if (isOwn && m && m.created_at) {
+    const age = (Date.now() - new Date(m.created_at).getTime()) / 1000;
+    canUnsend = age <= 120;
   }
+  const sheet = document.createElement('div');
+  sheet.id = 'action-sheet';
+  sheet.className = 'action-sheet-overlay';
+  let buttons = '<div class="action-sheet-title">Message</div>';
+  buttons += '<button class="action-sheet-btn" onclick="closeActionSheet();replyToMsg(\'' + msgId + '\')">Reply</button>';
+  if (canUnsend) {
+    buttons += '<button class="action-sheet-btn action-sheet-danger" onclick="msgMenuConfirmUnsend(\'' + msgId + '\')">Delete for everyone</button>';
+  }
+  buttons += '<button class="action-sheet-btn action-sheet-cancel" onclick="closeActionSheet()">Cancel</button>';
+  sheet.innerHTML = '<div class="action-sheet" onclick="event.stopPropagation()">' + buttons + '</div>';
+  sheet.addEventListener('click', closeActionSheet);
+  document.body.appendChild(sheet);
+  requestAnimationFrame(() => sheet.classList.add('open'));
+}
+
+function msgMenuConfirmUnsend(msgId) {
+  const inner = document.querySelector('#action-sheet .action-sheet');
+  if (!inner) return;
+  inner.innerHTML = '<div class="action-sheet-title">Delete this message?</div>'
+    + '<button class="action-sheet-btn action-sheet-danger" onclick="closeActionSheet();wsSend(\'delete_message\',{message_id:\'' + msgId + '\'});dbg(\'[CHAT] delete_message sent: ' + msgId + '\')">Delete for everyone</button>'
+    + '<button class="action-sheet-btn action-sheet-cancel" onclick="closeActionSheet()">Cancel</button>';
 }
 
 // --- Image viewer ---
@@ -1647,6 +1694,7 @@ async function route() {
 window.addEventListener('hashchange', route);
 window.addEventListener('resize', () => { isMobile = window.innerWidth < 768; });
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeViewer(); });
+document.addEventListener('contextmenu', (e) => { if (!e.target.closest('.msg')) e.preventDefault(); });
 route();
 </script>
 </body>
