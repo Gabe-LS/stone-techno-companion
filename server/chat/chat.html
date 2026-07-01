@@ -376,6 +376,8 @@ let unreadByRoom = {};
 let _lastReadByRoom = {};
 let roomTypeLookup = {};
 const USER_ICON = '<svg class="icon-user" width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="6" r="4" stroke="currentColor" stroke-width="1.5"/><path d="M20 17.5C20 19.9853 20 22 12 22C4 22 4 19.9853 4 17.5C4 15.0147 7.58172 13 12 13C16.4183 13 20 15.0147 20 17.5Z" stroke="currentColor" stroke-width="1.5"/></svg>';
+const ICON_HAMBURGER = '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M20.75 7C20.75 7.41421 20.4142 7.75 20 7.75L4 7.75C3.58579 7.75 3.25 7.41421 3.25 7C3.25 6.58579 3.58579 6.25 4 6.25L20 6.25C20.4142 6.25 20.75 6.58579 20.75 7Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M20.75 12C20.75 12.4142 20.4142 12.75 20 12.75L4 12.75C3.58579 12.75 3.25 12.4142 3.25 12C3.25 11.5858 3.58579 11.25 4 11.25L20 11.25C20.4142 11.25 20.75 11.5858 20.75 12Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M20.75 17C20.75 17.4142 20.4142 17.75 20 17.75L4 17.75C3.58579 17.75 3.25 17.4142 3.25 17C3.25 16.5858 3.58579 16.25 4 16.25L20 16.25C20.4142 16.25 20.75 16.5858 20.75 17Z"/></svg>';
+const ICON_BACK = '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2.75C6.89137 2.75 2.75 6.89137 2.75 12C2.75 17.1086 6.89137 21.25 12 21.25C17.1086 21.25 21.25 17.1086 21.25 12C21.25 6.89137 17.1086 2.75 12 2.75ZM1.25 12C1.25 6.06294 6.06294 1.25 12 1.25C17.9371 1.25 22.75 6.06294 22.75 12C22.75 17.9371 17.9371 22.75 12 22.75C6.06294 22.75 1.25 17.9371 1.25 12ZM11.5303 8.46967C11.8232 8.76256 11.8232 9.23744 11.5303 9.53033L9.81066 11.25H16C16.4142 11.25 16.75 11.5858 16.75 12C16.75 12.4142 16.4142 12.75 16 12.75H9.81066L11.5303 14.4697C11.8232 14.7626 11.8232 15.2374 11.5303 15.5303C11.2374 15.8232 10.7626 15.8232 10.4697 15.5303L7.46967 12.5303C7.17678 12.2374 7.17678 11.7626 7.46967 11.4697L10.4697 8.46967C10.7626 8.17678 11.2374 8.17678 11.5303 8.46967Z"/></svg>';
 let replyTo = null;
 let isMobile = window.innerWidth < 768;
 let _toastTimer = null;
@@ -1124,12 +1126,11 @@ function renderRoomList() {
   const app = document.getElementById('app');
   const roomsHtml = _renderRoomItemsHtml();
 
-  const hamburgerSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>';
   if (isMobile) {
     app.innerHTML = `
       <div class="header">
         <span class="title">Chats</span>
-        <button class="chat-hamburger" onclick="toggleChatMenu()">${hamburgerSvg}<span class="hamburger-dot"></span></button>
+        <button class="chat-hamburger" onclick="toggleChatMenu()">${ICON_HAMBURGER}<span class="hamburger-dot"></span></button>
       </div>
       <div class="content" style="display:flex;align-items:center;justify-content:center">
         <div class="empty">Tap the menu to pick a room</div>
@@ -1411,11 +1412,10 @@ function renderChatView(roomName) {
     ? `<div class="header-avatar" onclick="showSettingsMenu()"><img src="${avatarSrc}"></div>`
     : `<div class="header-avatar" onclick="showSettingsMenu()" style="background:var(--gray-500);display:flex;align-items:center;justify-content:center;color:#fff;font-size:var(--font-xs);font-weight:700">${(currentUser?.display_name || currentUser?.username || '?')[0].toUpperCase()}</div>`;
 
-  const hamburgerSvg2 = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>';
   if (isMobile) {
     document.getElementById('app').innerHTML = `
       <div class="header">
-        <button class="back" onclick="leaveRoom()">←</button>
+        <button class="back" onclick="leaveRoom()">${ICON_BACK}</button>
         <div class="header-info">
           <span class="title">${esc(roomName)}</span>
           <span class="online">${onlineCount} online</span>
