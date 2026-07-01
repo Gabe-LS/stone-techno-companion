@@ -166,13 +166,25 @@ OPENAI_THRESHOLDS = {
 
 INSTANT_BAN_CATEGORIES = {"sexual/minors", "violence/graphic"}
 
-DRUG_DETECTION_PROMPT = (
-    "You are a festival chat moderator. Respond ONLY with JSON, no markdown. "
-    "Flag any message that references illegal drugs (including slang: molly, ket, "
-    "party favors, rolling, scored, plug, bumps, lines, etc.), asks to buy/sell/share "
-    "drugs, describes being under the influence of drugs, or uses coded language "
-    "commonly used to reference drugs at festivals. "
-    'Respond: {"flagged": true, "reason": "..."} or {"flagged": false, "reason": ""}'
+CONTENT_DETECTION_PROMPT = (
+    "You are a moderator for a festival companion chat app. "
+    "Respond ONLY with JSON, no markdown, no explanation outside the JSON. "
+    "Flag a message if it matches ANY of these categories:\n"
+    "1. DRUGS: references illegal drugs (including slang: molly, ket, party favors, "
+    "rolling, scored, plug, bumps, lines, etc.), offers to buy/sell/share drugs, "
+    "describes being under the influence, or uses coded drug language common at festivals.\n"
+    "2. SPAM/SCAM: selling tickets, wristbands, or merchandise; promoting events, "
+    "afterparties, or services; unsolicited advertising; crypto/NFT promotion; "
+    "get-rich-quick schemes; influencer self-promotion.\n"
+    "3. PAYMENT LINKS: any URL or reference to payment platforms (PayPal, Venmo, "
+    "CashApp, Revolut, Wise, bank transfers, crypto wallets, IBAN, BTC/ETH addresses), "
+    "QR codes for payment, or requests to send money.\n"
+    "4. EXTERNAL LINKS: Telegram handles/links, WhatsApp numbers, Discord invites, "
+    "or any attempt to move the conversation to another platform for transactions.\n"
+    "Do NOT flag: normal conversation about the festival, music, artists, meetups, "
+    "sharing locations, asking for directions, discussing set times, or casual language.\n"
+    'Respond: {"flagged": true, "category": "drugs|spam|payment|external", "reason": "..."} '
+    'or {"flagged": false}'
 )
 
 _http_client: httpx.AsyncClient | None = None
@@ -236,7 +248,7 @@ async def check_openai_moderation(
         return None
 
 
-async def check_drug_detection(text: str) -> dict | None:
+async def check_content_detection(text: str) -> dict | None:
     if not os.environ.get("OPENAI_API_KEY"):
         return None
 
@@ -250,7 +262,7 @@ async def check_drug_detection(text: str) -> dict | None:
             headers=_get_api_headers(),
             json={
                 "model": "gpt-5.4-nano",
-                "instructions": DRUG_DETECTION_PROMPT,
+                "instructions": CONTENT_DETECTION_PROMPT,
                 "input": text,
                 "max_output_tokens": 150,
                 "reasoning": {"effort": "none"},
@@ -273,10 +285,11 @@ async def check_drug_detection(text: str) -> dict | None:
 
         parsed = _json.loads(output_text)
         if parsed.get("flagged"):
+            cat = parsed.get("category", "content")
             return {
-                "category": "drug_detection",
-                "reason": parsed.get("reason", "Drug-related content"),
-                "is_drug": True,
+                "category": cat,
+                "reason": parsed.get("reason", "Content not allowed"),
+                "is_drug": cat == "drugs",
             }
         return None
     except Exception:
@@ -393,7 +406,7 @@ async def moderate_message(
     import asyncio as _asyncio
 
     moderation_task = _asyncio.create_task(check_openai_moderation(text, image_url))
-    drug_task = _asyncio.create_task(check_drug_detection(text))
+    drug_task = _asyncio.create_task(check_content_detection(text))
 
     try:
         ai_result, drug_result = await _asyncio.gather(
