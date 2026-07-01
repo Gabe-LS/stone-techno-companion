@@ -124,6 +124,9 @@ async def _send_chat_push(
     vapid_private_key = os.environ.get("VAPID_PRIVATE_KEY")
     if not vapid_private_key:
         return
+    if "BEGIN" not in vapid_private_key and not os.path.isfile(vapid_private_key):
+        logger.warning("VAPID_PRIVATE_KEY file not found: %s", vapid_private_key)
+        return
     if room_type == "dm":
         title = sender_name
         body = text_preview[:100]
