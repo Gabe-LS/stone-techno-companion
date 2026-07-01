@@ -1128,7 +1128,9 @@ async function openRoom(roomId, roomName, roomType) {
     renderRoomList();
   }
   renderChatView(roomName);
-  if (rooms.length > 1) history.replaceState(null, '', '/chat/r/' + roomId);
+  if (currentRoomType === 'dm') history.replaceState(null, '', '/chat/d/' + roomId);
+  else if (currentRoomType === 'meetup') history.replaceState(null, '', '/chat/m/' + roomId);
+  else if (rooms.length > 1) history.replaceState(null, '', '/chat/r/' + roomId);
   const historyReady = new Promise(r => { window._roomHistoryResolve = r; setTimeout(r, 3000); });
   if (ws && ws.readyState === 1) {
     wsSend('join_room', { room_id: roomId });
