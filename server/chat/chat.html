@@ -682,7 +682,7 @@ function renderMessage(m) {
   const time = `<span class="msg-time">${fmtTime(m.created_at)}</span>`;
 
   if (isMe) {
-    return `<div class="msg msg-mine${pendingCls}" data-msg-id="${m.id}" ontouchstart="msgTouchStart('${m.id}')" ontouchend="msgTouchEnd()" onclick="msgTap('${m.id}','${escapeHtml(name)}')">
+    return `<div class="msg msg-mine${pendingCls}" data-msg-id="${m.id}" ontouchstart="msgTouchStart('${m.id}',event)" ontouchmove="msgTouchMove(event)" ontouchend="msgTouchEnd()" ondblclick="msgDblClick('${m.id}')">
       <div class="msg-bubble msg-mine-bubble">
         ${reactBtn}
         ${replyHtml}${contentHtml}
@@ -691,7 +691,7 @@ function renderMessage(m) {
     </div>`;
   }
 
-  return `<div class="msg msg-other${pendingCls}" data-msg-id="${m.id}" ontouchstart="msgTouchStart('${m.id}')" ontouchend="msgTouchEnd()" onclick="msgTap('${m.id}','${escapeHtml(name)}')">
+  return `<div class="msg msg-other${pendingCls}" data-msg-id="${m.id}" ontouchstart="msgTouchStart('${m.id}',event)" ontouchmove="msgTouchMove(event)" ontouchend="msgTouchEnd()" ondblclick="msgDblClick('${m.id}')">
     ${avatarHtml(name, uid, true)}
     <div class="msg-bubble msg-other-bubble">
       ${reactBtn}
@@ -745,18 +745,67 @@ function scrollToMessage(msgId) {
 
 // --- Message interactions ---
 let _longPressTimer = null;
-function msgTouchStart(msgId) {
-  _longPressTimer = setTimeout(() => showReactionPicker(msgId), 500);
-}
-function msgTouchEnd() { clearTimeout(_longPressTimer); }
+let _swipeStartX = 0;
+let _swipeStartY = 0;
+let _swipeMsgId = null;
+let _swipeMsgEl = null;
+let _longPressTriggered = false;
 
-function msgTap(msgId, name) {
+function msgTouchStart(msgId, e) {
+  _longPressTriggered = false;
+  _swipeMsgId = msgId;
+  _swipeMsgEl = e.currentTarget;
+  const touch = e.touches[0];
+  _swipeStartX = touch.clientX;
+  _swipeStartY = touch.clientY;
+  _longPressTimer = setTimeout(() => { _longPressTriggered = true; showReactionPicker(msgId); }, 500);
+}
+
+function msgTouchMove(e) {
+  if (!_swipeMsgEl) return;
+  const touch = e.touches[0];
+  const dx = touch.clientX - _swipeStartX;
+  const dy = Math.abs(touch.clientY - _swipeStartY);
+  if (dy > 30) { clearTimeout(_longPressTimer); _swipeMsgEl.style.transform = ''; return; }
+  if (Math.abs(dx) > 10) clearTimeout(_longPressTimer);
+  const isMe = _swipeMsgEl.classList.contains('msg-mine');
+  const swipeDir = isMe ? -1 : 1;
+  const offset = Math.max(0, dx * swipeDir);
+  const clamped = Math.min(offset, 60);
+  if (clamped > 0) {
+    _swipeMsgEl.style.transform = `translateX(${clamped * swipeDir * -1}px)`;
+    _swipeMsgEl.style.transition = 'none';
+  }
+}
+
+function msgTouchEnd() {
+  clearTimeout(_longPressTimer);
+  if (_swipeMsgEl) {
+    const transform = _swipeMsgEl.style.transform;
+    const match = transform.match(/translateX\((-?\d+)px\)/);
+    const offset = match ? Math.abs(parseInt(match[1])) : 0;
+    _swipeMsgEl.style.transition = 'transform 0.2s';
+    _swipeMsgEl.style.transform = '';
+    if (offset >= 40 && !_longPressTriggered) {
+      replyToMsg(_swipeMsgId);
+    }
+  }
+  _swipeMsgEl = null;
+  _swipeMsgId = null;
+}
+
+function msgDblClick(msgId) {
+  replyToMsg(msgId);
+}
+
+function replyToMsg(msgId) {
   const msgs = messagesByRoom[currentRoom] || [];
   const m = msgs.find(msg => msg.id === msgId);
   if (!m) return;
   let text = '';
   try { text = JSON.parse(m.content).text || ''; } catch { text = m.content; }
-  setReply(msgId, m.display_name || name, text);
+  setReply(msgId, m.display_name || 'Unknown', text);
+  dbg('replyToMsg:', msgId);
 }
 
 // --- Reply ---
