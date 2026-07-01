@@ -637,25 +637,8 @@ async def upload_avatar(request: Request, file: UploadFile = File(...)):
         raise HTTPException(400, "Only image files allowed")
 
     data = await file.read()
-    if len(data) > 2 * 1024 * 1024:
-        raise HTTPException(400, "Max file size is 2MB")
-
-    try:
-        import pyvips
-
-        img = pyvips.Image.new_from_buffer(data, "")
-        img = img.autorot()
-        if img.hasalpha():
-            img = img.flatten(background=[255, 255, 255])
-        if img.width != 128 or img.height != 128:
-            img = img.thumbnail_image(
-                128, height=128, crop=pyvips.enums.Interesting.CENTRE
-            )
-        avif_bytes = img.heifsave_buffer(
-            compression=pyvips.enums.ForeignHeifCompression.AV1, Q=60
-        )
-    except Exception as e:
-        raise HTTPException(500, f"Image processing failed: {e}")
+    if len(data) > 500 * 1024:
+        raise HTTPException(400, "Max file size is 500KB")
 
     db.execute(
         "UPDATE users SET avatar_url = ? WHERE id = ?",
@@ -666,7 +649,7 @@ async def upload_avatar(request: Request, file: UploadFile = File(...)):
     )
     db.execute(
         "INSERT OR REPLACE INTO avatars (user_id, data) VALUES (?, ?)",
-        (user["id"], avif_bytes),
+        (user["id"], data),
     )
     db.commit()
 
@@ -685,7 +668,7 @@ async def get_avatar(user_id: str):
 
     return RawResponse(
         content=row["data"],
-        media_type="image/avif",
+        media_type="image/webp",
         headers={
             "Cache-Control": "no-cache",
             "ETag": hashlib.md5(row["data"]).hexdigest(),

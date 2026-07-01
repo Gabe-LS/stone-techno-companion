@@ -723,7 +723,7 @@ async function initAvatarEditor(file) {
     const resized = await createImageBitmap(file, { resizeWidth: natW, resizeHeight: natH, resizeQuality: 'high' });
     const canvas = new OffscreenCanvas(natW, natH);
     canvas.getContext('bitmaprenderer').transferFromImageBitmap(resized);
-    const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.9 });
+    const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.8 });
     previewFile = new File([blob], 'preview.webp', { type: 'image/webp' });
   }
 
@@ -835,7 +835,7 @@ async function submitAvatarCrop() {
   const bmp = await createImageBitmap(s.file, cropX, cropY, cropSize, cropSize, { resizeWidth: 128, resizeHeight: 128, resizeQuality: 'high' });
   const canvas = new OffscreenCanvas(128, 128);
   canvas.getContext('bitmaprenderer').transferFromImageBitmap(bmp);
-  const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.9 });
+  const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.8 });
 
   const form = new FormData();
   form.append('file', new File([blob], 'avatar.webp', { type: 'image/webp' }));
@@ -2379,7 +2379,7 @@ async function initEditAvatarEditor(file) {
     const resized = await createImageBitmap(file, { resizeWidth: natW, resizeHeight: natH, resizeQuality: 'high' });
     const canvas = new OffscreenCanvas(natW, natH);
     canvas.getContext('bitmaprenderer').transferFromImageBitmap(resized);
-    const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.9 });
+    const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.8 });
     previewFile = new File([blob], 'preview.webp', { type: 'image/webp' });
   }
 
@@ -2488,7 +2488,7 @@ async function saveProfile() {
       const bmp = await createImageBitmap(s.file, cropX, cropY, cropSize, cropSize, { resizeWidth: 128, resizeHeight: 128, resizeQuality: 'high' });
       const canvas = new OffscreenCanvas(128, 128);
       canvas.getContext('bitmaprenderer').transferFromImageBitmap(bmp);
-      const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.9 });
+      const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.8 });
       const form = new FormData();
       form.append('file', new File([blob], 'avatar.webp', { type: 'image/webp' }));
       const resp = await fetch(API + '/upload/avatar', { method: 'POST', body: form, credentials: 'include' });
