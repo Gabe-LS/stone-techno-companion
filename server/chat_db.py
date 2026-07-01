@@ -30,7 +30,9 @@ def init_chat_db(db: sqlite3.Connection) -> None:
             id                 TEXT PRIMARY KEY,
             provider           TEXT NOT NULL,
             provider_id        TEXT NOT NULL,
-            display_name       TEXT NOT NULL,
+            display_name       TEXT NOT NULL DEFAULT '',
+            username           TEXT NOT NULL DEFAULT '',
+            username_lower     TEXT NOT NULL DEFAULT '',
             country            TEXT NOT NULL DEFAULT '',
             avatar_url         TEXT NOT NULL DEFAULT '',
             color_index        INTEGER NOT NULL DEFAULT 0,
@@ -41,6 +43,7 @@ def init_chat_db(db: sqlite3.Connection) -> None:
             last_seen          TEXT,
             UNIQUE (provider, provider_id)
         );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username_lower) WHERE username_lower != '';
 
         CREATE TABLE IF NOT EXISTS sessions (
             id         TEXT PRIMARY KEY,
@@ -389,7 +392,7 @@ def get_room_messages(
     db: sqlite3.Connection, room_id: str, limit: int = 100
 ) -> list[sqlite3.Row]:
     return db.execute(
-        "SELECT m.*, u.display_name, u.color_index, u.avatar_url, "
+        "SELECT m.*, u.display_name, u.username, u.color_index, u.avatar_url, "
         "rm.content AS reply_content, rm.type AS reply_type, "
         "ru.display_name AS reply_display_name "
         "FROM messages m "

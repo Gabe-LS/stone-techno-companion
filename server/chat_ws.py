@@ -219,13 +219,15 @@ def _build_reply_snippet(db, reply_to_id: str | None) -> dict | None:
 
 
 def _format_message_for_history(m, reactions_map: dict) -> dict:
+    keys = m.keys()
     d = {
         "id": m["id"],
         "room_id": m["room_id"],
         "user_id": m["user_id"],
         "display_name": m["display_name"],
-        "color_index": m["color_index"] if "color_index" in m.keys() else 0,
-        "avatar_url": m["avatar_url"] if "avatar_url" in m.keys() else "",
+        "username": m["username"] if "username" in keys else "",
+        "color_index": m["color_index"] if "color_index" in keys else 0,
+        "avatar_url": m["avatar_url"] if "avatar_url" in keys else "",
         "type": m["type"],
         "content": m["content"],
         "created_at": m["created_at"],
@@ -301,6 +303,7 @@ async def _moderate_and_broadcast(
             "room_id": room_id,
             "user_id": user_id,
             "display_name": display_name,
+            "username": username,
             "color_index": color_index,
             "avatar_url": avatar_url,
             "type": msg_type,
@@ -322,6 +325,7 @@ async def _moderate_and_broadcast(
                 "room_id": room_id,
                 "user_id": user_id,
                 "display_name": display_name,
+                "username": username,
                 "color_index": color_index,
                 "avatar_url": avatar_url,
                 "type": msg_type,
@@ -345,8 +349,10 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
     await ws.accept()
     user_id = user["id"]
     display_name = user["display_name"]
-    color_index = user["color_index"] if "color_index" in user.keys() else 0
-    avatar_url = user["avatar_url"] if "avatar_url" in user.keys() else ""
+    ukeys = user.keys()
+    username = user["username"] if "username" in ukeys else ""
+    color_index = user["color_index"] if "color_index" in ukeys else 0
+    avatar_url = user["avatar_url"] if "avatar_url" in ukeys else ""
     await manager.connect(ws, user_id)
 
     try:
@@ -514,6 +520,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                             "room_id": stage_id,
                             "user_id": user_id,
                             "display_name": display_name,
+                            "username": username,
                             "color_index": color_index,
                             "avatar_url": avatar_url,
                             "type": "meetup_invite",

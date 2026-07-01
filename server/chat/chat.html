@@ -251,6 +251,16 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 /* --- Profile prompt --- */
 .profile-prompt { display: flex; flex-direction: column; align-items: center; gap: var(--space-lg); padding: var(--space-2xl); flex: 1; justify-content: center; }
 .profile-prompt h2 { margin: 0; font-size: var(--font-xl); }
+.profile-field { width: 280px; position: relative; }
+.profile-field input { width: 100%; padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--font-base); text-align: center; outline: none; font-family: inherit; }
+.profile-field input:focus { border-color: var(--gray-400); }
+.profile-field .field-status { position: absolute; right: var(--space-md); top: 50%; transform: translateY(-50%); font-size: var(--font-xs); }
+.profile-field .field-status.ok { color: var(--color-success); }
+.profile-field .field-status.err { color: var(--color-accent); }
+.profile-field .field-hint { font-size: var(--font-xs); color: var(--color-muted); text-align: center; margin-top: var(--space-xs); }
+.profile-field .field-hint.err { color: var(--color-accent); }
+.profile-preview { width: 320px; background: var(--gray-50); border-radius: var(--radius-md); padding: var(--space-lg); }
+.profile-preview-label { font-size: var(--font-xs); color: var(--color-muted); margin-bottom: var(--space-sm); text-align: center; }
 .profile-prompt input { width: 280px; padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--font-base); text-align: center; outline: none; font-family: inherit; }
 .profile-prompt input:focus { border-color: var(--gray-400); }
 .country-picker { position: relative; width: 280px; }
@@ -464,9 +474,13 @@ let _profileAvatarUrl = '';
 
 let _selectedCountry = '';
 
+let _usernameOk = false;
+let _usernameTimer = null;
+
 function renderProfilePrompt() {
   dbg('renderProfilePrompt');
   _selectedCountry = currentUser?.country || '';
+  _usernameOk = !!(currentUser?.username);
   const countryDisplay = _selectedCountry ? FLAG(_selectedCountry) + ' ' + (COUNTRIES.find(c => c[0] === _selectedCountry)?.[1] || '') : '';
   document.getElementById('app').innerHTML = `
     <div class="profile-prompt">
@@ -475,15 +489,76 @@ function renderProfilePrompt() {
         ${currentUser?.avatar_url ? '<img src="' + currentUser.avatar_url + '">' : '<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="6" r="4" stroke="currentColor" stroke-width="1.5"/><path d="M20 17.5C20 19.9853 20 22 12 22C4 22 4 19.9853 4 17.5C4 15.0147 7.58172 13 12 13C16.4183 13 20 15.0147 20 17.5Z" stroke="currentColor" stroke-width="1.5"/></svg>'}
       </div>
       <div class="avatar-zoom" id="avatar-zoom"><span>-</span><div class="avatar-zoom-track" id="avatar-zoom-track"><div class="avatar-zoom-thumb hidden" id="avatar-zoom-thumb"></div></div><span>+</span></div>
-      <input id="name-input" placeholder="Name" maxlength="30" value="${currentUser?.display_name || ''}">
+      <div class="profile-field">
+        <input id="username-input" placeholder="Username" maxlength="20" value="${currentUser?.username || ''}" oninput="onUsernameInput()">
+        <span class="field-status" id="username-status"></span>
+        <div class="field-hint" id="username-hint">Letters, numbers, periods, underscores, hyphens</div>
+      </div>
+      <div class="profile-field">
+        <input id="displayname-input" placeholder="Display name (optional)" maxlength="30" value="${currentUser?.display_name || ''}" oninput="updateProfilePreview()">
+        <div class="field-hint" id="displayname-hint"></div>
+      </div>
       <div class="country-picker" id="country-picker">
         <input id="country-input" placeholder="Country" value="${countryDisplay}" onclick="toggleCountryPicker()" onfocus="toggleCountryPicker()">
         <div class="country-list" id="country-list"></div>
       </div>
+      <div class="profile-preview" id="profile-preview">
+        <div class="profile-preview-label">How others will see your messages</div>
+        <div id="preview-bubble"></div>
+      </div>
       <button onclick="submitProfile()">Continue</button>
     </div>`;
   _profileAvatarUrl = currentUser?.avatar_url || '';
-  document.getElementById('name-input').focus();
+  document.getElementById('username-input').focus();
+  updateProfilePreview();
+}
+
+function onUsernameInput() {
+  clearTimeout(_usernameTimer);
+  _usernameOk = false;
+  const status = document.getElementById('username-status');
+  const hint = document.getElementById('username-hint');
+  const val = document.getElementById('username-input').value;
+  if (!val || val.length < 2) {
+    status.textContent = '';
+    hint.textContent = 'Letters, numbers, periods, underscores, hyphens';
+    hint.className = 'field-hint';
+    updateProfilePreview();
+    return;
+  }
+  status.textContent = '...';
+  status.className = 'field-status';
+  _usernameTimer = setTimeout(async () => {
+    try {
+      const r = await api('/auth/check-username?name=' + encodeURIComponent(val));
+      if (document.getElementById('username-input').value !== val) return;
+      _usernameOk = r.available;
+      status.textContent = r.available ? 'ok' : '';
+      status.className = 'field-status ' + (r.available ? 'ok' : 'err');
+      hint.textContent = r.available ? 'Available' : r.reason;
+      hint.className = 'field-hint' + (r.available ? '' : ' err');
+    } catch { status.textContent = ''; }
+    updateProfilePreview();
+  }, 400);
+}
+
+function updateProfilePreview() {
+  const el = document.getElementById('preview-bubble');
+  if (!el) return;
+  const username = document.getElementById('username-input')?.value || '';
+  const displayName = document.getElementById('displayname-input')?.value || '';
+  const shown = displayName || username || 'username';
+  const color = USER_COLORS[currentUser?.color_index || 0];
+  el.innerHTML = `<div style="display:flex;gap:var(--space-sm);align-items:flex-end">
+    <div class="avatar-sm" style="background:${color.vivid}">${(shown[0] || '?').toUpperCase()}</div>
+    <div class="msg-bubble msg-other-bubble" style="background:${color.pastel};padding:var(--space-sm) var(--space-md) var(--space-lg);border-radius:var(--radius-lg) var(--radius-lg) var(--radius-lg) var(--radius-sm);max-width:240px">
+      <div class="msg-header" style="margin-bottom:2px">
+        <span class="msg-name" style="color:${color.vivid}">${escapeHtml(shown)}</span>
+      </div>
+      <div class="msg-text">Hey, see you at the main stage!</div>
+      <span class="msg-time" style="position:static;float:right;margin-top:var(--space-xs)">now</span>
+    </div>
+  </div>`;
 }
 
 function toggleCountryPicker() {
@@ -667,9 +742,11 @@ async function submitAvatarCrop() {
 }
 
 async function submitProfile() {
-  const name = document.getElementById('name-input').value.trim();
+  const username = document.getElementById('username-input').value.trim();
+  const displayName = document.getElementById('displayname-input').value.trim();
   const country = _selectedCountry;
-  if (name.length < 3) { showToast('Name must be at least 3 characters'); return; }
+  if (!username || username.length < 2) { showToast('Please choose a username'); return; }
+  if (!_usernameOk) { showToast('Username not available'); return; }
   if (!country) { showToast('Please select your country'); return; }
   if (!_avatarState && !_profileAvatarUrl) { showToast('Please upload a profile photo'); return; }
   try {
@@ -677,12 +754,15 @@ async function submitProfile() {
       showToast('Processing photo...');
       await submitAvatarCrop();
     }
+    const body = { username, country, avatar_url: _profileAvatarUrl };
+    if (displayName) body.display_name = displayName;
     await api('/auth/profile', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ display_name: name, country, avatar_url: _profileAvatarUrl }),
+      body: JSON.stringify(body),
     });
-    currentUser.display_name = name;
+    currentUser.username = username;
+    currentUser.display_name = displayName;
     currentUser.country = country;
     currentUser.avatar_url = _profileAvatarUrl;
     await connectWS();
@@ -1053,7 +1133,7 @@ function appendMessage(m) {
 
 function renderMessage(m) {
   const isMe = m.user_id === currentUser?.id;
-  const name = m.display_name || 'Unknown';
+  const name = m.display_name || m.username || 'Unknown';
   const uid = m.user_id || '';
   const pendingCls = m.pending ? ' msg-pending' : '';
 
@@ -1323,7 +1403,7 @@ function sendChatMessage(type, content, replyToId) {
 
   const optimisticMsg = {
     id: tempId, temp_id: tempId, room_id: currentRoom,
-    user_id: currentUser.id, display_name: currentUser.display_name,
+    user_id: currentUser.id, display_name: currentUser.display_name, username: currentUser.username,
     type, content, created_at: now, pending: true,
   };
   if (replyTo) optimisticMsg.reply_to = { ...replyTo };
@@ -1985,7 +2065,7 @@ async function route() {
 
   const authed = await checkAuth();
   if (!authed) { renderAuth(); return; }
-  if (!currentUser.display_name || currentUser.display_name.length < 3 || !currentUser.country || !currentUser.avatar_url) { renderProfilePrompt(); return; }
+  if (!currentUser.username || !currentUser.country || !currentUser.avatar_url) { renderProfilePrompt(); return; }
   if (!ws || ws.readyState !== 1) await connectWS();
   await loadRooms();
 

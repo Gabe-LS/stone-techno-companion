@@ -135,7 +135,7 @@ class TestAuth:
     def test_update_profile_too_short(self, auth_client):
         r = auth_client.put(
             "/chat/api/auth/profile",
-            json={"display_name": "ab"},
+            json={"display_name": "a"},
         )
         assert r.status_code == 400
 

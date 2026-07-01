@@ -289,6 +289,82 @@ async def auth_delete_account(request: Request, response: Response):
     return {"ok": True}
 
 
+import re
+import unicodedata
+
+try:
+    import regex as _re_mod
+except ImportError:
+    _re_mod = re
+
+_USERNAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*[a-zA-Z0-9]$|^[a-zA-Z0-9]{1,2}$")
+_USERNAME_BAD_RE = re.compile(r"[._-]{2}")
+_DISPLAYNAME_RE = _re_mod.compile(
+    r"^[\p{Script=Latin}\d][\p{Script=Latin}\d ._-]*[\p{Script=Latin}\d]$"
+    r"|^[\p{Script=Latin}\d]{1,2}$",
+    _re_mod.UNICODE,
+)
+
+
+def _validate_username(
+    username: str, db, exclude_user_id: str | None = None
+) -> str | None:
+    if not username or len(username) < 2 or len(username) > 20:
+        return "Username must be 2-20 characters"
+    if not _USERNAME_RE.match(username):
+        return "Only letters, numbers, periods, underscores, hyphens"
+    if _USERNAME_BAD_RE.search(username):
+        return "No consecutive special characters"
+    lower = username.lower()
+    from chat_moderation import get_word_filter
+
+    wf = get_word_filter()
+    match = wf.check(lower)
+    if match:
+        return "Username not allowed"
+    query = "SELECT id FROM users WHERE username_lower = ?"
+    params = [lower]
+    if exclude_user_id:
+        query += " AND id != ?"
+        params.append(exclude_user_id)
+    if db.execute(query, params).fetchone():
+        return "Username taken"
+    return None
+
+
+def _validate_display_name(name: str) -> str | None:
+    if not name or len(name) < 2 or len(name) > 30:
+        return "Display name must be 2-30 characters"
+    normalized = unicodedata.normalize("NFKC", name)
+    try:
+        if not _DISPLAYNAME_RE.match(normalized):
+            return "Only letters, numbers, spaces, periods, underscores, hyphens"
+    except Exception:
+        return "Invalid characters"
+    if "  " in normalized:
+        return "No consecutive spaces"
+    from chat_moderation import get_word_filter
+
+    wf = get_word_filter()
+    match = wf.check(normalized.lower())
+    if match:
+        return "Display name not allowed"
+    return None
+
+
+@router.get("/auth/check-username")
+async def check_username(request: Request, name: str = ""):
+    user, db = _get_user_from_cookie(request)
+    err = _validate_username(name, db, user["id"])
+    return {"available": err is None, "reason": err or ""}
+
+
+@router.get("/auth/check-displayname")
+async def check_displayname(request: Request, name: str = ""):
+    err = _validate_display_name(name)
+    return {"available": err is None, "reason": err or ""}
+
+
 @router.put("/auth/profile")
 async def auth_update_profile(request: Request):
     user, db = _get_user_from_cookie(request)
@@ -297,11 +373,22 @@ async def auth_update_profile(request: Request):
     params = []
     name = body.get("display_name")
     if name:
-        name = name.strip()[:30]
-        if len(name) < 3:
-            raise HTTPException(400, "Display name must be at least 3 characters")
+        name = unicodedata.normalize("NFKC", name.strip())[:30]
+        err = _validate_display_name(name)
+        if err:
+            raise HTTPException(400, err)
         updates.append("display_name = ?")
         params.append(name)
+    username = body.get("username")
+    if username:
+        username = username.strip()[:20]
+        err = _validate_username(username, db, user["id"])
+        if err:
+            raise HTTPException(400, err)
+        updates.append("username = ?")
+        params.append(username)
+        updates.append("username_lower = ?")
+        params.append(username.lower())
     country = body.get("country")
     if country is not None:
         updates.append("country = ?")
@@ -320,12 +407,14 @@ async def auth_update_profile(request: Request):
 @router.get("/auth/me")
 async def auth_me(request: Request):
     user, db = _get_user_from_cookie(request)
+    keys = user.keys()
     return {
         "id": user["id"],
         "display_name": user["display_name"],
-        "country": (user["country"] if "country" in user.keys() else ""),
-        "avatar_url": (user["avatar_url"] if "avatar_url" in user.keys() else ""),
-        "color_index": (user["color_index"] if "color_index" in user.keys() else 0),
+        "username": user["username"] if "username" in keys else "",
+        "country": user["country"] if "country" in keys else "",
+        "avatar_url": user["avatar_url"] if "avatar_url" in keys else "",
+        "color_index": user["color_index"] if "color_index" in keys else 0,
         "provider": user["provider"],
     }
 
