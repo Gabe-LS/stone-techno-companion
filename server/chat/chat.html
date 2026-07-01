@@ -58,14 +58,14 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .messages { padding: 8px 12px; display: flex; flex-direction: column; gap: 2px; }
 .msg { display: flex; gap: 8px; padding: 2px 0 14px; align-items: flex-end; }
 .msg.msg-mine { justify-content: flex-end; }
-.msg-bubble { position: relative; padding: 8px 12px 24px; max-width: 75%; min-width: 80px; display: inline-block; word-break: break-word; }
+.msg-bubble { position: relative; padding: 10px 12px 24px; max-width: 75%; min-width: 80px; display: inline-block; word-break: break-word; }
 .msg-mine-bubble { background: #d4e6f9; color: var(--color-text); border-radius: 16px 16px 4px 16px; }
 .msg-other-bubble { background: #e8e0f0; color: var(--color-text); border-radius: 16px 16px 16px 4px; }
 .msg-header { display: flex; gap: 8px; align-items: baseline; margin-bottom: 2px; }
 .msg-name { font-weight: 600; font-size: var(--font-xs); cursor: pointer; }
 .msg-time { position: absolute; bottom: 10px; right: 12px; font-size: 10px; color: var(--color-muted); }
 .msg-text { font-size: var(--font-base); line-height: 1.4; }
-.msg-image { max-width: 260px; max-height: 260px; border-radius: var(--radius); margin-top: 4px; cursor: pointer; display: block; }
+.msg-image { max-width: 260px; max-height: 260px; border-radius: var(--radius); margin-top: 4px; cursor: zoom-in; display: block; }
 .msg-location { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(0,0,0,0.05); border-radius: 6px; margin-top: 4px; text-decoration: none; color: inherit; font-size: var(--font-sm); }
 .msg-pending { opacity: 0.5; }
 
@@ -94,16 +94,16 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .reply-preview { display: none; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--color-border); background: var(--color-surface); flex-shrink: 0; }
 .reply-preview.visible { display: flex; }
 .reply-preview-content { flex: 1; min-width: 0; border-left: 3px solid var(--color-accent); padding-left: 8px; }
-.reply-preview-name { font-weight: 600; font-size: var(--font-sm); display: block; }
-.reply-preview-text { font-size: var(--font-sm); color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.reply-preview-name { font-weight: 600; font-size: 10px; display: block; margin-bottom: 2px; }
+.reply-preview-text { font-size: 14px; line-height: 1.4; color: rgba(0,0,0,0.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
 .reply-preview-close { background: none; border: none; font-size: 18px; color: var(--color-muted); cursor: pointer; padding: 4px 8px; }
 
 /* --- Reply quote in message --- */
-.reply-quote { border-left: 3px solid var(--color-accent); padding: 4px 8px; margin-bottom: 4px; font-size: var(--font-xs); cursor: pointer; background: rgba(0,0,0,0.05); border-radius: 4px; }
+.reply-quote { border-left: 3px solid var(--color-accent); padding: 4px 8px; margin: 6px 0; cursor: pointer; background: rgba(0,0,0,0.05); border-radius: 4px; }
 .msg-mine-bubble .reply-quote { background: rgba(255,255,255,0.15); }
-.reply-quote-name { font-weight: 600; display: block; }
-.reply-quote-text { color: var(--color-muted); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
-.msg-mine-bubble .reply-quote-text { color: rgba(255,255,255,0.6); }
+.reply-quote-name { font-weight: 600; font-size: 10px; display: block; margin-bottom: 2px; }
+.reply-quote-text { font-size: 14px; line-height: 1.4; color: rgba(0,0,0,0.5); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+.msg-mine-bubble .reply-quote-text { color: rgba(0,0,0,0.45); }
 .msg.highlight { animation: msg-highlight 1.5s ease-out; }
 @keyframes msg-highlight { 0% { background: rgba(229,62,62,0.15); } 100% { background: transparent; } }
 
@@ -131,6 +131,16 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .action-sheet-btn:active { background: var(--color-surface); }
 .action-sheet-danger { color: var(--color-accent); }
 .action-sheet-cancel { color: var(--color-muted); border-top: 1px solid var(--color-border); margin-top: 4px; }
+@media (min-width: 768px) {
+  .action-sheet-overlay { align-items: center; }
+  .action-sheet { border-radius: 12px; max-width: 320px; transform: scale(0.95); opacity: 0; padding-bottom: 8px; }
+  .action-sheet-overlay.open .action-sheet { transform: scale(1); opacity: 1; }
+}
+
+/* --- Image viewer --- */
+.image-viewer { position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 300; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; cursor: zoom-out; }
+.image-viewer.open { opacity: 1; }
+.image-viewer img { max-width: 90%; max-height: 90%; object-fit: contain; border-radius: 4px; }
 
 /* --- Modal (meetup creation, etc.) --- */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; }
@@ -355,8 +365,11 @@ function handleWSEvent(data) {
     case 'room_history':
       messagesByRoom[data.room_id] = data.messages;
       onlineByRoom[data.room_id] = data.online;
+      if (currentUser && !data.online.find(u => u.user_id === currentUser.id))
+        onlineByRoom[data.room_id].push({ user_id: currentUser.id });
       verify('room_history', data.messages, data.messages.length + ' messages for ' + data.room_id);
-      if (currentRoom === data.room_id) renderMessages();
+      if (currentRoom === data.room_id) { renderMessages(); updateHeaderCount(); }
+      updateSidebarCount(data.room_id);
       break;
     case 'message':
       if (!messagesByRoom[data.room_id]) messagesByRoom[data.room_id] = [];
@@ -410,6 +423,7 @@ function handleWSEvent(data) {
         onlineByRoom[data.room_id] = onlineByRoom[data.room_id].filter(u => u.user_id !== data.user_id);
       }
       updateSidebarCount(data.room_id);
+      if (data.room_id === currentRoom) updateHeaderCount();
       break;
     case 'message_rejected': showToast(data.reason, 5000); break;
     case 'strike': showToast(`Warning (${data.count}/3): ${data.reason}`, 5000); break;
@@ -506,6 +520,13 @@ function updateSidebarCount(roomId) {
   if (dotEl) { dotEl.classList.toggle('online', count > 0); dotEl.classList.toggle('offline', count === 0); }
 }
 
+function updateHeaderCount() {
+  if (!currentRoom) return;
+  const count = (onlineByRoom[currentRoom] || []).length;
+  const el = document.querySelector('.header .online');
+  if (el) el.textContent = count + ' 👤';
+}
+
 async function loadMeetups() {
   const el = document.getElementById('room-list');
   if (!el) return;
@@ -540,6 +561,9 @@ async function loadDMs() {
 // --- Chat View ---
 async function openRoom(roomId, roomName, roomType) {
   dbg('openRoom:', roomId, roomName, roomType);
+  if (currentRoom && currentRoom !== roomId) {
+    wsSend('leave_room', { room_id: currentRoom });
+  }
   currentRoom = roomId;
   currentRoomName = roomName;
   currentRoomType = roomType || 'stage';
@@ -653,6 +677,10 @@ function appendMessage(m) {
   const el = document.getElementById('messages');
   if (!el) return;
   el.insertAdjacentHTML('beforeend', renderMessage(m));
+  if (m.type === 'image') {
+    const img = el.querySelector(`[data-msg-id="${m.id}"] .msg-image`);
+    if (img) img.onload = () => scrollToBottom();
+  }
 }
 
 function renderMessage(m) {
@@ -667,7 +695,7 @@ function renderMessage(m) {
     if (m.type === 'text') {
       contentHtml = `<div class="msg-text">${escapeHtml(c.text || '')}</div>`;
     } else if (m.type === 'image') {
-      contentHtml = `<img class="msg-image" src="${c.url}" loading="lazy">`;
+      contentHtml = `<img class="msg-image" src="${c.url}" loading="lazy" onclick="event.stopPropagation();openImageViewer('${c.url}')">`;
     } else if (m.type === 'location') {
       const label = c.label || 'Shared location';
       contentHtml = `<a class="msg-location" href="https://maps.google.com/?q=${c.lat},${c.lng}" target="_blank" rel="noopener">📍 ${escapeHtml(label)}</a>`;
@@ -965,14 +993,30 @@ function shareLocation() {
   );
 }
 
+async function resizeImage(file, maxSide) {
+  const bmp = await createImageBitmap(file);
+  const longest = Math.max(bmp.width, bmp.height);
+  if (longest <= maxSide * 1.1) { bmp.close(); return file; }
+  const scale = maxSide / longest;
+  const w = Math.round(bmp.width * scale);
+  const h = Math.round(bmp.height * scale);
+  bmp.close();
+  const resized = await createImageBitmap(file, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' });
+  const canvas = new OffscreenCanvas(w, h);
+  canvas.getContext('bitmaprenderer').transferFromImageBitmap(resized);
+  const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.85 });
+  return new File([blob], file.name.replace(/\.[^.]+$/, '.webp'), { type: 'image/webp' });
+}
+
 function uploadImage() {
   const input = document.createElement('input');
   input.type = 'file'; input.accept = 'image/*';
   input.onchange = async () => {
     const file = input.files[0];
     if (!file) return;
-    const form = new FormData(); form.append('file', file);
     try {
+      const resized = await resizeImage(file, 1500);
+      const form = new FormData(); form.append('file', resized);
       const result = await fetch(API + '/upload/image', { method: 'POST', body: form, credentials: 'include' }).then(r => r.json());
       verify('uploadImage', result.url, 'image uploaded: ' + result.url);
       sendChatMessage('image', JSON.stringify(result));
@@ -1092,6 +1136,18 @@ function blockUserConfirm(userId, name) {
     wsSend('block_user', { target_user_id: userId });
     showToast(`${name} blocked`);
   }
+}
+
+// --- Image viewer ---
+function openImageViewer(url) {
+  document.getElementById('image-viewer')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'image-viewer';
+  overlay.className = 'image-viewer';
+  overlay.innerHTML = `<img src="${url}">`;
+  overlay.addEventListener('click', () => { overlay.classList.remove('open'); setTimeout(() => overlay.remove(), 200); });
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('open'));
 }
 
 // --- Helpers ---

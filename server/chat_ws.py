@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -38,6 +40,22 @@ from chat_db import (
 from chat_moderation import moderate_message
 
 logger = logging.getLogger(__name__)
+
+_UPLOADS_DIR = Path(__file__).resolve().parent / "chat" / "uploads"
+
+
+def _image_to_data_uri(rel_url: str) -> str | None:
+    filename = rel_url.rsplit("/", 1)[-1]
+    stem = filename.rsplit(".", 1)[0]
+    mod_path = _UPLOADS_DIR / f"{stem}_mod.webp"
+    if not mod_path.is_file():
+        return None
+    try:
+        b64 = base64.b64encode(mod_path.read_bytes()).decode()
+        return f"data:image/webp;base64,{b64}"
+    except Exception:
+        logger.exception("Failed to read moderation image: %s", mod_path)
+        return None
 
 
 class ChatRoom:
@@ -389,7 +407,9 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 image_url = None
                 if msg_type == "image":
                     try:
-                        image_url = json.loads(content).get("url")
+                        rel_url = json.loads(content).get("url")
+                        if rel_url:
+                            image_url = _image_to_data_uri(rel_url)
                     except (json.JSONDecodeError, AttributeError):
                         pass
 

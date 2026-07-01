@@ -529,7 +529,8 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
     upload_dir = Path(__file__).resolve().parent / "chat" / "uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
 
-    filename = f"{secrets.token_hex(16)}.avif"
+    token = secrets.token_hex(16)
+    filename = f"{token}.webp"
     out_path = upload_dir / filename
 
     try:
@@ -539,21 +540,30 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
         img = img.autorot()
         if img.hasalpha():
             img = img.flatten(background=[255, 255, 255])
+        if img.get_typeof("exif-data"):
+            img = img.remove("exif-data", "all")
         max_side = max(img.width, img.height)
         if max_side > 1500:
             scale = 1500 / max_side
-            img = img.resize(scale, kernel=pyvips.enums.Kernel.LANCZOS3)
-        img = img.remove("exif-data", "all") if img.get_typeof("exif-data") else img
-        img.heifsave(
-            str(out_path), compression=pyvips.enums.ForeignHeifCompression.AV1, Q=50
-        )
+            display = img.resize(scale, kernel=pyvips.enums.Kernel.LANCZOS3)
+        else:
+            display = img
+        display.webpsave(str(out_path), Q=75)
+
+        mod_path = upload_dir / f"{token}_mod.webp"
+        if max_side > 880:
+            mod_scale = 800 / max_side
+            mod = img.resize(mod_scale, kernel=pyvips.enums.Kernel.LANCZOS3)
+            mod.webpsave(str(mod_path), Q=60)
+        else:
+            img.webpsave(str(mod_path), Q=60)
     except Exception as e:
         raise HTTPException(500, f"Image processing failed: {e}")
 
     return {
         "url": f"/chat/uploads/{filename}",
-        "width": img.width,
-        "height": img.height,
+        "width": display.width,
+        "height": display.height,
     }
 
 
