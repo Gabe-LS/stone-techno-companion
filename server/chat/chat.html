@@ -94,8 +94,8 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .reply-preview { display: none; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--color-border); background: var(--color-surface); flex-shrink: 0; }
 .reply-preview.visible { display: flex; }
 .reply-preview-content { flex: 1; min-width: 0; border-left: 3px solid var(--color-accent); padding-left: 8px; }
-.reply-preview-name { font-weight: 600; font-size: var(--font-xs); display: block; }
-.reply-preview-text { font-size: var(--font-xs); color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.reply-preview-name { font-weight: 600; font-size: var(--font-sm); display: block; }
+.reply-preview-text { font-size: var(--font-sm); color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
 .reply-preview-close { background: none; border: none; font-size: 18px; color: var(--color-muted); cursor: pointer; padding: 4px 8px; }
 
 /* --- Reply quote in message --- */
@@ -409,6 +409,7 @@ function handleWSEvent(data) {
       } else {
         onlineByRoom[data.room_id] = onlineByRoom[data.room_id].filter(u => u.user_id !== data.user_id);
       }
+      updateSidebarCount(data.room_id);
       break;
     case 'message_rejected': showToast(data.reason, 5000); break;
     case 'strike': showToast(`Warning (${data.count}/3): ${data.reason}`, 5000); break;
@@ -433,15 +434,16 @@ async function loadRooms() {
 
 function renderRoomList() {
   const app = document.getElementById('app');
-  const roomsHtml = rooms.map(r => `
-    <li class="room-item" onclick="openRoom('${r.id}','${esc(r.name)}','${r.type}')">
-      <div class="room-dot ${r.online_count > 0 ? 'online' : 'offline'}"></div>
+  const roomsHtml = rooms.map(r => {
+    const count = (onlineByRoom[r.id] || []).length || r.online_count;
+    return `<li class="room-item" data-room-id="${r.id}" onclick="openRoom('${r.id}','${esc(r.name)}','${r.type}')">
+      <div class="room-dot ${count > 0 ? 'online' : 'offline'}"></div>
       <div class="room-info">
         <div class="room-name">${esc(r.name)}</div>
-        <div class="room-preview">Tap to join</div>
       </div>
-      <div class="room-meta"><div class="room-count">${r.online_count} 👤</div></div>
-    </li>`).join('');
+      <div class="room-meta"><div class="room-count">${count} 👤</div></div>
+    </li>`;
+  }).join('');
 
   if (isMobile) {
     app.innerHTML = `
@@ -484,12 +486,24 @@ function switchTab(btn, tab) {
 function renderRoomItems() {
   const el = document.getElementById('room-list');
   if (!el) return;
-  el.innerHTML = rooms.map(r => `
-    <li class="room-item" onclick="openRoom('${r.id}','${esc(r.name)}','${r.type}')">
-      <div class="room-dot ${r.online_count > 0 ? 'online' : 'offline'}"></div>
+  el.innerHTML = rooms.map(r => {
+    const count = (onlineByRoom[r.id] || []).length || r.online_count;
+    return `<li class="room-item" data-room-id="${r.id}" onclick="openRoom('${r.id}','${esc(r.name)}','${r.type}')">
+      <div class="room-dot ${count > 0 ? 'online' : 'offline'}"></div>
       <div class="room-info"><div class="room-name">${esc(r.name)}</div></div>
-      <div class="room-meta"><div class="room-count">${r.online_count} 👤</div></div>
-    </li>`).join('');
+      <div class="room-meta"><div class="room-count">${count} 👤</div></div>
+    </li>`;
+  }).join('');
+}
+
+function updateSidebarCount(roomId) {
+  const count = (onlineByRoom[roomId] || []).length;
+  const item = document.querySelector(`.room-item[data-room-id="${roomId}"]`);
+  if (!item) return;
+  const countEl = item.querySelector('.room-count');
+  const dotEl = item.querySelector('.room-dot');
+  if (countEl) countEl.textContent = count + ' 👤';
+  if (dotEl) { dotEl.classList.toggle('online', count > 0); dotEl.classList.toggle('offline', count === 0); }
 }
 
 async function loadMeetups() {
