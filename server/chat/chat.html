@@ -277,7 +277,7 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .avatar-upload img { width: 100%; height: 100%; object-fit: cover; }
 .avatar-upload svg { width: 32px; height: 32px; color: var(--color-disabled); }
 .avatar-edit { width: 128px; height: 128px; border-radius: 50%; overflow: hidden; position: relative; touch-action: none; }
-.avatar-edit img { position: absolute; user-select: none; -webkit-user-drag: none; will-change: transform, width, height; }
+.avatar-edit img { position: absolute; user-select: none; -webkit-user-drag: none; will-change: transform; transform-origin: 0 0; }
 .avatar-zoom { display: flex; align-items: center; gap: var(--space-xs); justify-content: center; align-self: center; }
 .avatar-zoom-track { width: 96px; height: 1px; background: var(--color-border); border-radius: 1px; position: relative; }
 .avatar-zoom-thumb { width: 10px; height: 10px; border-radius: 50%; background: var(--gray-400); position: absolute; top: -4.5px; transition: none; }
@@ -753,9 +753,7 @@ function updateAvatarView() {
   const img = document.getElementById('avatar-edit-img');
   if (!img || !_avatarState) return;
   const s = _avatarState;
-  img.style.width = (s.natW * s.scale) + 'px';
-  img.style.height = (s.natH * s.scale) + 'px';
-  img.style.transform = `translate(${s.x}px, ${s.y}px)`;
+  img.style.transform = `translate(${s.x}px, ${s.y}px) scale(${s.scale})`;
   clearTimeout(_avatarPreviewTimer);
   _avatarPreviewTimer = setTimeout(updateAvatarPreview, 400);
 }
