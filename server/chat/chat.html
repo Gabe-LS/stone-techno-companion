@@ -710,7 +710,7 @@ function renderReactionPills(msgId, reactions) {
     const emoji = REACTION_KEYS.find(([e, k]) => k === r.emoji);
     const display = emoji ? emoji[0] : r.emoji;
     const isOwn = (r.user_ids || []).includes(currentUser?.id);
-    const countHtml = r.count > 1 ? `<span style="font-size:10px;margin-left:1px">${r.count}</span>` : '';
+    const countHtml = r.count > 1 ? `<span style="font-size:10px;min-width:10px;text-align:center;display:inline-block">${r.count}</span>` : '';
     return `<button class="reaction-pill${isOwn ? ' own' : ''}" onclick="event.stopPropagation();toggleReaction('${msgId}','${r.emoji}')">${display}${countHtml}</button>`;
   }).join('')}</div>`;
 }
