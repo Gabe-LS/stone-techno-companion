@@ -93,14 +93,15 @@ def init_chat_db(db: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_memberships_user ON room_memberships(user_id);
 
         CREATE TABLE IF NOT EXISTS messages (
-            id          TEXT PRIMARY KEY,
-            room_id     TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-            user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            type        TEXT NOT NULL,
-            content     TEXT NOT NULL,
-            reply_to_id TEXT REFERENCES messages(id) ON DELETE SET NULL,
-            expires_at  TEXT NOT NULL,
-            created_at  TEXT NOT NULL
+            id           TEXT PRIMARY KEY,
+            room_id      TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+            user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            type         TEXT NOT NULL,
+            content      TEXT NOT NULL,
+            link_preview TEXT,
+            reply_to_id  TEXT REFERENCES messages(id) ON DELETE SET NULL,
+            expires_at   TEXT NOT NULL,
+            created_at   TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_messages_expires ON messages(expires_at);
         CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room_id, created_at);
@@ -183,11 +184,19 @@ def init_chat_db(db: sqlite3.Connection) -> None:
     db.commit()
 
 
+def _migrate_chat_db(db: sqlite3.Connection) -> None:
+    cols = {r[1] for r in db.execute("PRAGMA table_info(messages)").fetchall()}
+    if "link_preview" not in cols:
+        db.execute("ALTER TABLE messages ADD COLUMN link_preview TEXT")
+        db.commit()
+
+
 def get_chat_db() -> sqlite3.Connection:
     CHAT_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(str(CHAT_DB_PATH))
     db.row_factory = sqlite3.Row
     init_chat_db(db)
+    _migrate_chat_db(db)
     return db
 
 

@@ -118,7 +118,7 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .messages { padding: var(--space-lg) var(--space-md) var(--space-sm); display: flex; flex-direction: column; gap: 2px; min-height: 100%; justify-content: flex-end; }
 .msg { display: flex; gap: var(--space-sm); padding: var(--space-sm) 0; align-items: flex-end; }
 .msg.msg-mine { justify-content: flex-end; }
-.msg-bubble { position: relative; padding: var(--space-md) var(--space-md) var(--space-xl); max-width: 75%; min-width: 80px; display: inline-block; word-break: break-word; }
+.msg-bubble { position: relative; padding: var(--space-md) var(--space-md) var(--space-xl); max-width: min(70%, 480px); min-width: 80px; display: inline-block; word-break: break-word; }
 .msg-mine-bubble { background: var(--user-7-bg); color: var(--color-text); border-radius: var(--radius-lg) var(--radius-lg) var(--radius-sm) var(--radius-lg); }
 .msg-other-bubble { background: var(--color-surface); color: var(--color-text); border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) var(--radius-sm); }
 .msg-header { display: flex; gap: var(--space-sm); align-items: baseline; margin-bottom: 2px; }
@@ -147,6 +147,15 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .meetup-join-wide { width: 260px; display: block; margin-top: var(--space-xs); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-md); font-size: var(--font-sm); }
 .msg-card.card-location { background: var(--user-5-bg); box-shadow: inset 0 0 0 1px var(--color-success); }
 .msg-card.card-location .card-label { color: var(--color-success); }
+
+/* --- Link preview --- */
+.msg-link-preview { display: block; text-decoration: none; color: inherit; margin-bottom: var(--space-sm); border-radius: var(--radius-md); overflow: hidden; background: var(--color-surface); max-width: 480px; }
+.msg-link-preview:active { opacity: 0.85; }
+.link-preview-img { width: 100%; aspect-ratio: auto; display: block; }
+.link-preview-body { padding: 10px 12px; }
+.link-preview-title { font-weight: 600; font-size: var(--font-sm); line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.link-preview-desc { font-size: var(--font-xs); color: var(--color-muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.4; }
+.link-preview-domain { font-size: var(--font-xxs); color: var(--color-muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* --- Input bar --- */
 .input-bar { display: flex; align-items: center; gap: var(--space-xs); padding: var(--space-sm) var(--space-md); border-top: 1px solid var(--color-border); background: var(--color-bg); flex-shrink: 0; position: relative; }
@@ -1009,6 +1018,30 @@ function handleWSEvent(data) {
       dbg('[DM] dm_opened, navigating to', data.room_id, data.name);
       openRoom(data.room_id, data.name || '', 'dm');
       break;
+    case 'link_preview': {
+      dbg('[LINK] preview for', data.message_id);
+      const msgs = messagesByRoom[data.room_id] || [];
+      const msg = msgs.find(m => m.id === data.message_id);
+      if (msg) msg.link_preview = data.link_preview;
+      if (data.room_id === currentRoom) {
+        const el = document.querySelector(`[data-msg-id="${data.message_id}"] .msg-bubble`);
+        if (el && !el.querySelector('.msg-link-preview')) {
+          const lp = data.link_preview;
+          const textEl = el.querySelector('.msg-text');
+          const previewHtml = `<a class="msg-link-preview" href="${esc(lp.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">
+              ${lp.image ? `<img class="link-preview-img" src="${esc(lp.image)}" loading="lazy">` : ''}
+              <div class="link-preview-body">
+                <div class="link-preview-title">${esc(lp.title || '')}</div>
+                ${lp.description ? `<div class="link-preview-desc">${esc(lp.description)}</div>` : ''}
+                <div class="link-preview-domain">${esc(lp.domain || '')}</div>
+              </div>
+            </a>`;
+          if (textEl) textEl.insertAdjacentHTML('beforebegin', previewHtml);
+          else el.insertAdjacentHTML('afterbegin', previewHtml);
+        }
+      }
+      break;
+    }
     case 'report_confirmed': showToast('Report submitted'); break;
     case 'reaction_updated': {
       const msgs3 = messagesByRoom[currentRoom] || [];
@@ -1435,7 +1468,21 @@ function renderMessage(m) {
   try {
     const c = JSON.parse(m.content);
     if (m.type === 'text') {
-      contentHtml = `<div class="msg-text">${escapeHtml(c.text || '')}</div>`;
+      const rawText = c.text || '';
+      if (m.link_preview) {
+        const lp = m.link_preview;
+        contentHtml = `<a class="msg-link-preview" href="${esc(lp.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">
+          ${lp.image ? `<img class="link-preview-img" src="${esc(lp.image)}" loading="lazy">` : ''}
+          <div class="link-preview-body">
+            <div class="link-preview-title">${esc(lp.title || '')}</div>
+            ${lp.description ? `<div class="link-preview-desc">${esc(lp.description)}</div>` : ''}
+            <div class="link-preview-domain">${esc(lp.domain || '')}</div>
+          </div>
+        </a>`;
+        contentHtml += `<div class="msg-text">${_linkify(rawText)}</div>`;
+      } else {
+        contentHtml = `<div class="msg-text">${_linkify(rawText)}</div>`;
+      }
     } else if (m.type === 'image') {
       contentHtml = `<img class="msg-image" src="${c.url}" loading="lazy" onclick="event.stopPropagation();openImageViewer('${c.url}')">`;
     } else if (m.type === 'video') {
@@ -2992,6 +3039,9 @@ function openVideoViewer(url, startTime) {
 // --- Helpers ---
 function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 const esc = escapeHtml;
+function _linkify(text) {
+  return escapeHtml(text).replace(/(https?:\/\/[^\s<>"')\]]+)/g, '<a href="$1" target="_blank" rel="noopener" onclick="event.stopPropagation()">$1</a>');
+}
 function navigateTo(hash) { location.hash = hash; }
 
 // --- Router ---

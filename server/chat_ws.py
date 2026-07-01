@@ -7,10 +7,12 @@ import base64
 import json
 import logging
 import os
+import re
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -80,6 +82,128 @@ def _video_mod_frames(rel_url: str) -> list[str]:
             except Exception:
                 pass
     return uris
+
+
+_URL_RE = re.compile(r'https?://[^\s<>"\')\]]+')
+_OG_RE = re.compile(
+    r'<meta\s+(?:property|name)=["\']og:(\w+)["\']\s+content=["\']([^"\']*)["\']',
+    re.IGNORECASE,
+)
+_OG_RE2 = re.compile(
+    r'<meta\s+content=["\']([^"\']*?)["\']\s+(?:property|name)=["\']og:(\w+)["\']',
+    re.IGNORECASE,
+)
+_TITLE_RE = re.compile(r"<title[^>]*>([^<]+)</title>", re.IGNORECASE)
+_DESC_RE = re.compile(
+    r'<meta\s+name=["\']description["\']\s+content=["\']([^"\']*)["\']',
+    re.IGNORECASE,
+)
+
+
+def _extract_first_url(text: str) -> str | None:
+    m = _URL_RE.search(text)
+    return m.group(0).rstrip(".,;:!?)") if m else None
+
+
+_OEMBED_HOSTS = {
+    "www.youtube.com": "https://www.youtube.com/oembed?format=json&url=",
+    "youtube.com": "https://www.youtube.com/oembed?format=json&url=",
+    "youtu.be": "https://www.youtube.com/oembed?format=json&url=",
+    "soundcloud.com": "https://soundcloud.com/oembed?format=json&url=",
+    "www.soundcloud.com": "https://soundcloud.com/oembed?format=json&url=",
+}
+
+
+async def _fetch_link_preview(url: str) -> dict | None:
+    try:
+        from chat_moderation import _get_http_client
+
+        client = _get_http_client()
+        parsed = urlparse(url)
+        oembed_base = _OEMBED_HOSTS.get(parsed.netloc)
+        if oembed_base:
+            return await _fetch_oembed_preview(client, url, oembed_base)
+        return await _fetch_og_preview(client, url)
+    except Exception:
+        logger.debug("Link preview fetch failed for %s", url[:60])
+        return None
+
+
+async def _fetch_oembed_preview(client, url: str, oembed_base: str) -> dict | None:
+    from urllib.parse import quote
+
+    resp = await asyncio.wait_for(
+        client.get(oembed_base + quote(url, safe=""), follow_redirects=True),
+        timeout=3.0,
+    )
+    if resp.status_code != 200:
+        return None
+    data = resp.json()
+    title = data.get("title", "")
+    if not title:
+        return None
+    image = data.get("thumbnail_url", "")
+    if image and "ytimg.com" in image:
+        image = re.sub(r"/[a-z]*default\.jpg", "/hq720.jpg", image)
+    return {
+        "url": url,
+        "title": title[:200],
+        "description": data.get("author_name", ""),
+        "image": image,
+        "domain": data.get("provider_name", urlparse(url).netloc),
+    }
+
+
+async def _fetch_og_preview(client, url: str) -> dict | None:
+    resp = await asyncio.wait_for(
+        client.get(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; StoneCompanionBot/1.0)",
+                "Accept": "text/html",
+            },
+            follow_redirects=True,
+        ),
+        timeout=3.0,
+    )
+    if resp.status_code != 200:
+        return None
+    ct = resp.headers.get("content-type", "")
+    if "text/html" not in ct and "application/xhtml" not in ct:
+        return None
+    body = resp.text
+    head_end = body.find("</head>")
+    if head_end > 0:
+        body = body[:head_end]
+    else:
+        body = body[:100000]
+    og = {}
+    for m in _OG_RE.finditer(body):
+        og.setdefault(m.group(1).lower(), m.group(2))
+    for m in _OG_RE2.finditer(body):
+        og.setdefault(m.group(2).lower(), m.group(1))
+    title = og.get("title", "")
+    if not title:
+        tm = _TITLE_RE.search(body)
+        title = tm.group(1).strip() if tm else ""
+    if not title:
+        return None
+    description = og.get("description", "")
+    if not description:
+        dm = _DESC_RE.search(body)
+        description = dm.group(1).strip() if dm else ""
+    image = og.get("image", "")
+    if image and image.startswith("/"):
+        parsed = urlparse(url)
+        image = f"{parsed.scheme}://{parsed.netloc}{image}"
+    domain = og.get("site_name", "") or urlparse(url).netloc
+    return {
+        "url": url,
+        "title": title[:200],
+        "description": description[:300],
+        "image": image,
+        "domain": domain,
+    }
 
 
 def _get_room_notification_targets(db, room_id: str, sender_id: str) -> list[str]:
@@ -366,6 +490,12 @@ def _format_message_for_history(m, reactions_map: dict) -> dict:
         }
     if m["id"] in reactions_map:
         d["reactions"] = reactions_map[m["id"]]
+    lp = m["link_preview"] if "link_preview" in keys else None
+    if lp:
+        try:
+            d["link_preview"] = json.loads(lp) if isinstance(lp, str) else lp
+        except (json.JSONDecodeError, TypeError):
+            pass
     return d
 
 
@@ -437,6 +567,26 @@ async def _moderate_and_broadcast(
         if reply_snippet:
             event_data["reply_to"] = reply_snippet
         await mgr.broadcast_to_room(room_id, event_data, exclude=user_id)
+
+        if msg_type == "text" and text:
+            link_url = _extract_first_url(text)
+            if link_url:
+                preview = await _fetch_link_preview(link_url)
+                if preview:
+                    db.execute(
+                        "UPDATE messages SET link_preview = ? WHERE id = ?",
+                        (json.dumps(preview), msg["id"]),
+                    )
+                    db.commit()
+                    await mgr.broadcast_to_room(
+                        room_id,
+                        {
+                            "event": "link_preview",
+                            "message_id": msg["id"],
+                            "room_id": room_id,
+                            "link_preview": preview,
+                        },
+                    )
 
         text_preview = ""
         if msg_type == "text":
