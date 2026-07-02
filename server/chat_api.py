@@ -1537,6 +1537,25 @@ async def admin_strike_user(user_id: str, request: Request):
         db.close()
 
 
+@router.post("/admin/users/{user_id}/clear-warnings")
+async def admin_clear_warnings(user_id: str, request: Request):
+    _require_admin(request)
+    db = _get_db()
+    try:
+        user = get_user(db, user_id)
+        if not user:
+            raise HTTPException(404, "User not found")
+        db.execute("DELETE FROM strikes WHERE user_id = ?", (user_id,))
+        db.execute(
+            "UPDATE users SET muted_until = NULL, mute_count = 0 WHERE id = ?",
+            (user_id,),
+        )
+        db.commit()
+        return {"ok": True}
+    finally:
+        db.close()
+
+
 @router.delete("/admin/users/{user_id}")
 async def admin_delete_user(user_id: str, request: Request):
     _require_admin(request)

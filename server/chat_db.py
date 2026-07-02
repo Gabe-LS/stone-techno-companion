@@ -1195,6 +1195,7 @@ def search_users(
     rows = db.execute(
         f"SELECT u.id, u.display_name, u.username, u.country, u.avatar_url, "
         f"u.provider, u.muted_until, u.mute_count, u.created_at, u.last_seen, u.last_active, "
+        f"(SELECT GROUP_CONCAT(up.provider, ',') FROM user_providers up WHERE up.user_id = u.id) AS providers, "
         f"(SELECT COUNT(*) FROM strikes s WHERE s.user_id = u.id AND s.expires_at > ?) AS strike_count, "
         f"(SELECT COUNT(*) FROM bans b WHERE b.user_id = u.id) AS ban_count, "
         f"(SELECT COUNT(*) FROM chat_push_subscriptions cps WHERE cps.user_id = u.id) AS push_count "
@@ -1211,7 +1212,7 @@ def search_users(
             "username": r["username"],
             "country": r["country"],
             "avatar_url": r["avatar_url"],
-            "provider": r["provider"],
+            "providers": (r["providers"] or r["provider"]).split(","),
             "muted_until": r["muted_until"],
             "mute_count": r["mute_count"],
             "created_at": r["created_at"],

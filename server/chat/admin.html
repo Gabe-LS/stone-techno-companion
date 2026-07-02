@@ -15,6 +15,7 @@
   --text-muted: #666;
   --border: #2a2a2a;
   --red: #ef4444;
+  --orange: #f97316;
   --amber: #f59e0b;
   --green: #22c55e;
   --blue: #3b82f6;
@@ -65,6 +66,7 @@ select { -webkit-appearance: none; appearance: none; background-image: url("data
 .online-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--green); margin-left: 4px; vertical-align: middle; }
 .pill { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; white-space: nowrap; display: inline-block; }
 .pill-red { background: rgba(239,68,68,0.15); color: var(--red); }
+.pill-orange { background: rgba(249,115,22,0.15); color: var(--orange); }
 .pill-amber { background: rgba(245,158,11,0.15); color: var(--amber); }
 .pill-green { background: rgba(34,197,94,0.15); color: var(--green); }
 .pill-blue { background: rgba(59,130,246,0.15); color: var(--blue); }
@@ -72,6 +74,7 @@ select { -webkit-appearance: none; appearance: none; background-image: url("data
 
 .btn { white-space: nowrap; color: #fff; border-color: transparent; }
 .btn-red { background: var(--red); }
+.btn-orange { background: var(--orange); color: #000; }
 .btn-amber { background: var(--amber); color: #000; }
 .btn-neutral { background: var(--bg-surface); color: var(--text-sec); border-color: var(--border); }
 .btn-blue { background: var(--blue); }
@@ -90,6 +93,17 @@ select { -webkit-appearance: none; appearance: none; background-image: url("data
 
 .load-more { text-align: center; padding: 16px; }
 .load-more button { background: var(--bg-surface); border: 1px solid var(--border); color: var(--text-sec); padding: 8px 24px; border-radius: var(--radius); cursor: pointer; font-size: 13px; }
+
+.dropdown { position: relative; display: inline-block; }
+.dropdown-btn { display: flex; align-items: center; gap: 4px; }
+.dropdown-btn::after { content: ''; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid currentColor; }
+.dropdown-menu { display: none; position: fixed; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); min-width: 140px; z-index: 100; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+.dropdown-menu.visible { display: block; }
+.dropdown-item { display: block; width: 100%; padding: 8px 14px; font-size: 13px; text-align: left; background: none; border: none; border-radius: 0; color: var(--text); cursor: pointer; white-space: nowrap; }
+.dropdown-item:hover { background: var(--bg-hover); opacity: 1; }
+.dropdown-item.warn { color: var(--amber); }
+.dropdown-item.danger { color: var(--red); }
+.dropdown-sep { height: 1px; background: var(--border); margin: 4px 0; }
 
 .drag-handle { cursor: grab; color: var(--text-muted); user-select: none; padding: 0 4px; line-height: 0; }
 .star-cell { cursor: pointer; line-height: 0; }
@@ -247,15 +261,20 @@ function switchTab(tab) {
   render[tab]();
 }
 
-function statusPills(u) {
+function statusPill(u) {
   const now = new Date().toISOString();
-  let h = '';
-  if (u.is_online) h += '<span class="pill pill-green">online</span> ';
-  if (u.is_banned) h += '<span class="pill pill-red">banned</span> ';
-  else if (u.muted_until && u.muted_until > now) h += '<span class="pill pill-amber">muted</span> ';
-  if (u.strike_count) h += '<span class="pill pill-amber">' + u.strike_count + ' strikes</span> ';
-  if (u.has_push) h += '<span class="pill pill-blue">push</span> ';
-  return h || '<span style="color:var(--text-muted)">--</span>';
+  if (u.is_banned) return '<span class="pill pill-red">banned</span>';
+  if (u.muted_until && u.muted_until > now) return '<span class="pill pill-orange">muted</span>';
+  if (u.is_online) return '<span class="pill pill-green">online</span>';
+  if (u.has_push) return '<span class="pill pill-blue">push</span>';
+  return '<span style="color:var(--text-muted)">offline</span>';
+}
+function warningPill(u) {
+  const now = new Date().toISOString();
+  if (u.muted_until && u.muted_until > now) return '<span class="pill pill-orange">Muted</span>';
+  if (u.strike_count >= 2) return '<span class="pill pill-amber">Strike (' + u.strike_count + ')</span>';
+  if (u.strike_count === 1) return '<span class="pill pill-amber">Strike (1)</span>';
+  return '<span style="color:var(--text-muted)">--</span>';
 }
 
 const render = {
@@ -391,7 +410,7 @@ async function loadUsers() {
     if (!users.length) { el.innerHTML = '<div class="empty">No users found</div>'; return; }
     el.innerHTML = `<table class="tbl"><thead><tr>
       <th class="col-avatar"></th><th>Name</th><th>Username</th><th class="col-narrow">Country</th>
-      <th class="col-narrow">Provider</th><th class="col-narrow">Last seen</th><th class="col-narrow">Last active</th><th>Status</th><th class="col-actions">Actions</th>
+      <th class="col-narrow">Provider</th><th class="col-narrow">Last seen</th><th class="col-narrow">Last active</th><th class="col-narrow">Status</th><th class="col-narrow">Warnings</th><th class="col-actions">Actions</th>
     </tr></thead><tbody id="user-tbody">` + users.map(u => userRow(u)).join('') + '</tbody></table>';
     if (expandedUser) loadUserDetail(expandedUser);
   } catch { el.innerHTML = '<div class="empty">Failed to load users</div>'; }
@@ -403,18 +422,24 @@ function userRow(u) {
     <td>${esc(u.display_name || u.id)}</td>
     <td style="color:var(--text-sec)">${esc(u.username ? '@' + u.username : '--')}</td>
     <td class="col-narrow">${esc(u.country || '--')}</td>
-    <td class="col-narrow"><span class="pill pill-gray">${esc(u.provider)}</span></td>
+    <td class="col-narrow">${(u.providers||[]).map(p => '<span class="pill pill-gray">' + esc(p) + '</span>').join(' ')}</td>
     <td class="col-narrow" style="color:var(--text-muted)">${ago(u.last_seen) || 'never'}</td>
     <td class="col-narrow" style="color:var(--text-muted)">${ago(u.last_active) || 'never'}</td>
-    <td>${statusPills(u)}</td>
-    <td class="col-actions"><div class="btn-group">
-      <button class="btn btn-amber" onclick="event.stopPropagation();adminStrike('${esc(u.id)}')">Strike</button>
-      <button class="btn btn-neutral" onclick="event.stopPropagation();adminMute('${esc(u.id)}')">Mute</button>
-      ${u.is_banned
-        ? `<button class="btn btn-neutral" onclick="event.stopPropagation();adminUnban('${esc(u.id)}','${esc(u.display_name||u.username)}')">Unban</button>`
-        : `<button class="btn btn-red" onclick="event.stopPropagation();adminBan('${esc(u.id)}','${esc(u.display_name||u.username)}')">Ban</button>`}
+    <td class="col-narrow">${statusPill(u)}</td>
+    <td class="col-narrow">${warningPill(u)}</td>
+    <td class="col-actions"><div class="dropdown" onclick="event.stopPropagation();toggleDropdown(this)">
+      <button class="btn btn-neutral dropdown-btn">Warnings</button>
+      <div class="dropdown-menu">
+        <button class="dropdown-item warn" onclick="adminStrike('${esc(u.id)}')">Strike</button>
+        <button class="dropdown-item warn" onclick="adminMute('${esc(u.id)}')">Mute</button>
+        <button class="dropdown-item" onclick="adminClearWarnings('${esc(u.id)}')">Clear warnings</button>
+        <div class="dropdown-sep"></div>
+        ${u.is_banned
+          ? `<button class="dropdown-item" onclick="adminUnban('${esc(u.id)}','${esc(u.display_name||u.username)}')">Unban</button>`
+          : `<button class="dropdown-item danger" onclick="adminBan('${esc(u.id)}','${esc(u.display_name||u.username)}')">Ban</button>`}
+      </div>
     </div></td>
-  </tr><tr id="detail-row-${esc(u.id)}" style="display:none"><td colspan="9" style="padding:0"></td></tr>`;
+  </tr><tr id="detail-row-${esc(u.id)}" style="display:none"><td colspan="10" style="padding:0"></td></tr>`;
 }
 
 async function toggleUser(userId) {
@@ -465,8 +490,41 @@ async function loadUserDetail(userId) {
   } catch { cell.innerHTML = '<div class="detail-panel">Failed to load details</div>'; }
 }
 
+function toggleDropdown(el) {
+  const menu = el.querySelector('.dropdown-menu');
+  const wasOpen = menu.classList.contains('visible');
+  closeDropdowns();
+  if (!wasOpen) {
+    const rect = el.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    if (spaceBelow < 200) {
+      menu.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+      menu.style.top = 'auto';
+    } else {
+      menu.style.top = (rect.bottom + 4) + 'px';
+      menu.style.bottom = 'auto';
+    }
+    menu.style.right = (window.innerWidth - rect.right) + 'px';
+    menu.classList.add('visible');
+  }
+}
+function closeDropdowns() {
+  document.querySelectorAll('.dropdown-menu.visible').forEach(m => m.classList.remove('visible'));
+}
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.dropdown')) closeDropdowns();
+});
+
+async function adminClearWarnings(userId) {
+  dbg('[ACTION] clearWarnings', userId);
+  if (!confirm('Clear all strikes and unmute this user?')) return;
+  await api('/users/' + userId + '/clear-warnings', {method: 'POST', body: '{}'});
+  refreshStats(); loadUsers();
+}
+
 async function adminStrike(userId) {
   dbg('[ACTION] strike', userId);
+  if (!confirm('Issue a strike to this user?')) return;
   const result = await api('/strike/' + userId, {method: 'POST', body: JSON.stringify({reason: 'admin', detail: 'Manual admin action'})});
   dbg('[ACTION] strike result:', result.action, result.strike_count);
   if (result.action === 'ban') alert('User has been banned (4th strike).');
@@ -475,8 +533,9 @@ async function adminStrike(userId) {
 }
 async function adminMute(userId) {
   dbg('[ACTION] mute', userId);
+  if (!confirm('Mute this user for 30 minutes? All their messages will be deleted.')) return;
   await api('/mute/' + userId, {method: 'POST', body: JSON.stringify({minutes: 30})});
-  loadUsers();
+  refreshStats(); loadUsers();
 }
 async function adminBan(userId, name) {
   dbg('[ACTION] ban', userId);
