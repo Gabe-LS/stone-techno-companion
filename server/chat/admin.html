@@ -92,11 +92,21 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 </style>
 </head>
 <body>
-<div id="app"></div>
+<div id="app" style="visibility:hidden"></div>
 <script>
+const DEBUG = true;
+const _t0 = performance.now();
+function _ts() { return '+' + ((performance.now() - _t0) | 0) + 'ms'; }
+function dbg(...args) { if (DEBUG) console.log(_ts(), '[admin]', ...args); }
+function verify(label, condition, detail) {
+  if (condition) console.log(_ts(), `[admin] OK: ${label}`, detail || '');
+  else console.warn(_ts(), `[admin] FAIL: ${label}`, detail || '');
+}
+
 const _p = new URLSearchParams(location.search);
 let token = _p.get('admin_token') || sessionStorage.getItem('chat_admin_token') || '';
 if (_p.get('admin_token')) {
+  dbg('[AUTH] token from URL param, storing in sessionStorage');
   sessionStorage.setItem('chat_admin_token', token);
   history.replaceState(null, '', location.pathname);
 }
@@ -107,8 +117,12 @@ const H = () => {
 };
 
 async function api(path, opts) {
+  dbg('[API]', (opts?.method || 'GET'), path);
   const res = await fetch('/chat/api/admin' + path, {headers: H(), credentials: 'include', ...opts});
-  if (!res.ok) throw new Error(res.status);
+  if (!res.ok) {
+    dbg('[API] error', res.status, path);
+    throw new Error(res.status);
+  }
   return res.json();
 }
 function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
@@ -131,14 +145,18 @@ let searchTimer = null;
 let statsInterval = null;
 
 function renderLogin() {
-  document.getElementById('app').innerHTML = `
+  dbg('[AUTH] renderLogin');
+  const el = document.getElementById('app');
+  el.innerHTML = `
     <div class="login-screen">
       <h2>Chat Admin</h2>
       <input id="token-input" type="password" placeholder="Admin token" onkeydown="if(event.key==='Enter')doLogin()">
       <button onclick="doLogin()">Sign in</button>
     </div>`;
+  el.style.visibility = '';
 }
 function doLogin() {
+  dbg('[AUTH] doLogin');
   token = document.getElementById('token-input').value.trim();
   if (!token) return;
   sessionStorage.setItem('chat_admin_token', token);
@@ -146,9 +164,13 @@ function doLogin() {
 }
 
 async function init() {
+  dbg('[INIT] authenticating');
+  let stats;
   try {
-    await api('/stats');
+    stats = await api('/stats');
+    dbg('[INIT] auth success, stats loaded');
   } catch {
+    dbg('[INIT] auth failed, showing login');
     token = '';
     sessionStorage.removeItem('chat_admin_token');
     renderLogin();
@@ -156,7 +178,7 @@ async function init() {
   }
   document.getElementById('app').innerHTML = `
     <div class="app">
-      <div class="stats-bar" id="stats-bar"></div>
+      <div class="stats-bar" id="stats-bar">${renderStatsHTML(stats)}</div>
       <div class="tabs" id="tabs">
         <div class="tab active" data-tab="reports" onclick="switchTab('reports')">Reports</div>
         <div class="tab" data-tab="users" onclick="switchTab('users')">Users</div>
@@ -166,25 +188,31 @@ async function init() {
       </div>
       <div class="content" id="content"></div>
     </div>`;
-  refreshStats();
   statsInterval = setInterval(refreshStats, 15000);
-  switchTab('reports');
+  currentTab = 'reports';
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'reports'));
+  await render.reports();
+  document.getElementById('app').style.visibility = '';
 }
 
+function renderStatsHTML(s) {
+  return `<div class="stat">Users <b>${s.total_users}</b></div>` +
+    `<div class="stat">Online <b style="color:var(--green)">${s.online_count}</b></div>` +
+    `<div class="stat${s.pending_reports ? ' alert' : ''}">Reports <b>${s.pending_reports}</b></div>` +
+    `<div class="stat">Bans <b>${s.active_bans}</b></div>` +
+    `<div class="stat">Strikes <b>${s.active_strikes}</b></div>` +
+    `<div class="stat">Messages <b>${s.total_messages_active}</b></div>`;
+}
 async function refreshStats() {
+  dbg('[STATS] refreshStats');
   try {
     const s = await api('/stats');
-    document.getElementById('stats-bar').innerHTML =
-      `<div class="stat">Users <b>${s.total_users}</b></div>` +
-      `<div class="stat">Online <b style="color:var(--green)">${s.online_count}</b></div>` +
-      `<div class="stat${s.pending_reports ? ' alert' : ''}">Reports <b>${s.pending_reports}</b></div>` +
-      `<div class="stat">Bans <b>${s.active_bans}</b></div>` +
-      `<div class="stat">Strikes <b>${s.active_strikes}</b></div>` +
-      `<div class="stat">Messages <b>${s.total_messages_active}</b></div>`;
+    document.getElementById('stats-bar').innerHTML = renderStatsHTML(s);
   } catch {}
 }
 
 function switchTab(tab) {
+  dbg('[TAB] switchTab', tab);
   currentTab = tab;
   expandedUser = null;
   logOffset = 0;
@@ -195,9 +223,11 @@ function switchTab(tab) {
 
 const render = {
   reports: async () => {
+    dbg('[RENDER] reports');
     const el = document.getElementById('content');
     try {
       const reports = await api('/reports?status=pending');
+      dbg('[RENDER] reports loaded:', reports.length);
       if (!reports.length) { el.innerHTML = '<div class="empty">No pending reports</div>'; return; }
       el.innerHTML = reports.map(r => `
         <div class="card" id="report-${esc(r.id)}">
@@ -214,6 +244,7 @@ const render = {
   },
 
   users: async () => {
+    dbg('[RENDER] users');
     const el = document.getElementById('content');
     el.innerHTML = `
       <div class="search-bar">
@@ -225,6 +256,7 @@ const render = {
   },
 
   banned: async () => {
+    dbg('[RENDER] banned');
     const el = document.getElementById('content');
     try {
       const bans = await api('/bans');
@@ -237,6 +269,7 @@ const render = {
   },
 
   log: async () => {
+    dbg('[RENDER] log');
     const el = document.getElementById('content');
     logOffset = 0;
     logItems = [];
@@ -245,6 +278,7 @@ const render = {
   },
 
   rooms: async () => {
+    dbg('[RENDER] rooms');
     const el = document.getElementById('content');
     try {
       const rooms = await api('/rooms');
@@ -271,6 +305,7 @@ const render = {
 };
 
 async function reportAction(reportId, userId, userName, action) {
+  dbg('[ACTION] reportAction', action, 'user:', userName, 'report:', reportId);
   if (action === 'ban') {
     if (!confirm('Ban ' + userName + '?')) return;
     await api('/ban/' + userId, {method: 'POST', body: JSON.stringify({reason: 'Banned via report'})});
@@ -286,16 +321,19 @@ async function reportAction(reportId, userId, userName, action) {
 }
 
 function onUserSearch(q) {
+  dbg('[SEARCH] users:', q);
   searchQuery = q;
   clearTimeout(searchTimer);
   searchTimer = setTimeout(loadUsers, 300);
 }
 function toggleOnline() {
+  dbg('[FILTER] toggleOnline:', !onlineOnly);
   onlineOnly = !onlineOnly;
   document.querySelector('.toggle')?.classList.toggle('on', onlineOnly);
   loadUsers();
 }
 async function loadUsers() {
+  dbg('[USERS] loadUsers q:', searchQuery, 'online:', onlineOnly);
   const el = document.getElementById('user-list');
   if (!el) return;
   try {
@@ -324,6 +362,7 @@ async function loadUsers() {
 }
 
 async function toggleUser(userId) {
+  dbg('[USERS] toggleUser', userId);
   if (expandedUser === userId) {
     expandedUser = null;
     const d = document.getElementById('detail-' + userId);
@@ -336,6 +375,7 @@ async function toggleUser(userId) {
 }
 
 async function loadUserDetail(userId) {
+  dbg('[USERS] loadUserDetail', userId);
   const el = document.getElementById('detail-' + userId);
   if (!el) return;
   try {
@@ -370,23 +410,28 @@ async function loadUserDetail(userId) {
 }
 
 async function adminStrike(userId) {
+  dbg('[ACTION] adminStrike', userId);
   const result = await api('/strike/' + userId, {method: 'POST', body: JSON.stringify({reason: 'admin', detail: 'Manual admin action'})});
+  dbg('[ACTION] strike result:', result.action, 'count:', result.strike_count);
   if (result.action === 'ban') alert('User has been banned (4th strike).');
   else if (result.action === 'mute') alert('User has been muted (3rd strike).');
   refreshStats();
   loadUserDetail(userId);
 }
 async function adminMute(userId) {
+  dbg('[ACTION] adminMute', userId);
   await api('/mute/' + userId, {method: 'POST', body: JSON.stringify({minutes: 30})});
   loadUserDetail(userId);
 }
 async function adminBan(userId, name) {
+  dbg('[ACTION] adminBan', userId, name);
   if (!confirm('Ban ' + name + '?')) return;
   await api('/ban/' + userId, {method: 'POST', body: JSON.stringify({reason: 'Banned by admin'})});
   refreshStats();
   loadUserDetail(userId);
 }
 async function adminUnban(userId, name) {
+  dbg('[ACTION] adminUnban', userId, name);
   if (!confirm('Unban ' + name + '?')) return;
   await api('/unban/' + userId, {method: 'POST', body: '{}'});
   refreshStats();
@@ -394,6 +439,7 @@ async function adminUnban(userId, name) {
 }
 
 async function unban(banId, name) {
+  dbg('[ACTION] unban', banId, name);
   if (!confirm('Unban ' + (name || 'this user') + '?')) return;
   await fetch('/chat/api/admin/bans/' + banId, {method: 'DELETE', headers: H(), credentials: 'include'});
   refreshStats();
@@ -427,6 +473,7 @@ function filterBans(q) {
 }
 
 async function adminDeleteUser(userId, name) {
+  dbg('[ACTION] adminDeleteUser', userId, name);
   if (!confirm('Delete user ' + name + '? This cannot be undone.')) return;
   await api('/users/' + userId, {method: 'DELETE'});
   expandedUser = null;
@@ -435,6 +482,7 @@ async function adminDeleteUser(userId, name) {
 }
 
 async function createRoom() {
+  dbg('[ACTION] createRoom');
   const name = document.getElementById('room-name')?.value.trim();
   const type = document.getElementById('room-type')?.value || 'general';
   if (!name) return;
@@ -448,6 +496,7 @@ async function createRoom() {
 }
 
 async function deleteRoom(roomId, name) {
+  dbg('[ACTION] deleteRoom', roomId, name);
   if (!confirm('Delete room "' + name + '"? All messages will be lost.')) return;
   await api('/rooms/' + roomId, {method: 'DELETE'});
   refreshStats();
@@ -455,6 +504,7 @@ async function deleteRoom(roomId, name) {
 }
 
 async function loadMoreLog() {
+  dbg('[LOG] loadMoreLog offset:', logOffset);
   try {
     const items = await api('/modlog?limit=50&offset=' + logOffset);
     logItems = logItems.concat(items);
