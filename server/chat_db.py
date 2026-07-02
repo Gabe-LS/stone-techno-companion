@@ -493,6 +493,31 @@ def create_room(
     }
 
 
+def update_room(db: sqlite3.Connection, room_id: str, **kwargs) -> None:
+    allowed = {
+        "name",
+        "description",
+        "is_moderated",
+        "is_read_only",
+        "allows_media",
+        "ttl_minutes",
+        "position",
+    }
+    updates = []
+    params = []
+    for key, val in kwargs.items():
+        if key in allowed:
+            if key in ("is_moderated", "is_read_only", "allows_media"):
+                val = 1 if val else 0
+            updates.append(f"{key} = ?")
+            params.append(val)
+    if not updates:
+        return
+    params.append(room_id)
+    db.execute(f"UPDATE rooms SET {', '.join(updates)} WHERE id = ?", params)
+    db.commit()
+
+
 def delete_room(db: sqlite3.Connection, room_id: str) -> None:
     db.execute("DELETE FROM messages WHERE room_id = ?", (room_id,))
     db.execute("DELETE FROM room_memberships WHERE room_id = ?", (room_id,))

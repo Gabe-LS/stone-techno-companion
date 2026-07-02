@@ -65,6 +65,7 @@ from chat_db import (
     get_room_stats,
     mute_user,
     delete_room,
+    update_room,
     update_last_seen,
     update_last_active,
     delete_user_messages,
@@ -1597,6 +1598,56 @@ async def admin_create_room(request: Request):
             position=body.get("position", 0),
         )
         return room
+    finally:
+        db.close()
+
+
+@router.patch("/admin/rooms/{room_id}")
+async def admin_update_room(room_id: str, request: Request):
+    _require_admin(request)
+    body = await request.json()
+    db = _get_db()
+    try:
+        room = get_room(db, room_id)
+        if not room:
+            raise HTTPException(404, "Room not found")
+        update_room(db, room_id, **body)
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+@router.post("/admin/rooms/{room_id}/main")
+async def admin_set_main_room(room_id: str, request: Request):
+    _require_admin(request)
+    db = _get_db()
+    try:
+        room = get_room(db, room_id)
+        if not room:
+            raise HTTPException(404, "Room not found")
+        db.execute(
+            "UPDATE rooms SET is_main = 0 WHERE event_id = ?", (room["event_id"],)
+        )
+        db.execute("UPDATE rooms SET is_main = 1 WHERE id = ?", (room_id,))
+        db.commit()
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+@router.post("/admin/rooms/reorder")
+async def admin_reorder_rooms(request: Request):
+    _require_admin(request)
+    body = await request.json()
+    order = body.get("order", [])
+    if not order:
+        raise HTTPException(400, "order required")
+    db = _get_db()
+    try:
+        for i, room_id in enumerate(order):
+            db.execute("UPDATE rooms SET position = ? WHERE id = ?", (i, room_id))
+        db.commit()
+        return {"ok": True}
     finally:
         db.close()
 

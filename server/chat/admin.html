@@ -91,6 +91,32 @@ select { -webkit-appearance: none; appearance: none; background-image: url("data
 .load-more { text-align: center; padding: 16px; }
 .load-more button { background: var(--bg-surface); border: 1px solid var(--border); color: var(--text-sec); padding: 8px 24px; border-radius: var(--radius); cursor: pointer; font-size: 13px; }
 
+.drag-handle { cursor: grab; color: var(--text-muted); user-select: none; padding: 0 4px; line-height: 0; }
+.star-cell { cursor: pointer; line-height: 0; }
+.star-cell svg, .drag-handle { vertical-align: middle; }
+.drag-handle:active { cursor: grabbing; }
+.tbl tr.dragging { opacity: 0.4; }
+.tbl tr.drag-over td { border-top: 2px solid var(--blue); }
+
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; align-items: center; justify-content: center; }
+.modal-overlay.open { display: flex; }
+.modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; width: 90%; max-width: 440px; max-height: 90vh; overflow-y: auto; }
+.modal h2 { font-size: 16px; font-weight: 500; margin-bottom: 16px; }
+.modal-field { margin-bottom: 12px; }
+.modal-field label { display: block; font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+.modal-field input, .modal-field select, .modal-field textarea { width: 100%; }
+.modal-field textarea { resize: vertical; min-height: 60px; background: var(--bg-surface); border: 1px solid var(--border); color: var(--text); padding: 7px 12px; border-radius: var(--radius); font-family: inherit; font-size: 13px; outline: none; }
+.modal-field textarea:focus { border-color: var(--text-muted); }
+.modal-toggle { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
+.modal-toggle label { margin: 0; flex: 1; font-size: 13px; color: var(--text); text-transform: none; letter-spacing: 0; }
+.switch { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch span { position: absolute; inset: 0; background: var(--border); border-radius: 10px; cursor: pointer; transition: background 0.2s; }
+.switch span::before { content: ''; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; background: var(--text-sec); border-radius: 50%; transition: transform 0.2s; }
+.switch input:checked + span { background: var(--green); }
+.switch input:checked + span::before { transform: translateX(16px); background: #fff; }
+.modal-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+
 @media (max-width: 640px) {
   .tbl th, .tbl td { padding: 6px 6px; }
   .toolbar { flex-direction: column; }
@@ -100,6 +126,9 @@ select { -webkit-appearance: none; appearance: none; background-image: url("data
 </head>
 <body>
 <div id="app" style="visibility:hidden"></div>
+<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modal"></div>
+</div>
 <script>
 const DEBUG = true;
 const _t0 = performance.now();
@@ -293,20 +322,9 @@ const render = {
     const el = document.getElementById('content');
     try {
       const rooms = await api('/rooms');
+      window._roomsData = rooms;
       let html = `<div class="toolbar">
-        <input type="text" id="room-name" placeholder="Room name" onkeydown="if(event.key==='Enter')createRoom()">
-        <input type="text" id="room-desc" placeholder="Description (optional)">
-        <select id="room-type">
-          <option value="general">general</option><option value="stage">stage</option>
-        </select>
-        <select id="room-ttl">
-          <option value="30">30m TTL</option>
-          <option value="60" selected>1h TTL</option>
-          <option value="360">6h TTL</option>
-          <option value="1440">24h TTL</option>
-          <option value="">No expiry</option>
-        </select>
-        <button class="btn btn-blue" onclick="createRoom()">Create</button>
+        <button class="btn btn-blue" onclick="openRoomModal()">Create room</button>
       </div>`;
       if (!rooms.length) { el.innerHTML = html + '<div class="empty">No rooms</div>'; return; }
       const typePill = t => t === 'general' ? 'pill-blue' : t === 'stage' ? 'pill-green' : t === 'dm' ? 'pill-amber' : 'pill-gray';
@@ -318,18 +336,23 @@ const render = {
         if (!r.allows_media) h += '<span class="pill pill-gray">text-only</span> ';
         return h;
       };
+      const starPath = 'M9.15 5.41C10.42 3.14 11.05 2 12 2s1.58 1.14 2.85 3.41l.33.59c.36.65.54.97.82 1.18.28.21.63.29 1.33.45l.64.14c2.46.56 3.69.84 3.98 1.78.29.94-.55 1.92-2.22 3.88l-.43.51c-.48.56-.72.84-.82 1.18-.11.34-.07.72 0 1.46l.07.68c.25 2.62.38 3.92-.39 4.5-.77.58-1.92.05-4.22-.89l-.6-.27c-.65-.3-.98-.45-1.33-.45s-.67.15-1.33.45l-.6.27c-2.3 1.06-3.45 1.59-4.22 1.01-.77-.58-.64-1.89-.39-4.5l.07-.68c.07-.74.1-1.12 0-1.46-.11-.34-.35-.62-.82-1.18l-.43-.51C2.6 11.47 1.76 10.49 2.06 9.55c.29-.94 1.52-1.22 3.98-1.78l.64-.14c.7-.16 1.05-.24 1.33-.45.28-.21.46-.53.82-1.18l.33-.59Z';
       el.innerHTML = html + `<table class="tbl"><thead><tr>
-        <th>Name</th><th class="col-narrow">Type</th><th class="col-narrow">TTL</th><th class="col-narrow">Members</th><th class="col-narrow">Online</th><th>Flags</th><th class="col-narrow">Last activity</th><th class="col-actions">Actions</th>
-      </tr></thead><tbody>` + rooms.map(r => `<tr>
-        <td>${esc(r.name)}${r.is_main ? ' <span style="color:var(--text-muted)">(main)</span>' : ''}${r.description ? '<div style="color:var(--text-muted);font-size:12px">' + esc(r.description) + '</div>' : ''}</td>
+        <th class="col-narrow"></th><th class="col-narrow"></th><th>Name</th><th class="col-narrow">Type</th><th class="col-narrow">TTL</th><th class="col-narrow">Members</th><th class="col-narrow">Online</th><th>Flags</th><th class="col-narrow">Last activity</th><th class="col-actions">Actions</th>
+      </tr></thead><tbody id="rooms-tbody">` + rooms.map(r => `<tr draggable="true" data-room-id="${esc(r.id)}" ondragstart="onDragStart(event)" ondragover="onDragOver(event)" ondrop="onDrop(event)" ondragend="onDragEnd(event)" ondragleave="onDragLeave(event)">
+        <td class="col-narrow"><span class="drag-handle"><svg width="18" height="18" viewBox="0 0 24 24" fill="var(--text-muted)"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg></span></td>
+        <td class="col-narrow star-cell" onclick="event.stopPropagation();setMainRoom('${esc(r.id)}')" title="${r.is_main ? 'Main room' : 'Set as main room'}"><svg width="18" height="18" viewBox="0 0 24 24" ${r.is_main ? 'fill="var(--amber)" stroke="var(--amber)"' : 'fill="none" stroke="var(--text-muted)"'} stroke-width="1.5"><path d="${starPath}"/></svg></td>
+        <td>${esc(r.name)}${r.description ? '<div style="color:var(--text-muted);font-size:12px">' + esc(r.description) + '</div>' : ''}</td>
         <td class="col-narrow"><span class="pill ${typePill(r.type)}">${esc(r.type)}</span></td>
         <td class="col-narrow">${ttlLabel(r.ttl_minutes)}</td>
         <td class="col-narrow">${r.member_count}</td>
         <td class="col-narrow" style="color:var(--green)">${r.online_count}</td>
         <td>${flagPills(r)}</td>
         <td class="col-narrow" style="color:var(--text-muted)">${ago(r.last_message_at)}</td>
-        <td class="col-actions">${r.is_main || r.type === 'dm' || r.type === 'meetup' ? '' :
-          `<button class="btn btn-neutral" onclick="deleteRoom('${esc(r.id)}','${esc(r.name)}')">Delete</button>`}</td>
+        <td class="col-actions"><div class="btn-group">
+          ${r.type !== 'dm' && r.type !== 'meetup' ? `<button class="btn btn-neutral" onclick="openRoomModal('${esc(r.id)}')">Edit</button>` : ''}
+          ${!r.is_main && r.type !== 'dm' && r.type !== 'meetup' ? `<button class="btn btn-neutral" onclick="deleteRoom('${esc(r.id)}','${esc(r.name)}')">Delete</button>` : ''}
+        </div></td>
       </tr>`).join('') + '</tbody></table>';
     } catch { el.innerHTML = '<div class="empty">Failed to load rooms</div>'; }
   },
@@ -539,19 +562,143 @@ function renderLog(hasMore) {
 function filterLog(q) { dbg('[FILTER] log:', q); _logFilter = q.toLowerCase(); renderLog(logOffset > 0 && logItems.length === logOffset); }
 
 // --- Rooms ---
-async function createRoom() {
-  dbg('[ACTION] createRoom');
-  const name = document.getElementById('room-name')?.value.trim();
-  const description = document.getElementById('room-desc')?.value.trim() || '';
-  const type = document.getElementById('room-type')?.value || 'general';
-  const ttlVal = document.getElementById('room-ttl')?.value;
-  const ttl_minutes = ttlVal === '' ? null : parseInt(ttlVal) || 60;
-  if (!name) return;
-  try {
-    await api('/rooms', {method: 'POST', body: JSON.stringify({name, description, type, ttl_minutes})});
-    refreshStats(); render.rooms();
-  } catch (e) { alert('Failed to create room: ' + e.message); }
+let _modalRoomId = '';
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+  document.removeEventListener('keydown', _modalKeyHandler);
 }
+function _modalKeyHandler(e) {
+  if (e.key === 'Escape') { closeModal(); }
+  else if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); saveRoom(_modalRoomId); }
+}
+
+function openRoomModal(roomId) {
+  const isEdit = !!roomId;
+  const room = isEdit ? (window._roomsData || []).find(r => r.id === roomId) : null;
+  dbg('[MODAL]', isEdit ? 'edit room ' + roomId : 'create room');
+  const m = document.getElementById('modal');
+  m.innerHTML = `
+    <h2>${isEdit ? 'Edit Room' : 'Create Room'}</h2>
+    <div class="modal-field">
+      <label>Name</label>
+      <input type="text" id="rm-name" value="${esc(room?.name || '')}">
+    </div>
+    <div class="modal-field">
+      <label>Description</label>
+      <textarea id="rm-desc">${esc(room?.description || '')}</textarea>
+    </div>
+    ${!isEdit ? `<div class="modal-field">
+      <label>Type</label>
+      <select id="rm-type">
+        <option value="general">general</option>
+        <option value="stage">stage</option>
+      </select>
+    </div>` : ''}
+    <div class="modal-field">
+      <label>Message TTL</label>
+      <select id="rm-ttl">
+        <option value="30" ${room?.ttl_minutes === 30 ? 'selected' : ''}>30 minutes</option>
+        <option value="60" ${!room || room?.ttl_minutes === 60 ? 'selected' : ''}>1 hour</option>
+        <option value="360" ${room?.ttl_minutes === 360 ? 'selected' : ''}>6 hours</option>
+        <option value="1440" ${room?.ttl_minutes === 1440 ? 'selected' : ''}>24 hours</option>
+        <option value="" ${room?.ttl_minutes === null ? 'selected' : ''}>No expiry</option>
+      </select>
+    </div>
+    <div class="modal-toggle">
+      <label>Moderation</label>
+      <div class="switch"><input type="checkbox" id="rm-moderated" ${!room || room?.is_moderated ? 'checked' : ''}><span></span></div>
+    </div>
+    <div class="modal-toggle">
+      <label>Read-only (admin posts only)</label>
+      <div class="switch"><input type="checkbox" id="rm-readonly" ${room?.is_read_only ? 'checked' : ''}><span></span></div>
+    </div>
+    <div class="modal-toggle">
+      <label>Allow media (images, videos)</label>
+      <div class="switch"><input type="checkbox" id="rm-media" ${!room || room?.allows_media ? 'checked' : ''}><span></span></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-neutral" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-blue" onclick="saveRoom('${isEdit ? esc(roomId) : ''}')">${isEdit ? 'Save' : 'Create'}</button>
+    </div>`;
+  _modalRoomId = isEdit ? roomId : '';
+  document.getElementById('modal-overlay').classList.add('open');
+  document.addEventListener('keydown', _modalKeyHandler);
+}
+
+async function saveRoom(roomId) {
+  const isEdit = !!roomId;
+  const name = document.getElementById('rm-name')?.value.trim();
+  const description = document.getElementById('rm-desc')?.value.trim() || '';
+  const ttlVal = document.getElementById('rm-ttl')?.value;
+  const ttl_minutes = ttlVal === '' ? null : parseInt(ttlVal);
+  const is_moderated = document.getElementById('rm-moderated')?.checked;
+  const is_read_only = document.getElementById('rm-readonly')?.checked;
+  const allows_media = document.getElementById('rm-media')?.checked;
+
+  if (!isEdit && !name) return;
+
+  const body = {name, description, ttl_minutes, is_moderated, is_read_only, allows_media};
+  if (!isEdit) {
+    body.type = document.getElementById('rm-type')?.value || 'general';
+  }
+
+  dbg('[ACTION]', isEdit ? 'updateRoom' : 'createRoom', body);
+  try {
+    if (isEdit) {
+      await api('/rooms/' + roomId, {method: 'PATCH', body: JSON.stringify(body)});
+    } else {
+      await api('/rooms', {method: 'POST', body: JSON.stringify(body)});
+    }
+    closeModal();
+    refreshStats();
+    render.rooms();
+  } catch (e) { alert('Failed: ' + e.message); }
+}
+async function setMainRoom(roomId) {
+  dbg('[ACTION] setMainRoom', roomId);
+  try {
+    await api('/rooms/' + roomId + '/main', {method: 'POST', body: '{}'});
+    render.rooms();
+  } catch (e) { alert('Failed: ' + e.message); }
+}
+
+let _draggedRow = null;
+function onDragStart(e) {
+  _draggedRow = e.target.closest('tr');
+  _draggedRow.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+function onDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const row = e.target.closest('tr');
+  if (row && row !== _draggedRow) row.classList.add('drag-over');
+}
+function onDragLeave(e) {
+  const row = e.target.closest('tr');
+  if (row) row.classList.remove('drag-over');
+}
+function onDragEnd() {
+  if (_draggedRow) _draggedRow.classList.remove('dragging');
+  document.querySelectorAll('.drag-over').forEach(r => r.classList.remove('drag-over'));
+  _draggedRow = null;
+}
+async function onDrop(e) {
+  e.preventDefault();
+  const target = e.target.closest('tr');
+  if (!target || !_draggedRow || target === _draggedRow) return;
+  target.classList.remove('drag-over');
+  const tbody = document.getElementById('rooms-tbody');
+  tbody.insertBefore(_draggedRow, target);
+  _draggedRow.classList.remove('dragging');
+  _draggedRow = null;
+  const order = [...tbody.querySelectorAll('tr[data-room-id]')].map(r => r.dataset.roomId);
+  dbg('[ACTION] reorderRooms', order);
+  try {
+    await api('/rooms/reorder', {method: 'POST', body: JSON.stringify({order})});
+  } catch (e) { dbg('[ACTION] reorder failed', e.message); }
+}
+
 async function deleteRoom(roomId, name) {
   dbg('[ACTION] deleteRoom', roomId);
   if (!confirm('Delete room "' + name + '"? All messages will be lost.')) return;
