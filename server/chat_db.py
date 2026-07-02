@@ -330,6 +330,8 @@ def ban_user(
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
         (ban_id, user_id, provider, provider_id, device_fingerprint, reason, _now()),
     )
+    if user_id:
+        db.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
     db.commit()
     return ban_id
 

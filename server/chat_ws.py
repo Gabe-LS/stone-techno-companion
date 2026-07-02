@@ -267,7 +267,6 @@ def _get_room_notification_targets(db, room_id: str, sender_id: str) -> list[str
 
 
 async def _send_chat_push(
-    db,
     user_id: str,
     room_id: str,
     room_type: str,
@@ -275,7 +274,9 @@ async def _send_chat_push(
     sender_name: str,
     text_preview: str,
 ) -> None:
+    db = get_chat_db()
     subs = get_push_subscriptions(db, user_id)
+    db.close()
     if not subs:
         return
     vapid_private_key = os.environ.get("VAPID_PRIVATE_KEY")
@@ -327,7 +328,9 @@ async def _send_chat_push(
                 and e.response is not None
                 and e.response.status_code in (404, 410)
             ):
-                delete_push_subscription_by_endpoint(db, sub["endpoint"])
+                cleanup_db = get_chat_db()
+                delete_push_subscription_by_endpoint(cleanup_db, sub["endpoint"])
+                cleanup_db.close()
             else:
                 logger.warning("Chat push failed for %s: %s", sub["endpoint"][:60], e)
         except Exception:
@@ -563,7 +566,6 @@ def _format_message_for_history(m, reactions_map: dict) -> dict:
 
 
 async def _moderate_and_broadcast(
-    db,
     mgr,
     room_id,
     user_id,
@@ -580,6 +582,7 @@ async def _moderate_and_broadcast(
     reply_to_id,
     ws,
 ):
+    db = get_chat_db()
     try:
         mod_result = await moderate_message(db, user_id, text, image_url)
 
@@ -693,7 +696,6 @@ async def _moderate_and_broadcast(
         for uid in offline_targets:
             asyncio.create_task(
                 _send_chat_push(
-                    db,
                     uid,
                     room_id,
                     room_type,
@@ -722,6 +724,8 @@ async def _moderate_and_broadcast(
             },
             exclude_conn=conn_id,
         )
+    finally:
+        db.close()
 
 
 ALLOWED_REACTIONS = {"thumbs_up", "heart", "laugh", "fire", "wow", "clap"}
@@ -976,7 +980,6 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
 
                 asyncio.create_task(
                     _moderate_and_broadcast(
-                        db,
                         manager,
                         room_id,
                         user_id,
@@ -1270,10 +1273,12 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 },
             )
         update_last_seen(db, user_id)
+        db.close()
 
 
 async def purge_loop() -> None:
     while True:
+        db = None
         try:
             db = get_chat_db()
             expired_msgs = purge_expired_messages(db)
@@ -1300,4 +1305,7 @@ async def purge_loop() -> None:
             purge_expired_sessions(db)
         except Exception:
             logger.exception("Purge loop error")
+        finally:
+            if db:
+                db.close()
         await asyncio.sleep(30)

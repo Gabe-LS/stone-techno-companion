@@ -296,7 +296,13 @@ async def auth_email_verify(request: Request, token: str = ""):
 
 
 @router.post("/logout")
-async def auth_logout(response: Response):
+async def auth_logout(request: Request, response: Response):
+    token = request.cookies.get("chat_session")
+    if token:
+        db = _get_db()
+        db.execute("DELETE FROM sessions WHERE token = ?", (token,))
+        db.commit()
+        db.close()
     response.delete_cookie("chat_session")
     return {"ok": True}
 

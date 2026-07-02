@@ -427,7 +427,7 @@ function msgColor(m) {
 }
 function avatarHtml(name, colorIndex, small, avatarUrl) {
   const cls = small ? 'avatar-sm' : 'avatar';
-  if (avatarUrl) return `<div class="${cls}"><img src="${avatarUrl}" style="width:100%;height:100%;border-radius:50%;object-fit:cover"></div>`;
+  if (avatarUrl) return `<div class="${cls}"><img src="${esc(avatarUrl)}" style="width:100%;height:100%;border-radius:50%;object-fit:cover"></div>`;
   const initials = (name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   const color = USER_COLORS[(colorIndex || 0) % USER_COLORS.length];
   return `<div class="${cls}" style="background:${color.vivid}">${initials}</div>`;
@@ -1187,7 +1187,7 @@ function _renderRoomItemsHtml() {
     const badgeHtml = unread > 0 ? `<span class="unread-badge">${unread > 99 ? '99+' : unread}</span>` : '';
     const isMember = r.is_member !== false;
     const bellHtml = r.is_main ? '' : `<button type="button" class="room-bell${isMember ? ' active' : ''}" onclick="event.stopPropagation();_toggleRoomMembership('${r.id}',this)" aria-label="${isMember ? 'Mute room' : 'Get notified'}"><svg width="16" height="16" viewBox="0 0 24 24" fill="${isMember ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>`;
-    return `<li class="room-item${currentRoom === r.id ? ' active' : ''}" data-room-id="${r.id}" onclick="closeChatMenu();openRoom('${r.id}','${esc(r.name)}','${r.type}')">
+    return `<li class="room-item${currentRoom === r.id ? ' active' : ''}" data-room-id="${r.id}" onclick="closeChatMenu();openRoom('${r.id}','${jss(r.name)}','${r.type}')">
       <div class="room-info"><div class="room-name">${esc(r.name)}</div><div class="room-count">${count} online</div></div>
       <div class="room-meta">${badgeHtml}</div>
       ${bellHtml}
@@ -1285,7 +1285,7 @@ async function loadMeetups() {
       const countParts = [fmtTime(m.meetup_time), m.attendee_count + ' going'];
       if (online > 0) countParts.push(online + ' online');
       const isGoing = m.is_going;
-      return `<li class="room-item${currentRoom === m.id ? ' active' : ''}" data-room-id="${m.id}" data-room-type="meetup" data-meetup-info="${esc(fmtTime(m.meetup_time))} · ${m.attendee_count} going" onclick="openRoom('${m.id}','${esc(m.title)}','meetup')">
+      return `<li class="room-item${currentRoom === m.id ? ' active' : ''}" data-room-id="${m.id}" data-room-type="meetup" data-meetup-info="${esc(fmtTime(m.meetup_time))} · ${m.attendee_count} going" onclick="openRoom('${m.id}','${jss(m.title)}','meetup')">
         <div class="room-info">
           <div class="room-name">${esc(m.title)}</div>
           <div class="room-count">${countParts.join(' · ')}</div>
@@ -1976,7 +1976,7 @@ async function _loadMenuSection(section, container) {
       container.innerHTML = '<ul class="room-list">' + meetups.map(m => {
         const unread = unreadByRoom[m.id] || 0;
         const badgeHtml = unread > 0 ? `<span class="unread-badge">${unread > 99 ? '99+' : unread}</span>` : '';
-        return `<li class="room-item${currentRoom === m.id ? ' active' : ''}" data-room-id="${m.id}" onclick="closeChatMenu();openRoom('${m.id}','${esc(m.title)}','meetup')">
+        return `<li class="room-item${currentRoom === m.id ? ' active' : ''}" data-room-id="${m.id}" onclick="closeChatMenu();openRoom('${m.id}','${jss(m.title)}','meetup')">
           <div class="room-info"><div class="room-name">${esc(m.title)}</div><div class="room-count">${fmtTime(m.meetup_time)} · ${m.attendee_count} going</div></div>
           <div class="room-meta">${badgeHtml}</div>
         </li>`;
@@ -3260,6 +3260,7 @@ function openVideoViewer(url, startTime) {
 // --- Helpers ---
 function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 const esc = escapeHtml;
+function jss(s) { return esc(String(s).replace(/[`'\\]/g, '\\$&')); }
 function _linkify(text) {
   return escapeHtml(text).replace(/(https?:\/\/[^\s<>"')\]]+)/g, '<a href="$1" target="_blank" rel="noopener" onclick="event.stopPropagation()">$1</a>');
 }
