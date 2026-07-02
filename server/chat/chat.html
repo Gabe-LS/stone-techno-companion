@@ -481,7 +481,7 @@ async function renderAuth() {
     } catch (e) { dbg('[AUTH] config fetch failed:', e.message); }
   }
   const googleSection = _googleClientId
-    ? `<div id="google-btn-container" style="width:280px;height:44px"></div>
+    ? `<button class="auth-btn" onclick="authGoogle()">Sign in with Google</button>
       <div style="display:flex;align-items:center;gap:10px;width:280px;margin:8px 0">
         <hr style="flex:1;border:none;border-top:1px solid var(--color-border)">
         <span style="font-size:var(--font-xs);color:var(--color-muted)">or</span>
@@ -496,7 +496,7 @@ async function renderAuth() {
       <input class="auth-input" id="email-input" type="email" placeholder="your@email.com" onkeydown="if(event.key==='Enter')authEmail()">
       <button class="auth-btn" onclick="authEmail()">Send magic link</button>
     </div>`;
-  if (_googleClientId) _renderGoogleButton();
+  if (_googleClientId) _ensureGoogleInit();
   verify('renderAuth', document.querySelector('.auth-screen'), 'auth screen rendered');
   verify('renderAuth', document.getElementById('email-input'), 'email input exists');
 }
@@ -506,6 +506,7 @@ function _initGoogle() {
   dbg('[AUTH] initializing google');
   google.accounts.id.initialize({
     client_id: _googleClientId,
+    use_fedcm_for_prompt: true,
     callback: async (resp) => {
       dbg('[AUTH] google callback received');
       try {
@@ -527,25 +528,48 @@ function _initGoogle() {
   return true;
 }
 
-function _renderGoogleButton() {
-  const container = document.getElementById('google-btn-container');
-  if (!container) return;
+function _ensureGoogleInit() {
   if (!window.google?.accounts?.id) {
     dbg('[AUTH] google SDK not loaded yet, retrying');
-    setTimeout(_renderGoogleButton, 200);
+    setTimeout(_ensureGoogleInit, 200);
     return;
   }
   _initGoogle();
-  if (!_googleInitialized) return;
-  dbg('[AUTH] rendering google button');
-  google.accounts.id.renderButton(container, {
-    type: 'standard',
-    shape: 'rectangular',
-    theme: 'outline',
-    size: 'large',
-    width: 280,
-    text: 'signin_with',
+}
+
+function authGoogle() {
+  dbg('[AUTH] authGoogle');
+  if (!window.google?.accounts?.oauth2) {
+    showToast('Google Sign-In is not available');
+    return;
+  }
+  _ensureGoogleInit();
+  const client = google.accounts.oauth2.initCodeClient({
+    client_id: _googleClientId,
+    scope: 'openid email profile',
+    ux_mode: 'popup',
+    callback: async (resp) => {
+      if (resp.error) {
+        dbg('[AUTH] google popup error:', resp.error);
+        return;
+      }
+      dbg('[AUTH] google popup code received');
+      try {
+        const result = await api('/auth/google/code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: resp.code }),
+        });
+        dbg('[AUTH] google auth success:', result.id);
+        currentUser = result;
+        route();
+      } catch (e) {
+        dbg('[AUTH] google auth failed:', e.message);
+        showToast(e.message);
+      }
+    },
   });
+  client.requestCode();
 }
 
 async function authEmail() {
@@ -1002,7 +1026,7 @@ function connectWS() {
     const done = () => { _wsConnecting = false; resolve(); };
     sock.onopen = () => { ws = sock; done(); };
     sock.onmessage = (e) => { try { handleWSEvent(JSON.parse(e.data)); } catch {} };
-    sock.onclose = () => { ws = null; _wsConnecting = false; setTimeout(() => connectWS(), 3000); };
+    sock.onclose = () => { ws = null; _wsConnecting = false; if (currentUser) setTimeout(() => connectWS(), 3000); };
     sock.onerror = () => { done(); };
     setTimeout(done, 3000);
   });
@@ -3249,6 +3273,9 @@ async function doLogout() {
   } catch {}
   if (ws) { try { ws.close(); } catch {} ws = null; }
   currentUser = null;
+  currentRoom = null;
+  currentRoomName = null;
+  currentRoomType = null;
   document.cookie = 'chat_session=; path=/; max-age=0';
   renderAuth();
 }

@@ -203,6 +203,67 @@ async def auth_google(request: Request, response: Response):
         db.close()
 
 
+@router.post("/auth/google/code")
+async def auth_google_code(request: Request, response: Response):
+    body = await request.json()
+    code = body.get("code")
+    fingerprint = body.get("device_fingerprint")
+    if not code:
+        raise HTTPException(400, "code required")
+
+    client_id = os.environ.get("GOOGLE_CLIENT_ID", "")
+    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+    if not client_id or not client_secret:
+        raise HTTPException(501, "Google Sign-In not configured")
+
+    try:
+        import httpx
+
+        token_resp = httpx.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "code": code,
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "redirect_uri": "postmessage",
+                "grant_type": "authorization_code",
+            },
+        )
+        token_data = token_resp.json()
+        id_token_str = token_data.get("id_token")
+        if not id_token_str:
+            raise ValueError(token_data.get("error_description", "No id_token"))
+
+        from google.oauth2 import id_token as google_id_token
+        from google.auth.transport import requests as google_requests
+
+        info = google_id_token.verify_oauth2_token(
+            id_token_str, google_requests.Request(), client_id
+        )
+        provider_id = info["sub"]
+        email = info.get("email", "")
+        name = info.get("name") or email.split("@")[0]
+    except Exception as e:
+        logger.warning("Google code exchange failed: %s", e)
+        raise HTTPException(401, "Google authentication failed")
+
+    db = _get_db()
+    try:
+        user = find_user_by_provider(db, "google", provider_id)
+        if not user and email:
+            email_hash = hash_email(email)
+            user = find_user_by_provider(db, "email", email_hash)
+            if user:
+                add_user_provider(db, user["id"], "google", provider_id)
+                logger.info("Linked google provider to existing user %s", user["id"])
+        result = _authenticate(db, "google", provider_id, name, fingerprint, response)
+        if email:
+            add_user_provider(db, result["id"], "email", hash_email(email))
+        return result
+    finally:
+        db.close()
+
+
 @router.post("/login")
 async def auth_email_start(request: Request):
     ip = request.client.host if request.client else "unknown"
