@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Chat Admin</title>
+<style>
+:root {
+  --bg: #0a0a0a;
+  --bg-card: #141414;
+  --bg-surface: #1a1a1a;
+  --bg-hover: #222;
+  --text: #e5e5e5;
+  --text-sec: #999;
+  --text-muted: #666;
+  --border: #2a2a2a;
+  --red: #ef4444;
+  --amber: #f59e0b;
+  --green: #22c55e;
+  --blue: #3b82f6;
+  --radius: 8px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; }
+.login-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 16px; }
+.login-screen h2 { color: var(--text-sec); font-weight: 400; }
+.login-screen input { background: var(--bg-surface); border: 1px solid var(--border); color: var(--text); padding: 10px 16px; border-radius: var(--radius); width: 280px; font-size: 14px; outline: none; }
+.login-screen input:focus { border-color: var(--text-muted); }
+.login-screen button { background: var(--bg-surface); border: 1px solid var(--border); color: var(--text); padding: 10px 24px; border-radius: var(--radius); cursor: pointer; font-size: 14px; }
+.login-screen button:hover { background: var(--bg-hover); }
+.app { display: flex; flex-direction: column; height: 100%; }
+.stats-bar { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--bg-card); font-size: 13px; color: var(--text-sec); }
+.stat { display: flex; gap: 6px; align-items: center; }
+.stat b { color: var(--text); font-weight: 600; }
+.stat.alert b { color: var(--amber); }
+.tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); background: var(--bg-card); overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.tab { padding: 10px 20px; cursor: pointer; color: var(--text-sec); border-bottom: 2px solid transparent; white-space: nowrap; font-size: 13px; user-select: none; transition: color 0.15s; }
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--text); border-bottom-color: var(--text); }
+.content { flex: 1; overflow-y: auto; padding: 16px; }
+.empty { color: var(--text-muted); text-align: center; padding: 60px 20px; }
+.card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; }
+.card .meta { color: var(--text-sec); font-size: 12px; margin-bottom: 6px; }
+.card .snapshot { background: var(--bg-surface); padding: 10px; border-radius: 4px; margin: 8px 0; font-size: 13px; word-break: break-word; }
+.card .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.btn { padding: 6px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; color: #fff; min-height: 36px; }
+.btn-red { background: var(--red); }
+.btn-amber { background: var(--amber); color: #000; }
+.btn-neutral { background: var(--bg-surface); color: var(--text-sec); border: 1px solid var(--border); }
+.btn-blue { background: var(--blue); }
+.btn:hover { opacity: 0.85; }
+.search-bar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.search-bar input { flex: 1; min-width: 180px; background: var(--bg-surface); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: var(--radius); font-size: 13px; outline: none; }
+.search-bar input:focus { border-color: var(--text-muted); }
+.toggle { padding: 8px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-surface); color: var(--text-sec); cursor: pointer; font-size: 13px; white-space: nowrap; }
+.toggle.on { background: var(--green); color: #000; border-color: var(--green); }
+.user-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--radius); cursor: pointer; transition: background 0.1s; }
+.user-row:hover { background: var(--bg-hover); }
+.user-row .avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--bg-surface); flex-shrink: 0; object-fit: cover; }
+.user-row .info { flex: 1; min-width: 0; }
+.user-row .name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.user-row .sub { font-size: 12px; color: var(--text-sec); }
+.online-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+.pill { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; white-space: nowrap; }
+.pill-red { background: rgba(239,68,68,0.15); color: var(--red); }
+.pill-amber { background: rgba(245,158,11,0.15); color: var(--amber); }
+.pill-green { background: rgba(34,197,94,0.15); color: var(--green); }
+.pill-blue { background: rgba(59,130,246,0.15); color: var(--blue); }
+.detail-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin: 0 0 10px 0; }
+.detail-panel h3 { font-size: 14px; color: var(--text-sec); margin: 14px 0 6px; font-weight: 500; }
+.detail-panel h3:first-child { margin-top: 0; }
+.detail-row { font-size: 13px; padding: 4px 0; color: var(--text-sec); }
+.detail-row b { color: var(--text); font-weight: 500; }
+.strike-item { font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.strike-item:last-child { border-bottom: none; }
+.strike-item.expired { opacity: 0.4; }
+.log-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.log-item:last-child { border-bottom: none; }
+.log-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; flex-shrink: 0; margin-top: 2px; }
+.log-detail { flex: 1; min-width: 0; }
+.log-time { color: var(--text-muted); font-size: 12px; flex-shrink: 0; }
+.room-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.room-row:last-child { border-bottom: none; }
+.room-name { flex: 1; font-weight: 500; }
+.room-stat { color: var(--text-sec); min-width: 60px; text-align: right; }
+.load-more { text-align: center; padding: 16px; }
+.load-more button { background: var(--bg-surface); border: 1px solid var(--border); color: var(--text-sec); padding: 8px 24px; border-radius: var(--radius); cursor: pointer; font-size: 13px; }
+@media (max-width: 640px) {
+  .card .actions { flex-direction: column; }
+  .btn { width: 100%; text-align: center; }
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const _p = new URLSearchParams(location.search);
+let token = _p.get('admin_token') || sessionStorage.getItem('chat_admin_token') || '';
+if (_p.get('admin_token')) {
+  sessionStorage.setItem('chat_admin_token', token);
+  history.replaceState(null, '', location.pathname);
+}
+const H = () => {
+  const h = {'Content-Type': 'application/json'};
+  if (token) h['X-Admin-Token'] = token;
+  return h;
+};
+
+async function api(path, opts) {
+  const res = await fetch('/chat/api/admin' + path, {headers: H(), credentials: 'include', ...opts});
+  if (!res.ok) throw new Error(res.status);
+  return res.json();
+}
+function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+function ago(iso) {
+  if (!iso) return '';
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+  return Math.floor(s / 86400) + 'd ago';
+}
+
+let currentTab = 'reports';
+let expandedUser = null;
+let logOffset = 0;
+let logItems = [];
+let onlineOnly = false;
+let searchQuery = '';
+let searchTimer = null;
+let statsInterval = null;
+
+function renderLogin() {
+  document.getElementById('app').innerHTML = `
+    <div class="login-screen">
+      <h2>Chat Admin</h2>
+      <input id="token-input" type="password" placeholder="Admin token" onkeydown="if(event.key==='Enter')doLogin()">
+      <button onclick="doLogin()">Sign in</button>
+    </div>`;
+}
+function doLogin() {
+  token = document.getElementById('token-input').value.trim();
+  if (!token) return;
+  sessionStorage.setItem('chat_admin_token', token);
+  init();
+}
+
+async function init() {
+  try {
+    await api('/stats');
+  } catch {
+    token = '';
+    sessionStorage.removeItem('chat_admin_token');
+    renderLogin();
+    return;
+  }
+  document.getElementById('app').innerHTML = `
+    <div class="app">
+      <div class="stats-bar" id="stats-bar"></div>
+      <div class="tabs" id="tabs">
+        <div class="tab active" data-tab="reports" onclick="switchTab('reports')">Reports</div>
+        <div class="tab" data-tab="users" onclick="switchTab('users')">Users</div>
+        <div class="tab" data-tab="banned" onclick="switchTab('banned')">Banned</div>
+        <div class="tab" data-tab="log" onclick="switchTab('log')">Log</div>
+        <div class="tab" data-tab="rooms" onclick="switchTab('rooms')">Rooms</div>
+      </div>
+      <div class="content" id="content"></div>
+    </div>`;
+  refreshStats();
+  statsInterval = setInterval(refreshStats, 15000);
+  switchTab('reports');
+}
+
+async function refreshStats() {
+  try {
+    const s = await api('/stats');
+    document.getElementById('stats-bar').innerHTML =
+      `<div class="stat">Users <b>${s.total_users}</b></div>` +
+      `<div class="stat">Online <b style="color:var(--green)">${s.online_count}</b></div>` +
+      `<div class="stat${s.pending_reports ? ' alert' : ''}">Reports <b>${s.pending_reports}</b></div>` +
+      `<div class="stat">Bans <b>${s.active_bans}</b></div>` +
+      `<div class="stat">Strikes <b>${s.active_strikes}</b></div>` +
+      `<div class="stat">Messages <b>${s.total_messages_active}</b></div>`;
+  } catch {}
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  expandedUser = null;
+  logOffset = 0;
+  logItems = [];
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  render[tab]();
+}
+
+const render = {
+  reports: async () => {
+    const el = document.getElementById('content');
+    try {
+      const reports = await api('/reports?status=pending');
+      if (!reports.length) { el.innerHTML = '<div class="empty">No pending reports</div>'; return; }
+      el.innerHTML = reports.map(r => `
+        <div class="card" id="report-${esc(r.id)}">
+          <div class="meta">${esc(r.reporter_name)} reported <b>${esc(r.reported_name)}</b> &middot; ${ago(r.created_at)}</div>
+          <div style="margin-bottom:4px">Reason: ${esc(r.reason)}</div>
+          <div class="snapshot">${esc(r.message_snapshot)}</div>
+          <div class="actions">
+            <button class="btn btn-red" onclick="reportAction('${esc(r.id)}','${esc(r.reported_user_id)}','${esc(r.reported_name)}','ban')">Ban</button>
+            <button class="btn btn-amber" onclick="reportAction('${esc(r.id)}','${esc(r.reported_user_id)}','${esc(r.reported_name)}','strike')">Strike</button>
+            <button class="btn btn-neutral" onclick="reportAction('${esc(r.id)}','','','dismiss')">Dismiss</button>
+          </div>
+        </div>`).join('');
+    } catch { el.innerHTML = '<div class="empty">Failed to load reports</div>'; }
+  },
+
+  users: async () => {
+    const el = document.getElementById('content');
+    el.innerHTML = `
+      <div class="search-bar">
+        <input id="user-search" type="text" placeholder="Search by name or username" value="${esc(searchQuery)}" oninput="onUserSearch(this.value)">
+        <button class="toggle ${onlineOnly ? 'on' : ''}" onclick="toggleOnline()">Online only</button>
+      </div>
+      <div id="user-list"></div>`;
+    loadUsers();
+  },
+
+  banned: async () => {
+    const el = document.getElementById('content');
+    try {
+      const bans = await api('/bans');
+      let html = '<div class="search-bar"><input id="ban-search" type="text" placeholder="Search bans" oninput="filterBans(this.value)"></div>';
+      if (!bans.length) { el.innerHTML = html + '<div class="empty">No bans</div>'; return; }
+      window._bansData = bans;
+      el.innerHTML = html + '<div id="ban-list"></div>';
+      filterBans('');
+    } catch { el.innerHTML = '<div class="empty">Failed to load bans</div>'; }
+  },
+
+  log: async () => {
+    const el = document.getElementById('content');
+    logOffset = 0;
+    logItems = [];
+    el.innerHTML = '<div class="search-bar"><input id="log-search" type="text" placeholder="Search log" oninput="filterLog(this.value)"></div><div id="log-list"></div>';
+    await loadMoreLog();
+  },
+
+  rooms: async () => {
+    const el = document.getElementById('content');
+    try {
+      const rooms = await api('/rooms');
+      let html = `<div class="search-bar">
+        <input id="room-name" type="text" placeholder="New room name" onkeydown="if(event.key==='Enter')createRoom()">
+        <select id="room-type" style="background:var(--bg-surface);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:var(--radius);font-size:13px">
+          <option value="general">general</option>
+          <option value="stage">stage</option>
+        </select>
+        <button class="btn btn-blue" onclick="createRoom()">Create</button>
+      </div>`;
+      if (!rooms.length) { el.innerHTML = html + '<div class="empty">No rooms</div>'; return; }
+      el.innerHTML = html + '<div class="card">' + rooms.map(r => `
+        <div class="room-row">
+          <span class="pill pill-${r.type === 'general' ? 'blue' : r.type === 'stage' ? 'green' : r.type === 'dm' ? 'amber' : 'blue'}">${esc(r.type)}</span>
+          <span class="room-name">${esc(r.name)}${r.is_main ? ' *' : ''}</span>
+          <span class="room-stat" style="color:var(--green)">${r.online_count} online</span>
+          <span class="room-stat">${r.message_count} msgs</span>
+          <span class="room-stat" style="color:var(--text-muted)">${ago(r.last_message_at)}</span>
+          ${r.is_main || r.type === 'dm' || r.type === 'meetup' ? '' : `<button class="btn btn-neutral" style="padding:4px 10px;font-size:12px" onclick="deleteRoom('${esc(r.id)}','${esc(r.name)}')">Delete</button>`}
+        </div>`).join('') + '</div>';
+    } catch { el.innerHTML = '<div class="empty">Failed to load rooms</div>'; }
+  },
+};
+
+async function reportAction(reportId, userId, userName, action) {
+  if (action === 'ban') {
+    if (!confirm('Ban ' + userName + '?')) return;
+    await api('/ban/' + userId, {method: 'POST', body: JSON.stringify({reason: 'Banned via report'})});
+    await api('/reports/' + reportId, {method: 'PATCH', body: JSON.stringify({status: 'actioned'})});
+  } else if (action === 'strike') {
+    await api('/strike/' + userId, {method: 'POST', body: JSON.stringify({reason: 'report', detail: 'Strike via report ' + reportId})});
+    await api('/reports/' + reportId, {method: 'PATCH', body: JSON.stringify({status: 'actioned'})});
+  } else {
+    await api('/reports/' + reportId, {method: 'PATCH', body: JSON.stringify({status: 'dismissed'})});
+  }
+  refreshStats();
+  render.reports();
+}
+
+function onUserSearch(q) {
+  searchQuery = q;
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(loadUsers, 300);
+}
+function toggleOnline() {
+  onlineOnly = !onlineOnly;
+  document.querySelector('.toggle')?.classList.toggle('on', onlineOnly);
+  loadUsers();
+}
+async function loadUsers() {
+  const el = document.getElementById('user-list');
+  if (!el) return;
+  try {
+    const params = new URLSearchParams();
+    if (searchQuery) params.set('q', searchQuery);
+    if (onlineOnly) params.set('online_only', 'true');
+    const users = await api('/users?' + params);
+    if (!users.length) { el.innerHTML = '<div class="empty">No users found</div>'; return; }
+    el.innerHTML = users.map(u => `
+      <div>
+        <div class="user-row" onclick="toggleUser('${esc(u.id)}')">
+          <img class="avatar" src="/chat/api/avatar/${esc(u.id)}?v=1" onerror="this.style.display='none'">
+          <div class="info">
+            <div class="name">${esc(u.display_name || u.username || u.id)}</div>
+            <div class="sub">${esc(u.username ? '@' + u.username : '')} ${esc(u.country || '')}</div>
+          </div>
+          ${u.is_online ? '<div class="online-dot"></div>' : ''}
+          ${u.strike_count ? '<span class="pill pill-amber">' + u.strike_count + ' strikes</span>' : ''}
+          ${u.muted_until && u.muted_until > new Date().toISOString() ? '<span class="pill pill-amber">MUTED</span>' : ''}
+          ${u.is_banned ? '<span class="pill pill-red">BANNED</span>' : ''}
+        </div>
+        <div id="detail-${esc(u.id)}"></div>
+      </div>`).join('');
+    if (expandedUser) loadUserDetail(expandedUser);
+  } catch { el.innerHTML = '<div class="empty">Failed to load users</div>'; }
+}
+
+async function toggleUser(userId) {
+  if (expandedUser === userId) {
+    expandedUser = null;
+    const d = document.getElementById('detail-' + userId);
+    if (d) d.innerHTML = '';
+    return;
+  }
+  expandedUser = userId;
+  document.querySelectorAll('[id^="detail-"]').forEach(d => d.innerHTML = '');
+  loadUserDetail(userId);
+}
+
+async function loadUserDetail(userId) {
+  const el = document.getElementById('detail-' + userId);
+  if (!el) return;
+  try {
+    const u = await api('/users/' + userId);
+    const now = new Date().toISOString();
+    const isMuted = u.muted_until && u.muted_until > now;
+    el.innerHTML = `
+      <div class="detail-panel">
+        <h3>Profile</h3>
+        <div class="detail-row"><b>Provider:</b> ${esc(u.provider)}</div>
+        <div class="detail-row"><b>Created:</b> ${ago(u.created_at)}</div>
+        <div class="detail-row"><b>Last seen:</b> ${ago(u.last_seen) || 'never'}</div>
+        <div class="detail-row"><b>Mute count:</b> ${u.mute_count} / 3</div>
+        <div class="detail-row"><b>Active messages:</b> ${u.message_count}</div>
+        ${isMuted ? '<div class="detail-row"><span class="pill pill-amber">MUTED until ' + new Date(u.muted_until).toLocaleTimeString() + '</span></div>' : ''}
+
+        <h3>Actions</h3>
+        <div class="actions">
+          <button class="btn btn-amber" onclick="adminStrike('${esc(u.id)}')">Strike</button>
+          <button class="btn btn-amber" onclick="adminMute('${esc(u.id)}')">Mute 30m</button>
+          ${u.bans.length ? `<button class="btn btn-neutral" onclick="adminUnban('${esc(u.id)}','${esc(u.display_name||u.username)}')">Unban</button>` : `<button class="btn btn-red" onclick="adminBan('${esc(u.id)}','${esc(u.display_name||u.username)}')">Ban</button>`}
+          <button class="btn btn-red" onclick="adminDeleteUser('${esc(u.id)}','${esc(u.display_name||u.username)}')">Delete user</button>
+        </div>
+
+        ${u.strikes.length ? '<h3>Strikes (' + u.strikes.length + ')</h3>' + u.strikes.map(s => '<div class="strike-item' + (s.is_active ? '' : ' expired') + '">' + esc(s.reason) + (s.detail ? ': ' + esc(s.detail) : '') + ' <span style="color:var(--text-muted);font-size:12px">' + ago(s.created_at) + (s.is_active ? ' (active)' : ' (expired)') + '</span></div>').join('') : ''}
+
+        ${u.reports_against.length ? '<h3>Reports against (' + u.reports_against.length + ')</h3>' + u.reports_against.map(r => '<div class="strike-item">' + esc(r.reason) + ': ' + esc(r.message_snapshot) + ' <span style="color:var(--text-muted);font-size:12px">' + ago(r.created_at) + ' (' + esc(r.status) + ')</span></div>').join('') : ''}
+
+        ${u.bans.length ? '<h3>Bans (' + u.bans.length + ')</h3>' + u.bans.map(b => '<div class="strike-item">' + esc(b.reason) + ' <span style="color:var(--text-muted);font-size:12px">' + ago(b.created_at) + '</span></div>').join('') : ''}
+      </div>`;
+  } catch { el.innerHTML = '<div class="detail-panel">Failed to load user details</div>'; }
+}
+
+async function adminStrike(userId) {
+  const result = await api('/strike/' + userId, {method: 'POST', body: JSON.stringify({reason: 'admin', detail: 'Manual admin action'})});
+  if (result.action === 'ban') alert('User has been banned (4th strike).');
+  else if (result.action === 'mute') alert('User has been muted (3rd strike).');
+  refreshStats();
+  loadUserDetail(userId);
+}
+async function adminMute(userId) {
+  await api('/mute/' + userId, {method: 'POST', body: JSON.stringify({minutes: 30})});
+  loadUserDetail(userId);
+}
+async function adminBan(userId, name) {
+  if (!confirm('Ban ' + name + '?')) return;
+  await api('/ban/' + userId, {method: 'POST', body: JSON.stringify({reason: 'Banned by admin'})});
+  refreshStats();
+  loadUserDetail(userId);
+}
+async function adminUnban(userId, name) {
+  if (!confirm('Unban ' + name + '?')) return;
+  await api('/unban/' + userId, {method: 'POST', body: '{}'});
+  refreshStats();
+  loadUserDetail(userId);
+}
+
+async function unban(banId, name) {
+  if (!confirm('Unban ' + (name || 'this user') + '?')) return;
+  await fetch('/chat/api/admin/bans/' + banId, {method: 'DELETE', headers: H(), credentials: 'include'});
+  refreshStats();
+  render.banned();
+}
+
+function filterBans(q) {
+  const el = document.getElementById('ban-list');
+  if (!el || !window._bansData) return;
+  const lq = q.toLowerCase();
+  const filtered = lq ? window._bansData.filter(b =>
+    (b.display_name || '').toLowerCase().includes(lq) ||
+    (b.username || '').toLowerCase().includes(lq) ||
+    (b.reason || '').toLowerCase().includes(lq)
+  ) : window._bansData;
+  if (!filtered.length) { el.innerHTML = '<div class="empty">No matching bans</div>'; return; }
+  el.innerHTML = filtered.map(b => `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <div>
+          <b>${esc(b.display_name || b.username || 'Deleted user')}</b>
+          <span style="color:var(--text-muted);font-size:12px;margin-left:8px">${esc(b.provider)}</span>
+        </div>
+        <span style="color:var(--text-muted);font-size:12px">${ago(b.created_at)}</span>
+      </div>
+      <div style="color:var(--text-sec);font-size:13px;margin-top:4px">${esc(b.reason)}</div>
+      <div class="actions">
+        <button class="btn btn-neutral" onclick="unban('${esc(b.ban_id)}','${esc(b.display_name || b.username || '')}')">Unban</button>
+      </div>
+    </div>`).join('');
+}
+
+async function adminDeleteUser(userId, name) {
+  if (!confirm('Delete user ' + name + '? This cannot be undone.')) return;
+  await api('/users/' + userId, {method: 'DELETE'});
+  expandedUser = null;
+  refreshStats();
+  loadUsers();
+}
+
+async function createRoom() {
+  const name = document.getElementById('room-name')?.value.trim();
+  const type = document.getElementById('room-type')?.value || 'general';
+  if (!name) return;
+  try {
+    await api('/rooms', {method: 'POST', body: JSON.stringify({name, type})});
+    refreshStats();
+    render.rooms();
+  } catch (e) {
+    alert('Failed to create room: ' + e.message);
+  }
+}
+
+async function deleteRoom(roomId, name) {
+  if (!confirm('Delete room "' + name + '"? All messages will be lost.')) return;
+  await api('/rooms/' + roomId, {method: 'DELETE'});
+  refreshStats();
+  render.rooms();
+}
+
+async function loadMoreLog() {
+  try {
+    const items = await api('/modlog?limit=50&offset=' + logOffset);
+    logItems = logItems.concat(items);
+    logOffset += items.length;
+    renderLog(items.length === 50);
+  } catch {
+    document.getElementById('content').innerHTML = '<div class="empty">Failed to load log</div>';
+  }
+}
+let _logFilter = '';
+function renderLog(hasMore) {
+  const el = document.getElementById('log-list') || document.getElementById('content');
+  const items = _logFilter ? logItems.filter(i =>
+    (i.display_name || '').toLowerCase().includes(_logFilter) ||
+    (i.detail || '').toLowerCase().includes(_logFilter) ||
+    (i.type || '').toLowerCase().includes(_logFilter)
+  ) : logItems;
+  if (!items.length) { el.innerHTML = '<div class="empty">No moderation activity</div>'; return; }
+  const badgeColor = t => t === 'ban' ? 'pill-red' : t === 'strike' ? 'pill-amber' : 'pill-blue';
+  const badgeLabel = t => t.replace('report_', '').replace('actioned', 'report actioned').replace('dismissed', 'report dismissed');
+  el.innerHTML = '<div class="card">' + items.map(item => `
+    <div class="log-item">
+      <span class="log-badge ${badgeColor(item.type)}">${esc(badgeLabel(item.type))}</span>
+      <div class="log-detail">
+        <b>${esc(item.display_name || 'Unknown')}</b>
+        <div style="color:var(--text-sec)">${esc(item.detail)}</div>
+      </div>
+      <span class="log-time">${ago(item.created_at)}</span>
+    </div>`).join('') + '</div>' +
+    (hasMore && !_logFilter ? '<div class="load-more"><button onclick="loadMoreLog()">Load more</button></div>' : '');
+}
+function filterLog(q) {
+  _logFilter = q.toLowerCase();
+  renderLog(logOffset > 0 && logItems.length === logOffset);
+}
+
+init();
+</script>
+</body>
+</html>

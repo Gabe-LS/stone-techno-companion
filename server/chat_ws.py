@@ -44,6 +44,8 @@ from chat_db import (
     purge_expired_meetups,
     purge_expired_sessions,
     purge_old_reports,
+    purge_expired_strikes,
+    purge_stale_push_subscriptions,
     join_room_membership,
     leave_room_membership,
     mark_room_read,
@@ -1345,7 +1347,11 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
         db.close()
 
 
+_purge_cycle = 0
+
+
 async def purge_loop() -> None:
+    global _purge_cycle
     while True:
         db = None
         try:
@@ -1375,6 +1381,35 @@ async def purge_loop() -> None:
 
             purge_expired_sessions(db)
             purge_old_reports(db)
+            purge_expired_strikes(db)
+
+            empty_dms = db.execute(
+                "SELECT r.id FROM rooms r "
+                "WHERE r.type = 'dm' AND NOT EXISTS ("
+                "  SELECT 1 FROM messages m WHERE m.room_id = r.id"
+                ")"
+            ).fetchall()
+            for row in empty_dms:
+                db.execute(
+                    "DELETE FROM dm_participants WHERE room_id = ?", (row["id"],)
+                )
+                db.execute(
+                    "DELETE FROM room_memberships WHERE room_id = ?", (row["id"],)
+                )
+                db.execute("DELETE FROM rooms WHERE id = ?", (row["id"],))
+                manager.rooms.pop(row["id"], None)
+                manager._room_meta.pop(row["id"], None)
+            if empty_dms:
+                db.commit()
+
+            _purge_cycle += 1
+
+            if _purge_cycle % 120 == 0:
+                db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
+            if _purge_cycle % 2880 == 0:
+                purge_stale_push_subscriptions(db)
+
         except Exception:
             logger.exception("Purge loop error")
         finally:

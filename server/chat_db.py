@@ -434,6 +434,13 @@ def create_room(
     return {"id": room_id, "event_id": event_id, "type": room_type, "name": name}
 
 
+def delete_room(db: sqlite3.Connection, room_id: str) -> None:
+    db.execute("DELETE FROM messages WHERE room_id = ?", (room_id,))
+    db.execute("DELETE FROM room_memberships WHERE room_id = ?", (room_id,))
+    db.execute("DELETE FROM rooms WHERE id = ?", (room_id,))
+    db.commit()
+
+
 def get_room(db: sqlite3.Connection, room_id: str) -> sqlite3.Row | None:
     return db.execute("SELECT * FROM rooms WHERE id = ?", (room_id,)).fetchone()
 
@@ -953,6 +960,197 @@ def increment_mute_count(db: sqlite3.Connection, user_id: str) -> int:
     ).fetchone()[0]
 
 
+# --- Admin queries ---
+
+
+def get_admin_stats(db: sqlite3.Connection, online_user_ids: set[str]) -> dict:
+    now = _now()
+    return {
+        "total_users": db.execute("SELECT COUNT(*) FROM users").fetchone()[0],
+        "online_count": len(online_user_ids),
+        "total_messages_active": db.execute(
+            "SELECT COUNT(*) FROM messages WHERE expires_at > ?", (now,)
+        ).fetchone()[0],
+        "total_rooms": db.execute("SELECT COUNT(*) FROM rooms").fetchone()[0],
+        "pending_reports": db.execute(
+            "SELECT COUNT(*) FROM reports WHERE status = 'pending'"
+        ).fetchone()[0],
+        "active_bans": db.execute("SELECT COUNT(*) FROM bans").fetchone()[0],
+        "active_strikes": db.execute(
+            "SELECT COUNT(*) FROM strikes WHERE expires_at > ?", (now,)
+        ).fetchone()[0],
+    }
+
+
+def search_users(
+    db: sqlite3.Connection,
+    online_ids: set[str],
+    q: str = "",
+    online_only: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[dict]:
+    now = _now()
+    if online_only and not online_ids:
+        return []
+
+    where = []
+    params: list = []
+    if q:
+        where.append("(u.display_name LIKE ? OR u.username LIKE ?)")
+        params.extend([f"%{q}%", f"%{q}%"])
+    if online_only:
+        placeholders = ",".join("?" for _ in online_ids)
+        where.append(f"u.id IN ({placeholders})")
+        params.extend(online_ids)
+
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+    rows = db.execute(
+        f"SELECT u.id, u.display_name, u.username, u.country, u.avatar_url, "
+        f"u.provider, u.muted_until, u.mute_count, u.created_at, u.last_seen, "
+        f"(SELECT COUNT(*) FROM strikes s WHERE s.user_id = u.id AND s.expires_at > ?) AS strike_count, "
+        f"(SELECT COUNT(*) FROM bans b WHERE b.user_id = u.id) AS ban_count "
+        f"FROM users u {where_sql} "
+        f"ORDER BY u.last_seen DESC NULLS LAST "
+        f"LIMIT ? OFFSET ?",
+        [now] + params + [limit, offset],
+    ).fetchall()
+
+    return [
+        {
+            "id": r["id"],
+            "display_name": r["display_name"],
+            "username": r["username"],
+            "country": r["country"],
+            "avatar_url": r["avatar_url"],
+            "provider": r["provider"],
+            "muted_until": r["muted_until"],
+            "mute_count": r["mute_count"],
+            "created_at": r["created_at"],
+            "last_seen": r["last_seen"],
+            "is_online": r["id"] in online_ids,
+            "strike_count": r["strike_count"],
+            "is_banned": r["ban_count"] > 0,
+        }
+        for r in rows
+    ]
+
+
+def get_user_admin_detail(db: sqlite3.Connection, user_id: str) -> dict | None:
+    user = get_user(db, user_id)
+    if not user:
+        return None
+    now = _now()
+
+    strikes = db.execute(
+        "SELECT id, reason, detail, created_at, expires_at FROM strikes "
+        "WHERE user_id = ? ORDER BY created_at DESC",
+        (user_id,),
+    ).fetchall()
+
+    reports = db.execute(
+        "SELECT r.id, u.display_name AS reporter_name, r.reason, "
+        "r.message_snapshot, r.status, r.created_at "
+        "FROM reports r JOIN users u ON u.id = r.reporter_id "
+        "WHERE r.reported_user_id = ? ORDER BY r.created_at DESC",
+        (user_id,),
+    ).fetchall()
+
+    bans = db.execute(
+        "SELECT id, reason, created_at FROM bans WHERE user_id = ?",
+        (user_id,),
+    ).fetchall()
+
+    msg_count = db.execute(
+        "SELECT COUNT(*) FROM messages WHERE user_id = ? AND expires_at > ?",
+        (user_id, now),
+    ).fetchone()[0]
+
+    return {
+        "id": user["id"],
+        "display_name": user["display_name"],
+        "username": user["username"],
+        "country": user["country"],
+        "avatar_url": user["avatar_url"],
+        "color_index": user["color_index"],
+        "provider": user["provider"],
+        "muted_until": user["muted_until"],
+        "mute_count": user["mute_count"],
+        "created_at": user["created_at"],
+        "last_seen": user["last_seen"],
+        "strikes": [
+            {
+                "id": s["id"],
+                "reason": s["reason"],
+                "detail": s["detail"],
+                "created_at": s["created_at"],
+                "expires_at": s["expires_at"],
+                "is_active": s["expires_at"] and s["expires_at"] > now,
+            }
+            for s in strikes
+        ],
+        "reports_against": [dict(r) for r in reports],
+        "bans": [dict(b) for b in bans],
+        "message_count": msg_count,
+    }
+
+
+def get_all_bans(db: sqlite3.Connection) -> list[dict]:
+    rows = db.execute(
+        "SELECT b.id AS ban_id, b.user_id, u.display_name, u.username, "
+        "b.provider, b.provider_id, b.device_fingerprint, b.reason, b.created_at "
+        "FROM bans b LEFT JOIN users u ON u.id = b.user_id "
+        "ORDER BY b.created_at DESC"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_moderation_log(
+    db: sqlite3.Connection, limit: int = 50, offset: int = 0
+) -> list[dict]:
+    rows = db.execute(
+        "SELECT type, user_id, display_name, detail, created_at FROM ("
+        "  SELECT 'strike' AS type, s.user_id, u.display_name, "
+        "    s.reason || CASE WHEN s.detail IS NOT NULL THEN ': ' || s.detail ELSE '' END AS detail, "
+        "    s.created_at "
+        "  FROM strikes s LEFT JOIN users u ON u.id = s.user_id "
+        "  UNION ALL "
+        "  SELECT 'ban' AS type, b.user_id, u.display_name, b.reason AS detail, b.created_at "
+        "  FROM bans b LEFT JOIN users u ON u.id = b.user_id "
+        "  UNION ALL "
+        "  SELECT 'report_' || r.status AS type, r.reported_user_id AS user_id, "
+        "    u.display_name, r.reason AS detail, r.reviewed_at AS created_at "
+        "  FROM reports r LEFT JOIN users u ON u.id = r.reported_user_id "
+        "  WHERE r.status != 'pending' AND r.reviewed_at IS NOT NULL"
+        ") ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        (limit, offset),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_room_stats(db: sqlite3.Connection, online_counts: dict[str, int]) -> list[dict]:
+    now = _now()
+    rows = db.execute(
+        "SELECT r.id, r.name, r.type, r.is_main, "
+        "  (SELECT COUNT(*) FROM messages m WHERE m.room_id = r.id AND m.expires_at > ?) AS message_count, "
+        "  (SELECT MAX(m.created_at) FROM messages m WHERE m.room_id = r.id) AS last_message_at "
+        "FROM rooms r ORDER BY last_message_at DESC NULLS LAST",
+        (now,),
+    ).fetchall()
+    return [
+        {
+            "id": r["id"],
+            "name": r["name"],
+            "type": r["type"],
+            "is_main": bool(r["is_main"]),
+            "online_count": online_counts.get(r["id"], 0),
+            "message_count": r["message_count"],
+            "last_message_at": r["last_message_at"],
+        }
+        for r in rows
+    ]
+
+
 # --- Purge all ---
 
 
@@ -960,6 +1158,32 @@ def purge_expired_sessions(db: sqlite3.Connection) -> None:
     db.execute("DELETE FROM sessions WHERE expires_at <= ?", (_now(),))
     db.execute("DELETE FROM email_tokens WHERE expires_at <= ?", (_now(),))
     db.commit()
+
+
+def purge_expired_strikes(db: sqlite3.Connection) -> int:
+    now = _now()
+    result = db.execute(
+        "DELETE FROM strikes WHERE expires_at IS NOT NULL AND expires_at <= ?",
+        (now,),
+    )
+    db.commit()
+    return result.rowcount
+
+
+PUSH_SUBSCRIPTION_MAX_AGE_DAYS = 90
+
+
+def purge_stale_push_subscriptions(db: sqlite3.Connection) -> int:
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(days=PUSH_SUBSCRIPTION_MAX_AGE_DAYS)
+    ).isoformat()
+    result = db.execute(
+        "DELETE FROM chat_push_subscriptions WHERE created_at < ? "
+        "AND user_id NOT IN (SELECT id FROM users WHERE last_seen > ?)",
+        (cutoff, cutoff),
+    )
+    db.commit()
+    return result.rowcount
 
 
 def wipe_all_chat_data(db: sqlite3.Connection) -> None:

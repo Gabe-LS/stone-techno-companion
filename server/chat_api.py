@@ -57,6 +57,14 @@ from chat_db import (
     delete_push_subscription,
     get_push_subscription_count,
     leave_room_membership,
+    get_admin_stats,
+    search_users,
+    get_user_admin_detail,
+    get_all_bans,
+    get_moderation_log,
+    get_room_stats,
+    mute_user,
+    delete_room,
 )
 from chat_ws import handle_chat_ws, purge_loop
 
@@ -65,6 +73,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat/api")
 DEFAULT_EVENT_ID = os.environ.get("CHAT_EVENT_ID", "stone-techno-2026")
 ADMIN_TOKEN = os.environ.get("CHAT_ADMIN_TOKEN", "")
+_ADMIN_EMAIL_HASHES: set[str] = set()
+
+
+def _load_admin_emails() -> None:
+    global _ADMIN_EMAIL_HASHES
+    raw = os.environ.get("CHAT_ADMIN_EMAILS", "")
+    if raw:
+        _ADMIN_EMAIL_HASHES = {
+            hash_email(e.strip()) for e in raw.split(",") if e.strip()
+        }
+
 
 _email_rate: dict[str, list[float]] = {}
 
@@ -103,9 +122,29 @@ def _get_user_from_cookie(request: Request):
 
 
 def _require_admin(request: Request) -> None:
-    token = request.headers.get("X-Admin-Token") or ""
-    if not ADMIN_TOKEN or not secrets.compare_digest(token, ADMIN_TOKEN):
-        raise HTTPException(403, "Admin access required")
+    header_token = request.headers.get("X-Admin-Token") or ""
+    if (
+        ADMIN_TOKEN
+        and header_token
+        and secrets.compare_digest(header_token, ADMIN_TOKEN)
+    ):
+        return
+    session_token = request.cookies.get("chat_session")
+    if session_token and _ADMIN_EMAIL_HASHES:
+        db = _get_db()
+        try:
+            user = get_user_by_token(db, session_token)
+            if user:
+                providers = db.execute(
+                    "SELECT provider, provider_id FROM user_providers WHERE user_id = ?",
+                    (user["id"],),
+                ).fetchall()
+                for p in providers:
+                    if p["provider_id"] in _ADMIN_EMAIL_HASHES:
+                        return
+        finally:
+            db.close()
+    raise HTTPException(403, "Admin access required")
 
 
 def _set_session_cookie(response: Response, token: str) -> None:
@@ -1295,61 +1334,201 @@ async def admin_unban(user_id: str, request: Request):
         db.close()
 
 
+@router.delete("/admin/bans/{ban_id}")
+async def admin_delete_ban(ban_id: str, request: Request):
+    _require_admin(request)
+    db = _get_db()
+    try:
+        db.execute("DELETE FROM bans WHERE id = ?", (ban_id,))
+        db.commit()
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+@router.get("/admin/stats")
+async def admin_stats(request: Request):
+    _require_admin(request)
+    from chat_ws import manager
+
+    online_ids = (
+        set(manager.user_conns.keys()) if hasattr(manager, "user_conns") else set()
+    )
+    db = _get_db()
+    try:
+        return get_admin_stats(db, online_ids)
+    finally:
+        db.close()
+
+
+@router.get("/admin/users")
+async def admin_users(
+    request: Request,
+    q: str = "",
+    online_only: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+):
+    _require_admin(request)
+    from chat_ws import manager
+
+    online_ids = (
+        set(manager.user_conns.keys()) if hasattr(manager, "user_conns") else set()
+    )
+    db = _get_db()
+    try:
+        return search_users(db, online_ids, q, online_only, limit, offset)
+    finally:
+        db.close()
+
+
+@router.get("/admin/users/{user_id}")
+async def admin_user_detail(user_id: str, request: Request):
+    _require_admin(request)
+    db = _get_db()
+    try:
+        detail = get_user_admin_detail(db, user_id)
+        if not detail:
+            raise HTTPException(404, "User not found")
+        from chat_ws import manager
+
+        detail["is_online"] = user_id in (
+            manager.user_conns if hasattr(manager, "user_conns") else {}
+        )
+        return detail
+    finally:
+        db.close()
+
+
+@router.get("/admin/bans")
+async def admin_bans(request: Request):
+    _require_admin(request)
+    db = _get_db()
+    try:
+        return get_all_bans(db)
+    finally:
+        db.close()
+
+
+@router.get("/admin/modlog")
+async def admin_modlog(request: Request, limit: int = 50, offset: int = 0):
+    _require_admin(request)
+    db = _get_db()
+    try:
+        return get_moderation_log(db, limit, offset)
+    finally:
+        db.close()
+
+
+@router.get("/admin/rooms")
+async def admin_rooms(request: Request):
+    _require_admin(request)
+    from chat_ws import manager
+
+    online_counts = {}
+    if hasattr(manager, "rooms"):
+        for room_id, conns in manager.rooms.items():
+            online_counts[room_id] = len(conns)
+    db = _get_db()
+    try:
+        return get_room_stats(db, online_counts)
+    finally:
+        db.close()
+
+
+@router.post("/admin/mute/{user_id}")
+async def admin_mute_user(user_id: str, request: Request):
+    _require_admin(request)
+    body = await request.json()
+    minutes = body.get("minutes", 30)
+    db = _get_db()
+    try:
+        user = get_user(db, user_id)
+        if not user:
+            raise HTTPException(404, "User not found")
+        mute_user(db, user_id, minutes=minutes)
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+@router.post("/admin/strike/{user_id}")
+async def admin_strike_user(user_id: str, request: Request):
+    _require_admin(request)
+    body = await request.json()
+    reason = body.get("reason", "admin")
+    detail = body.get("detail", "Manual admin action")
+    db = _get_db()
+    try:
+        from chat_moderation import process_strike
+
+        result = process_strike(db, user_id, reason, detail)
+        return result
+    finally:
+        db.close()
+
+
+@router.delete("/admin/users/{user_id}")
+async def admin_delete_user(user_id: str, request: Request):
+    _require_admin(request)
+    db = _get_db()
+    try:
+        user = get_user(db, user_id)
+        if not user:
+            raise HTTPException(404, "User not found")
+        delete_user(db, user_id)
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+@router.post("/admin/rooms")
+async def admin_create_room(request: Request):
+    _require_admin(request)
+    body = await request.json()
+    name = body.get("name", "").strip()
+    room_type = body.get("type", "general")
+    if not name:
+        raise HTTPException(400, "Room name required")
+    room_id = name.lower().replace(" ", "-")
+    db = _get_db()
+    try:
+        existing = get_room(db, room_id)
+        if existing:
+            raise HTTPException(409, "Room already exists")
+        room = create_room(db, room_id, DEFAULT_EVENT_ID, room_type, name)
+        return room
+    finally:
+        db.close()
+
+
+@router.delete("/admin/rooms/{room_id}")
+async def admin_delete_room(room_id: str, request: Request):
+    _require_admin(request)
+    db = _get_db()
+    try:
+        room = get_room(db, room_id)
+        if not room:
+            raise HTTPException(404, "Room not found")
+        if room["is_main"]:
+            raise HTTPException(400, "Cannot delete the main room")
+        if room["type"] in ("dm", "meetup"):
+            raise HTTPException(400, "DM and meetup rooms are managed automatically")
+        delete_room(db, room_id)
+        return {"ok": True}
+    finally:
+        db.close()
+
+
 # --- Admin page ---
+
+
+_admin_html = (Path(__file__).resolve().parent / "chat" / "admin.html").read_text()
 
 
 @router.get("/admin", response_class=HTMLResponse)
 async def admin_page(request: Request):
-    return HTMLResponse("""<!DOCTYPE html>
-<html><head><title>Chat Admin</title>
-<style>
-body { font-family: system-ui; max-width: 800px; margin: 0 auto; padding: 20px; }
-.report { border: 1px solid #ddd; padding: 16px; margin: 12px 0; border-radius: 8px; }
-.report .meta { color: #666; font-size: 0.85em; margin-bottom: 8px; }
-.report .snapshot { background: #f5f5f5; padding: 10px; border-radius: 4px; margin: 8px 0; }
-.report .actions { display: flex; gap: 8px; margin-top: 8px; }
-button { padding: 6px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em; }
-.ban { background: #e53e3e; color: #fff; }
-.dismiss { background: #eee; }
-.empty { color: #999; text-align: center; padding: 40px; }
-</style></head><body>
-<h1>Chat Admin</h1>
-<div id="reports"></div>
-<script>
-const _p = new URLSearchParams(location.search);
-const token = _p.get('admin_token') || sessionStorage.getItem('chat_admin_token') || '';
-if (_p.get('admin_token')) { sessionStorage.setItem('chat_admin_token', token); history.replaceState(null, '', location.pathname); }
-const _ah = {'X-Admin-Token': token};
-async function load() {
-  const res = await fetch('/chat/api/admin/reports?status=pending', {headers: _ah});
-  const reports = await res.json();
-  const el = document.getElementById('reports');
-  if (!reports.length) { el.innerHTML = '<div class="empty">No pending reports</div>'; return; }
-  const esc = s => {const d=document.createElement('div');d.textContent=s;return d.innerHTML.replace(/'/g,'&#39;');};
-  const jss = s => String(s).replace(/\\\\/g,'\\\\\\\\').replace(/'/g,"\\\\'" ).replace(/"/g,'\\\\x22');
-  el.innerHTML = reports.map(r => `
-    <div class="report">
-      <div class="meta">${esc(r.reporter_name)} reported ${esc(r.reported_name)} · ${esc(r.created_at)}</div>
-      <div>Reason: ${esc(r.reason)}</div>
-      <div class="snapshot">${esc(r.message_snapshot)}</div>
-      <div class="actions">
-        <button class="ban" onclick="action('${r.id}','${jss(r.reported_name)}','actioned','${r.reported_user_id}')">Ban User</button>
-        <button class="dismiss" onclick="action('${r.id}','','dismissed')">Dismiss</button>
-      </div>
-    </div>`).join('');
-}
-async function action(id, name, status, userId) {
-  if (status === 'actioned' && !confirm('Ban ' + name + '?')) return;
-  if (status === 'actioned' && userId) {
-    await fetch('/chat/api/admin/ban/' + userId,
-      { method: 'POST', headers: {..._ah, 'Content-Type': 'application/json'}, body: JSON.stringify({reason: 'Banned by admin via report ' + id}) });
-  }
-  await fetch('/chat/api/admin/reports/' + id,
-    { method: 'PATCH', headers: {..._ah, 'Content-Type': 'application/json'}, body: JSON.stringify({status}) });
-  load();
-}
-load();
-</script></body></html>""")
+    return HTMLResponse(_admin_html, headers={"Cache-Control": "no-store"})
 
 
 # --- Mount ---
@@ -1392,6 +1571,7 @@ def mount_chat(app):
     )
 
     _load_disposable_domains()
+    _load_admin_emails()
 
     db = _get_db()
     seed_event_room(db, DEFAULT_EVENT_ID, "Stone Techno 2026")
