@@ -721,8 +721,8 @@ async def list_meetups(request: Request, stage_id: str | None = None):
 
 
 @router.get("/meetups/{meetup_id}")
-async def get_meetup(meetup_id: str):
-    db = _get_db()
+async def get_meetup(meetup_id: str, request: Request):
+    user, db = _get_user_from_cookie(request)
     try:
         meetup = db.execute("SELECT * FROM meetups WHERE id = ?", (meetup_id,)).fetchone()
         if not meetup:
@@ -886,7 +886,10 @@ async def upload_avatar(request: Request, file: UploadFile = File(...)):
 
         try:
             import pyvips
-            pyvips.Image.new_from_buffer(data, "")
+            img = pyvips.Image.new_from_buffer(data, "")
+            if img.width * img.height > 10_000_000:
+                raise HTTPException(400, "Image too large")
+            data = img.webpsave_buffer(Q=80)
         except HTTPException:
             raise
         except Exception:
@@ -952,7 +955,6 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
     token = secrets.token_hex(16)
     filename = f"{token}.webp"
     out_path = upload_dir / filename
-    out_path.write_bytes(data)
 
     def _process_image():
         import pyvips
@@ -961,10 +963,15 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
         w, h = img.width, img.height
         if w * h > 40_000_000:
             raise ValueError("Image too large")
-        mod_path = upload_dir / f"{token}_mod.webp"
         max_side = max(w, h)
-        if max_side > 880:
-            mod_scale = 800 / max_side
+        if max_side > 1500:
+            scale = 1500 / max_side
+            img = img.resize(scale, kernel=pyvips.enums.Kernel.LANCZOS3)
+            w, h = img.width, img.height
+        img.webpsave(str(out_path), Q=80)
+        mod_path = upload_dir / f"{token}_mod.webp"
+        if max(w, h) > 880:
+            mod_scale = 800 / max(w, h)
             mod = img.resize(mod_scale, kernel=pyvips.enums.Kernel.LANCZOS3)
             mod.webpsave(str(mod_path), Q=60)
         else:

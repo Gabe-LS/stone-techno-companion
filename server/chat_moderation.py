@@ -236,6 +236,7 @@ async def check_openai_moderation(
             headers=_get_api_headers(),
             json={"model": "omni-moderation-latest", "input": input_content},
         )
+        r.raise_for_status()
         data = r.json()
         results = data.get("results")
         if not results:
@@ -277,6 +278,7 @@ async def check_content_detection(text: str) -> dict | None:
                 "reasoning": {"effort": "none"},
             },
         )
+        r.raise_for_status()
         data = r.json()
         if data.get("error"):
             return None

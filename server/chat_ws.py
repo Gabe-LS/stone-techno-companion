@@ -1342,6 +1342,8 @@ async def purge_loop() -> None:
                         "meetup_id": meetup_id,
                     },
                 )
+                manager.rooms.pop(meetup_id, None)
+                manager._room_meta.pop(meetup_id, None)
 
             purge_expired_sessions(db)
         except Exception:
