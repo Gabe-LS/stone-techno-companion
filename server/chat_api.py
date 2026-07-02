@@ -171,7 +171,10 @@ async def auth_google(request: Request, response: Response):
         raise HTTPException(401, "Invalid Google token")
 
     db = _get_db()
-    return _authenticate(db, "google", provider_id, name, fingerprint, response)
+    try:
+        return _authenticate(db, "google", provider_id, name, fingerprint, response)
+    finally:
+        db.close()
 
 
 @router.post("/auth/apple")
@@ -207,7 +210,10 @@ async def auth_apple(request: Request, response: Response):
         raise HTTPException(401, "Invalid Apple token")
 
     db = _get_db()
-    return _authenticate(db, "apple", provider_id, name, fingerprint, response)
+    try:
+        return _authenticate(db, "apple", provider_id, name, fingerprint, response)
+    finally:
+        db.close()
 
 
 @router.post("/login")
@@ -231,17 +237,20 @@ async def auth_email_start(request: Request):
     provider_id = hash_email(email)
 
     db = _get_db()
-    ban = is_banned(db, "email", provider_id, fingerprint)
-    if ban:
-        raise HTTPException(403, f"You have been banned: {ban['reason']}")
+    try:
+        ban = is_banned(db, "email", provider_id, fingerprint)
+        if ban:
+            raise HTTPException(403, f"You have been banned: {ban['reason']}")
 
-    expires = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
-    db.execute(
-        "INSERT OR REPLACE INTO email_tokens (token, email, provider_id, fingerprint, expires_at) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (token, email, provider_id, fingerprint, expires),
-    )
-    db.commit()
+        expires = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
+        db.execute(
+            "INSERT OR REPLACE INTO email_tokens (token, email, provider_id, fingerprint, expires_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (token, email, provider_id, fingerprint, expires),
+        )
+        db.commit()
+    finally:
+        db.close()
 
     maileroo_key = os.environ.get("MAILEROO_API_KEY")
     if maileroo_key:
@@ -275,26 +284,29 @@ async def auth_email_start(request: Request):
 @router.get("/verify")
 async def auth_email_verify(request: Request, token: str = ""):
     db = _get_db()
-    row = db.execute(
-        "SELECT email, provider_id, fingerprint, expires_at FROM email_tokens WHERE token = ?",
-        (token,),
-    ).fetchone()
-    if not row:
-        raise HTTPException(400, "Invalid or expired link")
-    db.execute("DELETE FROM email_tokens WHERE token = ?", (token,))
-    db.commit()
-    if datetime.now(timezone.utc) > datetime.fromisoformat(row["expires_at"]):
-        raise HTTPException(400, "Link expired")
+    try:
+        row = db.execute(
+            "SELECT email, provider_id, fingerprint, expires_at FROM email_tokens WHERE token = ?",
+            (token,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(400, "Invalid or expired link")
+        db.execute("DELETE FROM email_tokens WHERE token = ?", (token,))
+        db.commit()
+        if datetime.now(timezone.utc) > datetime.fromisoformat(row["expires_at"]):
+            raise HTTPException(400, "Link expired")
 
-    name = ""
+        name = ""
 
-    from starlette.responses import RedirectResponse
+        from starlette.responses import RedirectResponse
 
-    base_url = os.environ.get("CHAT_BASE_URL", "")
-    redirect_url = f"{base_url}/chat" if base_url else "/chat"
-    redirect = RedirectResponse(url=redirect_url, status_code=302)
-    _authenticate(db, "email", row["provider_id"], name, row["fingerprint"], redirect)
-    return redirect
+        base_url = os.environ.get("CHAT_BASE_URL", "")
+        redirect_url = f"{base_url}/chat" if base_url else "/chat"
+        redirect = RedirectResponse(url=redirect_url, status_code=302)
+        _authenticate(db, "email", row["provider_id"], name, row["fingerprint"], redirect)
+        return redirect
+    finally:
+        db.close()
 
 
 @router.post("/logout")
@@ -312,9 +324,12 @@ async def auth_logout(request: Request, response: Response):
 @router.delete("/account")
 async def auth_delete_account(request: Request, response: Response):
     user, db = _get_user_from_cookie(request)
-    delete_user(db, user["id"])
-    response.delete_cookie("chat_session")
-    return {"ok": True}
+    try:
+        delete_user(db, user["id"])
+        response.delete_cookie("chat_session")
+        return {"ok": True}
+    finally:
+        db.close()
 
 
 import re
@@ -387,8 +402,11 @@ def _validate_display_name(name: str) -> str | None:
 @router.get("/check-username")
 async def check_username(request: Request, name: str = ""):
     user, db = _get_user_from_cookie(request)
-    err = _validate_username(name, db, user["id"])
-    return {"available": err is None, "reason": err or ""}
+    try:
+        err = _validate_username(name, db, user["id"])
+        return {"available": err is None, "reason": err or ""}
+    finally:
+        db.close()
 
 
 @router.get("/check-name")
@@ -400,68 +418,74 @@ async def check_displayname(request: Request, name: str = ""):
 @router.put("/profile")
 async def auth_update_profile(request: Request):
     user, db = _get_user_from_cookie(request)
-    body = await request.json()
-    updates = []
-    params = []
-    name = body.get("display_name")
-    if name:
-        name = unicodedata.normalize("NFKC", name.strip())[:30]
-        err = _validate_display_name(name)
-        if err:
-            raise HTTPException(400, err)
-        updates.append("display_name = ?")
-        params.append(name)
-    username = body.get("username")
-    if username:
-        username = username.strip()[:20]
-        err = _validate_username(username, db, user["id"])
-        if err:
-            raise HTTPException(400, err)
-        updates.append("username = ?")
-        params.append(username)
-        updates.append("username_lower = ?")
-        params.append(username.lower())
+    try:
+        body = await request.json()
+        updates = []
+        params = []
+        name = body.get("display_name")
+        if name:
+            name = unicodedata.normalize("NFKC", name.strip())[:30]
+            err = _validate_display_name(name)
+            if err:
+                raise HTTPException(400, err)
+            updates.append("display_name = ?")
+            params.append(name)
+        username = body.get("username")
+        if username:
+            username = username.strip()[:20]
+            err = _validate_username(username, db, user["id"])
+            if err:
+                raise HTTPException(400, err)
+            updates.append("username = ?")
+            params.append(username)
+            updates.append("username_lower = ?")
+            params.append(username.lower())
 
-    text_to_moderate = " ".join(filter(None, [username, name]))
-    if text_to_moderate:
-        from chat_moderation import check_openai_moderation
+        text_to_moderate = " ".join(filter(None, [username, name]))
+        if text_to_moderate:
+            from chat_moderation import check_openai_moderation
 
-        ai_result = await check_openai_moderation(text_to_moderate)
-        if ai_result:
-            raise HTTPException(
-                400, f"Name not allowed: {ai_result.get('category', 'content policy')}"
-            )
+            ai_result = await check_openai_moderation(text_to_moderate)
+            if ai_result:
+                raise HTTPException(
+                    400, f"Name not allowed: {ai_result.get('category', 'content policy')}"
+                )
 
-    country = body.get("country")
-    if country is not None:
-        updates.append("country = ?")
-        params.append(country.strip()[:2].upper())
-    avatar_url = body.get("avatar_url")
-    if avatar_url is not None:
-        if avatar_url and not avatar_url.startswith("/chat/api/avatar/"):
-            raise HTTPException(400, "Invalid avatar URL")
-        updates.append("avatar_url = ?")
-        params.append(avatar_url)
-    if updates:
-        params.append(user["id"])
-        db.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", params)
-        db.commit()
-    return {"ok": True}
+        country = body.get("country")
+        if country is not None:
+            updates.append("country = ?")
+            params.append(country.strip()[:2].upper())
+        avatar_url = body.get("avatar_url")
+        if avatar_url is not None:
+            if avatar_url and not avatar_url.startswith("/chat/api/avatar/"):
+                raise HTTPException(400, "Invalid avatar URL")
+            updates.append("avatar_url = ?")
+            params.append(avatar_url)
+        if updates:
+            params.append(user["id"])
+            db.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", params)
+            db.commit()
+        return {"ok": True}
+    finally:
+        db.close()
 
 
 @router.get("/me")
 async def auth_me(request: Request):
     user, db = _get_user_from_cookie(request)
-    keys = user.keys()
-    return {
-        "id": user["id"],
-        "display_name": user["display_name"],
-        "username": user["username"] if "username" in keys else "",
-        "country": user["country"] if "country" in keys else "",
-        "avatar_url": user["avatar_url"] if "avatar_url" in keys else "",
-        "color_index": user["color_index"] if "color_index" in keys else 0,
-        "provider": user["provider"],
-    }
+    try:
+        keys = user.keys()
+        return {
+            "id": user["id"],
+            "display_name": user["display_name"],
+            "username": user["username"] if "username" in keys else "",
+            "country": user["country"] if "country" in keys else "",
+            "avatar_url": user["avatar_url"] if "avatar_url" in keys else "",
+            "color_index": user["color_index"] if "color_index" in keys else 0,
+            "provider": user["provider"],
+        }
+    finally:
+        db.close()
 
 
 # --- Rooms ---
@@ -470,132 +494,159 @@ async def auth_me(request: Request):
 @router.get("/rooms")
 async def list_rooms(request: Request):
     db = _get_db()
-    from chat_ws import manager
+    try:
+        from chat_ws import manager
 
-    user_id = None
-    token = request.cookies.get("chat_session")
-    if token:
-        user = get_user_by_token(db, token)
-        if user:
-            user_id = user["id"]
-    member_rooms = set()
-    if user_id:
-        rows = db.execute(
-            "SELECT room_id FROM room_memberships WHERE user_id = ?", (user_id,)
-        ).fetchall()
-        member_rooms = {r["room_id"] for r in rows}
-    rooms = get_rooms_by_event(db, DEFAULT_EVENT_ID)
-    last_msgs = {}
-    for row in db.execute(
-        "SELECT room_id, MAX(created_at) as last_at FROM messages "
-        "WHERE expires_at > ? GROUP BY room_id",
-        (datetime.now(timezone.utc).isoformat(),),
-    ).fetchall():
-        last_msgs[row["room_id"]] = row["last_at"]
-    result = [
-        {
-            "id": r["id"],
-            "type": r["type"],
-            "name": r["name"],
-            "is_main": bool(r["is_main"]),
-            "online_count": len(manager.get_online_users(r["id"])),
-            "is_member": r["id"] in member_rooms,
-            "last_message_at": last_msgs.get(r["id"], ""),
-        }
-        for r in rooms
-    ]
-    result.sort(key=lambda r: r["last_message_at"] or "", reverse=True)
-    return result
+        user_id = None
+        token = request.cookies.get("chat_session")
+        if token:
+            user = get_user_by_token(db, token)
+            if user:
+                user_id = user["id"]
+        member_rooms = set()
+        if user_id:
+            rows = db.execute(
+                "SELECT room_id FROM room_memberships WHERE user_id = ?", (user_id,)
+            ).fetchall()
+            member_rooms = {r["room_id"] for r in rows}
+        rooms = get_rooms_by_event(db, DEFAULT_EVENT_ID)
+        last_msgs = {}
+        for row in db.execute(
+            "SELECT room_id, MAX(created_at) as last_at FROM messages "
+            "WHERE expires_at > ? GROUP BY room_id",
+            (datetime.now(timezone.utc).isoformat(),),
+        ).fetchall():
+            last_msgs[row["room_id"]] = row["last_at"]
+        result = [
+            {
+                "id": r["id"],
+                "type": r["type"],
+                "name": r["name"],
+                "is_main": bool(r["is_main"]),
+                "online_count": len(manager.get_online_users(r["id"])),
+                "is_member": r["id"] in member_rooms,
+                "last_message_at": last_msgs.get(r["id"], ""),
+            }
+            for r in rooms
+        ]
+        result.sort(key=lambda r: r["last_message_at"] or "", reverse=True)
+        return result
+    finally:
+        db.close()
 
 
 @router.post("/rooms/{room_id}/join", status_code=204)
 async def join_room_endpoint(room_id: str, request: Request):
     user, db = _get_user_from_cookie(request)
-    room = get_room(db, room_id)
-    if not room:
-        raise HTTPException(404, "Room not found")
-    from chat_db import join_room_membership
+    try:
+        room = get_room(db, room_id)
+        if not room:
+            raise HTTPException(404, "Room not found")
+        from chat_db import join_room_membership
 
-    join_room_membership(db, user["id"], room_id)
-    return Response(status_code=204)
+        join_room_membership(db, user["id"], room_id)
+        return Response(status_code=204)
+    finally:
+        db.close()
 
 
 @router.delete("/rooms/{room_id}/join", status_code=204)
 async def leave_room_endpoint(room_id: str, request: Request):
     user, db = _get_user_from_cookie(request)
-    room = get_room(db, room_id)
-    if not room:
-        raise HTTPException(404, "Room not found")
-    if room["is_main"]:
-        raise HTTPException(400, "Cannot leave main room")
-    leave_room_membership(db, user["id"], room_id)
-    return Response(status_code=204)
+    try:
+        room = get_room(db, room_id)
+        if not room:
+            raise HTTPException(404, "Room not found")
+        if room["is_main"]:
+            raise HTTPException(400, "Cannot leave main room")
+        leave_room_membership(db, user["id"], room_id)
+        return Response(status_code=204)
+    finally:
+        db.close()
 
 
 @router.get("/rooms/{room_id}/messages")
 async def room_messages(room_id: str, request: Request):
     user, db = _get_user_from_cookie(request)
-    room = get_room(db, room_id)
-    if not room:
-        raise HTTPException(404, "Room not found")
-    if room["type"] == "dm":
-        if not db.execute(
-            "SELECT 1 FROM dm_participants WHERE room_id = ? AND user_id = ?",
-            (room_id, user["id"]),
-        ).fetchone():
-            raise HTTPException(403, "Access denied")
-    messages = get_room_messages(db, room_id, limit=100)
-    return [
-        {
-            "id": m["id"],
-            "user_id": m["user_id"],
-            "display_name": m["display_name"],
-            "type": m["type"],
-            "content": m["content"],
-            "created_at": m["created_at"],
-        }
-        for m in reversed(messages)
-    ]
+    try:
+        room = get_room(db, room_id)
+        if not room:
+            raise HTTPException(404, "Room not found")
+        if room["type"] == "dm":
+            if not db.execute(
+                "SELECT 1 FROM dm_participants WHERE room_id = ? AND user_id = ?",
+                (room_id, user["id"]),
+            ).fetchone():
+                raise HTTPException(403, "Access denied")
+        messages = get_room_messages(db, room_id, limit=100)
+        return [
+            {
+                "id": m["id"],
+                "user_id": m["user_id"],
+                "display_name": m["display_name"],
+                "type": m["type"],
+                "content": m["content"],
+                "created_at": m["created_at"],
+            }
+            for m in reversed(messages)
+        ]
+    finally:
+        db.close()
 
 
 @router.get("/messages/{message_id}")
 async def get_message_context(message_id: str, request: Request):
     user, db = _get_user_from_cookie(request)
-    msg = db.execute(
-        "SELECT room_id FROM messages WHERE id = ?", (message_id,)
-    ).fetchone()
-    if not msg:
-        raise HTTPException(404, "Message not found")
-    room = get_room(db, msg["room_id"])
-    if room and room["type"] == "dm":
-        if not db.execute(
-            "SELECT 1 FROM dm_participants WHERE room_id = ? AND user_id = ?",
-            (msg["room_id"], user["id"]),
-        ).fetchone():
+    try:
+        msg = db.execute(
+            "SELECT room_id FROM messages WHERE id = ?", (message_id,)
+        ).fetchone()
+        if not msg:
             raise HTTPException(404, "Message not found")
-    return {
-        "message_id": message_id,
-        "room_id": msg["room_id"],
-        "room_name": room["name"] if room else "Chat",
-        "room_type": room["type"] if room else "general",
-    }
+        room = get_room(db, msg["room_id"])
+        if room and room["type"] == "dm":
+            if not db.execute(
+                "SELECT 1 FROM dm_participants WHERE room_id = ? AND user_id = ?",
+                (msg["room_id"], user["id"]),
+            ).fetchone():
+                raise HTTPException(404, "Message not found")
+        return {
+            "message_id": message_id,
+            "room_id": msg["room_id"],
+            "room_name": room["name"] if room else "Chat",
+            "room_type": room["type"] if room else "general",
+        }
+    finally:
+        db.close()
 
 
 @router.get("/rooms/{room_id}/info")
 async def room_info(room_id: str, request: Request):
     user, db = _get_user_from_cookie(request)
-    room = get_room(db, room_id)
-    if not room:
-        raise HTTPException(404, "Room not found")
-    return {"id": room["id"], "name": room["name"], "type": room["type"]}
+    try:
+        room = get_room(db, room_id)
+        if not room:
+            raise HTTPException(404, "Room not found")
+        return {"id": room["id"], "name": room["name"], "type": room["type"]}
+    finally:
+        db.close()
 
 
 @router.get("/rooms/{room_id}/online")
 async def room_online(room_id: str, request: Request):
-    _get_user_from_cookie(request)
-    from chat_ws import manager
-
-    return manager.get_online_users(room_id)
+    user, db = _get_user_from_cookie(request)
+    try:
+        room = get_room(db, room_id)
+        if room and room["type"] == "dm":
+            if not db.execute(
+                "SELECT 1 FROM dm_participants WHERE room_id = ? AND user_id = ?",
+                (room_id, user["id"]),
+            ).fetchone():
+                raise HTTPException(403, "Access denied")
+        from chat_ws import manager
+        return manager.get_online_users(room_id)
+    finally:
+        db.close()
 
 
 # --- Meetups ---
@@ -604,110 +655,125 @@ async def room_online(room_id: str, request: Request):
 @router.get("/meetups")
 async def list_meetups(request: Request, stage_id: str | None = None):
     user, db = _get_user_from_cookie(request)
-    user_id = user["id"]
-    meetups = get_active_meetups(db, DEFAULT_EVENT_ID)
-    now = datetime.now(timezone.utc).isoformat()
-    last_msgs = {}
-    for row in db.execute(
-        "SELECT room_id, MAX(created_at) as last_at FROM messages "
-        "WHERE expires_at > ? GROUP BY room_id",
-        (now,),
-    ).fetchall():
-        last_msgs[row["room_id"]] = row["last_at"]
-    result = []
-    for m in meetups:
-        if stage_id and m["stage_id"] != stage_id:
-            continue
-        attendees = get_meetup_attendees(db, m["id"])
-        att_ids = {a["id"] for a in attendees}
-        result.append(
-            {
-                "id": m["id"],
-                "title": m["title"],
-                "meetup_time": m["meetup_time"],
-                "location_lat": m["location_lat"],
-                "location_lng": m["location_lng"],
-                "location_label": m["location_label"],
-                "note": m["note"],
-                "stage_id": m["stage_id"],
-                "attendee_count": m["attendee_count"],
-                "is_going": user_id in att_ids,
-                "attendees": [
-                    {"id": a["id"], "display_name": a["display_name"]}
-                    for a in attendees
-                ],
-                "expires_at": m["expires_at"],
-                "last_message_at": last_msgs.get(m["id"], ""),
-            }
-        )
-    result.sort(key=lambda r: r["last_message_at"] or "", reverse=True)
-    return result
+    try:
+        user_id = user["id"]
+        meetups = get_active_meetups(db, DEFAULT_EVENT_ID)
+        now = datetime.now(timezone.utc).isoformat()
+        last_msgs = {}
+        for row in db.execute(
+            "SELECT room_id, MAX(created_at) as last_at FROM messages "
+            "WHERE expires_at > ? GROUP BY room_id",
+            (now,),
+        ).fetchall():
+            last_msgs[row["room_id"]] = row["last_at"]
+        result = []
+        for m in meetups:
+            if stage_id and m["stage_id"] != stage_id:
+                continue
+            attendees = get_meetup_attendees(db, m["id"])
+            att_ids = {a["id"] for a in attendees}
+            result.append(
+                {
+                    "id": m["id"],
+                    "title": m["title"],
+                    "meetup_time": m["meetup_time"],
+                    "location_lat": m["location_lat"],
+                    "location_lng": m["location_lng"],
+                    "location_label": m["location_label"],
+                    "note": m["note"],
+                    "stage_id": m["stage_id"],
+                    "attendee_count": m["attendee_count"],
+                    "is_going": user_id in att_ids,
+                    "attendees": [
+                        {"id": a["id"], "display_name": a["display_name"]}
+                        for a in attendees
+                    ],
+                    "expires_at": m["expires_at"],
+                    "last_message_at": last_msgs.get(m["id"], ""),
+                }
+            )
+        result.sort(key=lambda r: r["last_message_at"] or "", reverse=True)
+        return result
+    finally:
+        db.close()
 
 
 @router.get("/meetups/{meetup_id}")
 async def get_meetup(meetup_id: str):
     db = _get_db()
-    meetup = db.execute("SELECT * FROM meetups WHERE id = ?", (meetup_id,)).fetchone()
-    if not meetup:
-        raise HTTPException(404, "Meetup not found")
-    attendees = get_meetup_attendees(db, meetup_id)
-    return {
-        "id": meetup["id"],
-        "title": meetup["title"],
-        "meetup_time": meetup["meetup_time"],
-        "location_lat": meetup["location_lat"],
-        "location_lng": meetup["location_lng"],
-        "location_label": meetup["location_label"],
-        "note": meetup["note"],
-        "attendees": [
-            {"id": a["id"], "display_name": a["display_name"]} for a in attendees
-        ],
-        "expires_at": meetup["expires_at"],
-    }
+    try:
+        meetup = db.execute("SELECT * FROM meetups WHERE id = ?", (meetup_id,)).fetchone()
+        if not meetup:
+            raise HTTPException(404, "Meetup not found")
+        attendees = get_meetup_attendees(db, meetup_id)
+        return {
+            "id": meetup["id"],
+            "title": meetup["title"],
+            "meetup_time": meetup["meetup_time"],
+            "location_lat": meetup["location_lat"],
+            "location_lng": meetup["location_lng"],
+            "location_label": meetup["location_label"],
+            "note": meetup["note"],
+            "attendees": [
+                {"id": a["id"], "display_name": a["display_name"]} for a in attendees
+            ],
+            "expires_at": meetup["expires_at"],
+        }
+    finally:
+        db.close()
 
 
 @router.post("/meetups", status_code=201)
 async def create_meetup_endpoint(request: Request):
     user, db = _get_user_from_cookie(request)
-    body = await request.json()
-    title = (body.get("title") or "")[:60]
-    meetup_time = body.get("meetup_time")
-    if not title or not meetup_time:
-        raise HTTPException(400, "title and meetup_time required")
     try:
-        datetime.fromisoformat(meetup_time)
-    except (ValueError, TypeError):
-        raise HTTPException(400, "Invalid meetup_time format")
+        body = await request.json()
+        title = (body.get("title") or "")[:60]
+        meetup_time = body.get("meetup_time")
+        if not title or not meetup_time:
+            raise HTTPException(400, "title and meetup_time required")
+        try:
+            datetime.fromisoformat(meetup_time)
+        except (ValueError, TypeError):
+            raise HTTPException(400, "Invalid meetup_time format")
 
-    meetup = create_meetup(
-        db,
-        user["id"],
-        DEFAULT_EVENT_ID,
-        body.get("stage_id"),
-        title,
-        meetup_time,
-        location_lat=body.get("lat"),
-        location_lng=body.get("lng"),
-        location_label=(body.get("label") or "")[:100],
-        note=(body.get("note") or "")[:200],
-    )
-    return meetup
+        meetup = create_meetup(
+            db,
+            user["id"],
+            DEFAULT_EVENT_ID,
+            body.get("stage_id"),
+            title,
+            meetup_time,
+            location_lat=body.get("lat"),
+            location_lng=body.get("lng"),
+            location_label=(body.get("label") or "")[:100],
+            note=(body.get("note") or "")[:200],
+        )
+        return meetup
+    finally:
+        db.close()
 
 
 @router.post("/meetups/{meetup_id}/join")
 async def join_meetup_endpoint(meetup_id: str, request: Request):
     user, db = _get_user_from_cookie(request)
-    db_join_meetup(db, meetup_id, user["id"])
-    attendees = get_meetup_attendees(db, meetup_id)
-    return [{"id": a["id"], "display_name": a["display_name"]} for a in attendees]
+    try:
+        db_join_meetup(db, meetup_id, user["id"])
+        attendees = get_meetup_attendees(db, meetup_id)
+        return [{"id": a["id"], "display_name": a["display_name"]} for a in attendees]
+    finally:
+        db.close()
 
 
 @router.delete("/meetups/{meetup_id}/join")
 async def leave_meetup_endpoint(meetup_id: str, request: Request):
     user, db = _get_user_from_cookie(request)
-    db_leave_meetup(db, meetup_id, user["id"])
-    attendees = get_meetup_attendees(db, meetup_id)
-    return [{"id": a["id"], "display_name": a["display_name"]} for a in attendees]
+    try:
+        db_leave_meetup(db, meetup_id, user["id"])
+        attendees = get_meetup_attendees(db, meetup_id)
+        return [{"id": a["id"], "display_name": a["display_name"]} for a in attendees]
+    finally:
+        db.close()
 
 
 # --- DMs ---
@@ -716,41 +782,47 @@ async def leave_meetup_endpoint(meetup_id: str, request: Request):
 @router.get("/dms")
 async def list_dms(request: Request):
     user, db = _get_user_from_cookie(request)
-    now = datetime.now(timezone.utc).isoformat()
-    dms = db.execute(
-        "SELECT r.id, r.name, dp2.user_id AS other_user_id, u.display_name AS other_name, "
-        "(SELECT MAX(m.created_at) FROM messages m WHERE m.room_id = r.id AND m.expires_at > ?) AS last_message_at "
-        "FROM dm_participants dp1 "
-        "JOIN dm_participants dp2 ON dp1.room_id = dp2.room_id AND dp1.user_id != dp2.user_id "
-        "JOIN rooms r ON r.id = dp1.room_id "
-        "JOIN users u ON u.id = dp2.user_id "
-        "WHERE dp1.user_id = ? "
-        "ORDER BY last_message_at DESC",
-        (now, user["id"]),
-    ).fetchall()
-    return [
-        {
-            "room_id": dm["id"],
-            "other_user_id": dm["other_user_id"],
-            "other_name": dm["other_name"],
-            "last_message_at": dm["last_message_at"] or "",
-        }
-        for dm in dms
-    ]
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        dms = db.execute(
+            "SELECT r.id, r.name, dp2.user_id AS other_user_id, u.display_name AS other_name, "
+            "(SELECT MAX(m.created_at) FROM messages m WHERE m.room_id = r.id AND m.expires_at > ?) AS last_message_at "
+            "FROM dm_participants dp1 "
+            "JOIN dm_participants dp2 ON dp1.room_id = dp2.room_id AND dp1.user_id != dp2.user_id "
+            "JOIN rooms r ON r.id = dp1.room_id "
+            "JOIN users u ON u.id = dp2.user_id "
+            "WHERE dp1.user_id = ? "
+            "ORDER BY last_message_at DESC",
+            (now, user["id"]),
+        ).fetchall()
+        return [
+            {
+                "room_id": dm["id"],
+                "other_user_id": dm["other_user_id"],
+                "other_name": dm["other_name"],
+                "last_message_at": dm["last_message_at"] or "",
+            }
+            for dm in dms
+        ]
+    finally:
+        db.close()
 
 
 @router.post("/dms", status_code=201)
 async def create_dm(request: Request):
     user, db = _get_user_from_cookie(request)
-    body = await request.json()
-    target_id = body.get("target_user_id")
-    if not target_id:
-        raise HTTPException(400, "target_user_id required")
     try:
-        room_id = find_or_create_dm(db, DEFAULT_EVENT_ID, user["id"], target_id)
-    except ValueError:
-        raise HTTPException(404, "User not found")
-    return {"room_id": room_id}
+        body = await request.json()
+        target_id = body.get("target_user_id")
+        if not target_id:
+            raise HTTPException(400, "target_user_id required")
+        try:
+            room_id = find_or_create_dm(db, DEFAULT_EVENT_ID, user["id"], target_id)
+        except ValueError:
+            raise HTTPException(404, "User not found")
+        return {"room_id": room_id}
+    finally:
+        db.close()
 
 
 # --- Users ---
@@ -759,15 +831,21 @@ async def create_dm(request: Request):
 @router.post("/users/{user_id}/block")
 async def block_user_endpoint(user_id: str, request: Request):
     user, db = _get_user_from_cookie(request)
-    db_block_user(db, user["id"], user_id)
-    return {"ok": True}
+    try:
+        db_block_user(db, user["id"], user_id)
+        return {"ok": True}
+    finally:
+        db.close()
 
 
 @router.delete("/users/{user_id}/block")
 async def unblock_user_endpoint(user_id: str, request: Request):
     user, db = _get_user_from_cookie(request)
-    db_unblock_user(db, user["id"], user_id)
-    return {"ok": True}
+    try:
+        db_unblock_user(db, user["id"], user_id)
+        return {"ok": True}
+    finally:
+        db.close()
 
 
 # --- Media ---
@@ -776,54 +854,60 @@ async def unblock_user_endpoint(user_id: str, request: Request):
 @router.post("/upload/avatar")
 async def upload_avatar(request: Request, file: UploadFile = File(...)):
     user, db = _get_user_from_cookie(request)
+    try:
+        if not file.content_type or not file.content_type.startswith("image/"):
+            raise HTTPException(400, "Only image files allowed")
 
-    if not file.content_type or not file.content_type.startswith("image/"):
-        raise HTTPException(400, "Only image files allowed")
+        data = await file.read()
+        if len(data) > 500 * 1024:
+            raise HTTPException(400, "Max file size is 500KB")
 
-    data = await file.read()
-    if len(data) > 500 * 1024:
-        raise HTTPException(400, "Max file size is 500KB")
+        import time
 
-    import time
+        version = str(int(time.time()))
+        avatar_url = f"/chat/api/avatar/{user['id']}?v={version}"
+        db.execute(
+            "UPDATE users SET avatar_url = ? WHERE id = ?",
+            (avatar_url, user["id"]),
+        )
+        db.execute(
+            "INSERT OR REPLACE INTO avatars (user_id, data) VALUES (?, ?)",
+            (user["id"], data),
+        )
+        db.commit()
 
-    version = str(int(time.time()))
-    avatar_url = f"/chat/api/avatar/{user['id']}?v={version}"
-    db.execute(
-        "UPDATE users SET avatar_url = ? WHERE id = ?",
-        (avatar_url, user["id"]),
-    )
-    db.execute(
-        "INSERT OR REPLACE INTO avatars (user_id, data) VALUES (?, ?)",
-        (user["id"], data),
-    )
-    db.commit()
-
-    return {"url": avatar_url}
+        return {"url": avatar_url}
+    finally:
+        db.close()
 
 
 @router.get("/avatar/{user_id}")
 async def get_avatar(user_id: str):
     db = _get_db()
-    row = db.execute(
-        "SELECT data FROM avatars WHERE user_id = ?", (user_id,)
-    ).fetchone()
-    if not row:
-        raise HTTPException(404, "Avatar not found")
-    from starlette.responses import Response as RawResponse
+    try:
+        row = db.execute(
+            "SELECT data FROM avatars WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "Avatar not found")
+        from starlette.responses import Response as RawResponse
 
-    return RawResponse(
-        content=row["data"],
-        media_type="image/webp",
-        headers={
-            "Cache-Control": "no-cache",
-            "ETag": hashlib.md5(row["data"]).hexdigest(),
-        },
-    )
+        return RawResponse(
+            content=row["data"],
+            media_type="image/webp",
+            headers={
+                "Cache-Control": "no-cache",
+                "ETag": hashlib.md5(row["data"]).hexdigest(),
+            },
+        )
+    finally:
+        db.close()
 
 
 @router.post("/upload/image")
 async def upload_image(request: Request, file: UploadFile = File(...)):
     user, db = _get_user_from_cookie(request)
+    db.close()
 
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(400, "Only image files allowed")
@@ -872,6 +956,7 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
 @router.post("/upload/video")
 async def upload_video(request: Request, file: UploadFile = File(...)):
     user, db = _get_user_from_cookie(request)
+    db.close()
 
     if not file.content_type or not file.content_type.startswith("video/"):
         raise HTTPException(400, "Only video files allowed")
@@ -977,33 +1062,42 @@ async def chat_vapid_key():
 @router.post("/push/subscribe", status_code=204)
 async def chat_push_subscribe(request: Request):
     user, db = _get_user_from_cookie(request)
-    body = await request.json()
-    endpoint = body.get("endpoint", "")
-    keys = body.get("keys", {})
-    p256dh = keys.get("p256dh", "")
-    auth = keys.get("auth", "")
-    if not endpoint or not p256dh or not auth:
-        raise HTTPException(422, "Missing subscription fields")
-    save_push_subscription(db, user["id"], endpoint, p256dh, auth)
-    return Response(status_code=204)
+    try:
+        body = await request.json()
+        endpoint = body.get("endpoint", "")
+        keys = body.get("keys", {})
+        p256dh = keys.get("p256dh", "")
+        auth = keys.get("auth", "")
+        if not endpoint or not p256dh or not auth:
+            raise HTTPException(422, "Missing subscription fields")
+        save_push_subscription(db, user["id"], endpoint, p256dh, auth)
+        return Response(status_code=204)
+    finally:
+        db.close()
 
 
 @router.delete("/push/subscribe", status_code=204)
 async def chat_push_unsubscribe(request: Request):
     user, db = _get_user_from_cookie(request)
-    body = await request.json()
-    endpoint = body.get("endpoint", "")
-    if not endpoint:
-        raise HTTPException(422, "Missing endpoint")
-    delete_push_subscription(db, user["id"], endpoint)
-    return Response(status_code=204)
+    try:
+        body = await request.json()
+        endpoint = body.get("endpoint", "")
+        if not endpoint:
+            raise HTTPException(422, "Missing endpoint")
+        delete_push_subscription(db, user["id"], endpoint)
+        return Response(status_code=204)
+    finally:
+        db.close()
 
 
 @router.get("/push/status")
 async def chat_push_status(request: Request):
     user, db = _get_user_from_cookie(request)
-    count = get_push_subscription_count(db, user["id"])
-    return {"subscribed": count > 0}
+    try:
+        count = get_push_subscription_count(db, user["id"])
+        return {"subscribed": count > 0}
+    finally:
+        db.close()
 
 
 # --- Admin ---
@@ -1013,21 +1107,24 @@ async def chat_push_status(request: Request):
 async def admin_reports(request: Request, status: str = "pending"):
     _require_admin(request)
     db = _get_db()
-    reports = get_pending_reports(db) if status == "pending" else []
-    return [
-        {
-            "id": r["id"],
-            "reporter_name": r["reporter_name"],
-            "reported_name": r["reported_name"],
-            "message_snapshot": r["message_snapshot"],
-            "room_id": r["room_id"],
-            "reported_user_id": r["reported_user_id"],
-            "reason": r["reason"],
-            "status": r["status"],
-            "created_at": r["created_at"],
-        }
-        for r in reports
-    ]
+    try:
+        reports = get_pending_reports(db) if status == "pending" else []
+        return [
+            {
+                "id": r["id"],
+                "reporter_name": r["reporter_name"],
+                "reported_name": r["reported_name"],
+                "message_snapshot": r["message_snapshot"],
+                "room_id": r["room_id"],
+                "reported_user_id": r["reported_user_id"],
+                "reason": r["reason"],
+                "status": r["status"],
+                "created_at": r["created_at"],
+            }
+            for r in reports
+        ]
+    finally:
+        db.close()
 
 
 @router.patch("/admin/reports/{report_id}")
@@ -1038,8 +1135,11 @@ async def admin_resolve_report(report_id: str, request: Request):
     if status not in ("actioned", "dismissed"):
         raise HTTPException(400, "status must be 'actioned' or 'dismissed'")
     db = _get_db()
-    resolve_report(db, report_id, status)
-    return {"ok": True}
+    try:
+        resolve_report(db, report_id, status)
+        return {"ok": True}
+    finally:
+        db.close()
 
 
 @router.post("/admin/ban/{user_id}")
@@ -1048,27 +1148,33 @@ async def admin_ban(user_id: str, request: Request):
     body = await request.json()
     reason = body.get("reason", "Banned by admin")
     db = _get_db()
-    user = get_user(db, user_id)
-    if not user:
-        raise HTTPException(404, "User not found")
-    db_ban_user(
-        db,
-        user_id,
-        user["provider"],
-        user["provider_id"],
-        reason,
-        user["device_fingerprint"],
-    )
-    return {"ok": True}
+    try:
+        user = get_user(db, user_id)
+        if not user:
+            raise HTTPException(404, "User not found")
+        db_ban_user(
+            db,
+            user_id,
+            user["provider"],
+            user["provider_id"],
+            reason,
+            user["device_fingerprint"],
+        )
+        return {"ok": True}
+    finally:
+        db.close()
 
 
 @router.post("/admin/unban/{user_id}")
 async def admin_unban(user_id: str, request: Request):
     _require_admin(request)
     db = _get_db()
-    db.execute("DELETE FROM bans WHERE user_id = ?", (user_id,))
-    db.commit()
-    return {"ok": True}
+    try:
+        db.execute("DELETE FROM bans WHERE user_id = ?", (user_id,))
+        db.commit()
+        return {"ok": True}
+    finally:
+        db.close()
 
 
 # --- Admin page ---
