@@ -9,7 +9,7 @@
   --bg: #0a0a0a;
   --bg-card: #141414;
   --bg-surface: #1a1a1a;
-  --bg-hover: #222;
+  --bg-hover: #1e1e1e;
   --text: #e5e5e5;
   --text-sec: #999;
   --text-muted: #666;
@@ -22,72 +22,79 @@
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; }
+
+input, select, button { font-family: inherit; font-size: 13px; padding: 7px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-surface); color: var(--text); outline: none; }
+input:focus, select:focus { border-color: var(--text-muted); }
+button { cursor: pointer; }
+button:hover { opacity: 0.85; }
+select { -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px; }
+
 .login-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 16px; }
 .login-screen h2 { color: var(--text-sec); font-weight: 400; }
-.login-screen input { background: var(--bg-surface); border: 1px solid var(--border); color: var(--text); padding: 10px 16px; border-radius: var(--radius); width: 280px; font-size: 14px; outline: none; }
-.login-screen input:focus { border-color: var(--text-muted); }
-.login-screen button { background: var(--bg-surface); border: 1px solid var(--border); color: var(--text); padding: 10px 24px; border-radius: var(--radius); cursor: pointer; font-size: 14px; }
-.login-screen button:hover { background: var(--bg-hover); }
+.login-screen input { width: 280px; }
+.login-screen button { padding: 7px 24px; }
+
 .app { display: flex; flex-direction: column; height: 100%; }
-.stats-bar { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--bg-card); font-size: 13px; color: var(--text-sec); }
-.stat { display: flex; gap: 6px; align-items: center; }
-.stat b { color: var(--text); font-weight: 600; }
+.stats-bar { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 6px 16px; border-top: 1px solid var(--border); background: var(--bg-card); font-size: 11px; color: var(--text-muted); position: fixed; bottom: 0; left: 0; right: 0; z-index: 10; }
+.content { flex: 1; overflow-y: auto; padding: 16px; padding-bottom: 40px; }
+.stat { display: flex; gap: 4px; align-items: center; }
+.stat b { color: var(--text-sec); font-weight: 600; }
 .stat.alert b { color: var(--amber); }
 .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); background: var(--bg-card); overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .tab { padding: 10px 20px; cursor: pointer; color: var(--text-sec); border-bottom: 2px solid transparent; white-space: nowrap; font-size: 13px; user-select: none; transition: color 0.15s; }
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--text); border-bottom-color: var(--text); }
-.content { flex: 1; overflow-y: auto; padding: 16px; }
 .empty { color: var(--text-muted); text-align: center; padding: 60px 20px; }
-.card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; }
-.card .meta { color: var(--text-sec); font-size: 12px; margin-bottom: 6px; }
-.card .snapshot { background: var(--bg-surface); padding: 10px; border-radius: 4px; margin: 8px 0; font-size: 13px; word-break: break-word; }
-.card .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-.btn { padding: 6px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; color: #fff; min-height: 36px; }
-.btn-red { background: var(--red); }
-.btn-amber { background: var(--amber); color: #000; }
-.btn-neutral { background: var(--bg-surface); color: var(--text-sec); border: 1px solid var(--border); }
-.btn-blue { background: var(--blue); }
-.btn:hover { opacity: 0.85; }
-.search-bar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
-.search-bar input { flex: 1; min-width: 180px; background: var(--bg-surface); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: var(--radius); font-size: 13px; outline: none; }
-.search-bar input:focus { border-color: var(--text-muted); }
-.toggle { padding: 8px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-surface); color: var(--text-sec); cursor: pointer; font-size: 13px; white-space: nowrap; }
+
+.toolbar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+.toolbar input[type="text"] { flex: 1; min-width: 180px; }
+.toggle { color: var(--text-sec); white-space: nowrap; }
 .toggle.on { background: var(--green); color: #000; border-color: var(--green); }
-.user-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--radius); cursor: pointer; transition: background 0.1s; }
-.user-row:hover { background: var(--bg-hover); }
-.user-row .avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--bg-surface); flex-shrink: 0; object-fit: cover; }
-.user-row .info { flex: 1; min-width: 0; }
-.user-row .name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.user-row .sub { font-size: 12px; color: var(--text-sec); }
-.online-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
-.pill { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; white-space: nowrap; }
+
+.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tbl th { text-align: left; padding: 8px 10px; color: var(--text-muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg); z-index: 1; }
+.tbl td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.tbl tr:hover td { background: var(--bg-hover); }
+.tbl tr.expanded td { background: var(--bg-card); }
+.tbl .col-avatar { width: 36px; }
+.tbl .col-actions { width: 1%; white-space: nowrap; }
+.tbl .col-narrow { width: 1%; white-space: nowrap; }
+.tbl .truncate { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--bg-surface); object-fit: cover; display: block; }
+.online-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--green); margin-left: 4px; vertical-align: middle; }
+.pill { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; white-space: nowrap; display: inline-block; }
 .pill-red { background: rgba(239,68,68,0.15); color: var(--red); }
 .pill-amber { background: rgba(245,158,11,0.15); color: var(--amber); }
 .pill-green { background: rgba(34,197,94,0.15); color: var(--green); }
 .pill-blue { background: rgba(59,130,246,0.15); color: var(--blue); }
-.detail-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin: 0 0 10px 0; }
-.detail-panel h3 { font-size: 14px; color: var(--text-sec); margin: 14px 0 6px; font-weight: 500; }
+.pill-gray { background: rgba(150,150,150,0.15); color: var(--text-sec); }
+
+.btn { white-space: nowrap; color: #fff; border-color: transparent; }
+.btn-red { background: var(--red); }
+.btn-amber { background: var(--amber); color: #000; }
+.btn-neutral { background: var(--bg-surface); color: var(--text-sec); border-color: var(--border); }
+.btn-blue { background: var(--blue); }
+.btn-group { display: flex; gap: 4px; }
+
+.detail-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin: 8px 0; }
+.detail-panel h3 { font-size: 13px; color: var(--text-muted); margin: 12px 0 6px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
 .detail-panel h3:first-child { margin-top: 0; }
-.detail-row { font-size: 13px; padding: 4px 0; color: var(--text-sec); }
+.detail-row { font-size: 13px; padding: 3px 0; color: var(--text-sec); }
 .detail-row b { color: var(--text); font-weight: 500; }
-.strike-item { font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--border); }
-.strike-item:last-child { border-bottom: none; }
-.strike-item.expired { opacity: 0.4; }
-.log-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
-.log-item:last-child { border-bottom: none; }
-.log-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; flex-shrink: 0; margin-top: 2px; }
-.log-detail { flex: 1; min-width: 0; }
-.log-time { color: var(--text-muted); font-size: 12px; flex-shrink: 0; }
-.room-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
-.room-row:last-child { border-bottom: none; }
-.room-name { flex: 1; font-weight: 500; }
-.room-stat { color: var(--text-sec); min-width: 60px; text-align: right; }
+.detail-sub-row { font-size: 13px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+.detail-sub-row:last-child { border-bottom: none; }
+.detail-sub-row.expired { opacity: 0.4; }
+
+.snapshot { background: var(--bg-surface); padding: 8px 10px; border-radius: 4px; font-size: 13px; word-break: break-word; max-width: 300px; display: inline-block; }
+
 .load-more { text-align: center; padding: 16px; }
 .load-more button { background: var(--bg-surface); border: 1px solid var(--border); color: var(--text-sec); padding: 8px 24px; border-radius: var(--radius); cursor: pointer; font-size: 13px; }
+
 @media (max-width: 640px) {
-  .card .actions { flex-direction: column; }
-  .btn { width: 100%; text-align: center; }
+  .tbl th, .tbl td { padding: 6px 6px; }
+  .toolbar { flex-direction: column; }
+  .toolbar input[type="text"] { min-width: 0; width: 100%; }
 }
 </style>
 </head>
@@ -106,7 +113,7 @@ function verify(label, condition, detail) {
 const _p = new URLSearchParams(location.search);
 let token = _p.get('admin_token') || sessionStorage.getItem('chat_admin_token') || '';
 if (_p.get('admin_token')) {
-  dbg('[AUTH] token from URL param, storing in sessionStorage');
+  dbg('[AUTH] token from URL param');
   sessionStorage.setItem('chat_admin_token', token);
   history.replaceState(null, '', location.pathname);
 }
@@ -119,10 +126,7 @@ const H = () => {
 async function api(path, opts) {
   dbg('[API]', (opts?.method || 'GET'), path);
   const res = await fetch('/chat/api/admin' + path, {headers: H(), credentials: 'include', ...opts});
-  if (!res.ok) {
-    dbg('[API] error', res.status, path);
-    throw new Error(res.status);
-  }
+  if (!res.ok) { dbg('[API] error', res.status, path); throw new Error(res.status); }
   return res.json();
 }
 function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
@@ -147,12 +151,9 @@ let statsInterval = null;
 function renderLogin() {
   dbg('[AUTH] renderLogin');
   const el = document.getElementById('app');
-  el.innerHTML = `
-    <div class="login-screen">
-      <h2>Chat Admin</h2>
-      <input id="token-input" type="password" placeholder="Admin token" onkeydown="if(event.key==='Enter')doLogin()">
-      <button onclick="doLogin()">Sign in</button>
-    </div>`;
+  el.innerHTML = `<div class="login-screen"><h2>Chat Admin</h2>
+    <input id="token-input" type="password" placeholder="Admin token" onkeydown="if(event.key==='Enter')doLogin()">
+    <button onclick="doLogin()">Sign in</button></div>`;
   el.style.visibility = '';
 }
 function doLogin() {
@@ -168,30 +169,28 @@ async function init() {
   let stats;
   try {
     stats = await api('/stats');
-    dbg('[INIT] auth success, stats loaded');
+    dbg('[INIT] auth success');
   } catch {
-    dbg('[INIT] auth failed, showing login');
+    dbg('[INIT] auth failed');
     token = '';
     sessionStorage.removeItem('chat_admin_token');
     renderLogin();
     return;
   }
-  document.getElementById('app').innerHTML = `
-    <div class="app">
-      <div class="stats-bar" id="stats-bar">${renderStatsHTML(stats)}</div>
-      <div class="tabs" id="tabs">
-        <div class="tab active" data-tab="reports" onclick="switchTab('reports')">Reports</div>
-        <div class="tab" data-tab="users" onclick="switchTab('users')">Users</div>
-        <div class="tab" data-tab="banned" onclick="switchTab('banned')">Banned</div>
-        <div class="tab" data-tab="log" onclick="switchTab('log')">Log</div>
-        <div class="tab" data-tab="rooms" onclick="switchTab('rooms')">Rooms</div>
-      </div>
-      <div class="content" id="content"></div>
-    </div>`;
+  document.getElementById('app').innerHTML = `<div class="app">
+    <div class="tabs" id="tabs">
+      <div class="tab active" data-tab="rooms" onclick="switchTab('rooms')">Rooms</div>
+      <div class="tab" data-tab="users" onclick="switchTab('users')">Users</div>
+      <div class="tab" data-tab="reports" onclick="switchTab('reports')">Reports</div>
+      <div class="tab" data-tab="banned" onclick="switchTab('banned')">Banned</div>
+      <div class="tab" data-tab="log" onclick="switchTab('log')">Logs</div>
+    </div>
+    <div class="content" id="content"></div>
+    <div class="stats-bar" id="stats-bar">${renderStatsHTML(stats)}</div>
+  </div>`;
   statsInterval = setInterval(refreshStats, 15000);
-  currentTab = 'reports';
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'reports'));
-  await render.reports();
+  currentTab = 'rooms';
+  await render.rooms();
   document.getElementById('app').style.visibility = '';
 }
 
@@ -204,15 +203,12 @@ function renderStatsHTML(s) {
     `<div class="stat">Messages <b>${s.total_messages_active}</b></div>`;
 }
 async function refreshStats() {
-  dbg('[STATS] refreshStats');
-  try {
-    const s = await api('/stats');
-    document.getElementById('stats-bar').innerHTML = renderStatsHTML(s);
-  } catch {}
+  dbg('[STATS] refresh');
+  try { const s = await api('/stats'); document.getElementById('stats-bar').innerHTML = renderStatsHTML(s); } catch {}
 }
 
 function switchTab(tab) {
-  dbg('[TAB] switchTab', tab);
+  dbg('[TAB]', tab);
   currentTab = tab;
   expandedUser = null;
   logOffset = 0;
@@ -221,37 +217,48 @@ function switchTab(tab) {
   render[tab]();
 }
 
+function statusPills(u) {
+  const now = new Date().toISOString();
+  let h = '';
+  if (u.is_online) h += '<span class="pill pill-green">online</span> ';
+  if (u.is_banned) h += '<span class="pill pill-red">banned</span> ';
+  else if (u.muted_until && u.muted_until > now) h += '<span class="pill pill-amber">muted</span> ';
+  if (u.strike_count) h += '<span class="pill pill-amber">' + u.strike_count + ' strikes</span> ';
+  return h || '<span style="color:var(--text-muted)">--</span>';
+}
+
 const render = {
   reports: async () => {
     dbg('[RENDER] reports');
     const el = document.getElementById('content');
     try {
       const reports = await api('/reports?status=pending');
-      dbg('[RENDER] reports loaded:', reports.length);
+      dbg('[RENDER] reports:', reports.length);
       if (!reports.length) { el.innerHTML = '<div class="empty">No pending reports</div>'; return; }
-      el.innerHTML = reports.map(r => `
-        <div class="card" id="report-${esc(r.id)}">
-          <div class="meta">${esc(r.reporter_name)} reported <b>${esc(r.reported_name)}</b> &middot; ${ago(r.created_at)}</div>
-          <div style="margin-bottom:4px">Reason: ${esc(r.reason)}</div>
-          <div class="snapshot">${esc(r.message_snapshot)}</div>
-          <div class="actions">
-            <button class="btn btn-red" onclick="reportAction('${esc(r.id)}','${esc(r.reported_user_id)}','${esc(r.reported_name)}','ban')">Ban</button>
-            <button class="btn btn-amber" onclick="reportAction('${esc(r.id)}','${esc(r.reported_user_id)}','${esc(r.reported_name)}','strike')">Strike</button>
-            <button class="btn btn-neutral" onclick="reportAction('${esc(r.id)}','','','dismiss')">Dismiss</button>
-          </div>
-        </div>`).join('');
+      el.innerHTML = `<table class="tbl"><thead><tr>
+        <th>Reporter</th><th>Reported</th><th>Reason</th><th>Message</th><th class="col-narrow">Time</th><th class="col-actions">Actions</th>
+      </tr></thead><tbody>` + reports.map(r => `<tr>
+        <td>${esc(r.reporter_name)}</td>
+        <td><b>${esc(r.reported_name)}</b></td>
+        <td>${esc(r.reason)}</td>
+        <td><div class="snapshot">${esc(r.message_snapshot)}</div></td>
+        <td class="col-narrow" style="color:var(--text-muted)">${ago(r.created_at)}</td>
+        <td class="col-actions"><div class="btn-group">
+          <button class="btn btn-red" onclick="reportAction('${esc(r.id)}','${esc(r.reported_user_id)}','${esc(r.reported_name)}','ban')">Ban</button>
+          <button class="btn btn-amber" onclick="reportAction('${esc(r.id)}','${esc(r.reported_user_id)}','${esc(r.reported_name)}','strike')">Strike</button>
+          <button class="btn btn-neutral" onclick="reportAction('${esc(r.id)}','','','dismiss')">Dismiss</button>
+        </div></td>
+      </tr>`).join('') + '</tbody></table>';
     } catch { el.innerHTML = '<div class="empty">Failed to load reports</div>'; }
   },
 
   users: async () => {
     dbg('[RENDER] users');
     const el = document.getElementById('content');
-    el.innerHTML = `
-      <div class="search-bar">
-        <input id="user-search" type="text" placeholder="Search by name or username" value="${esc(searchQuery)}" oninput="onUserSearch(this.value)">
-        <button class="toggle ${onlineOnly ? 'on' : ''}" onclick="toggleOnline()">Online only</button>
-      </div>
-      <div id="user-list"></div>`;
+    el.innerHTML = `<div class="toolbar">
+      <input type="text" id="user-search" placeholder="Search by name or username" value="${esc(searchQuery)}" oninput="onUserSearch(this.value)">
+      <button class="toggle ${onlineOnly ? 'on' : ''}" onclick="toggleOnline()">Online only</button>
+    </div><div id="user-list"></div>`;
     loadUsers();
   },
 
@@ -260,10 +267,10 @@ const render = {
     const el = document.getElementById('content');
     try {
       const bans = await api('/bans');
-      let html = '<div class="search-bar"><input id="ban-search" type="text" placeholder="Search bans" oninput="filterBans(this.value)"></div>';
-      if (!bans.length) { el.innerHTML = html + '<div class="empty">No bans</div>'; return; }
       window._bansData = bans;
-      el.innerHTML = html + '<div id="ban-list"></div>';
+      el.innerHTML = `<div class="toolbar">
+        <input type="text" id="ban-search" placeholder="Search bans" oninput="filterBans(this.value)">
+      </div><div id="ban-list"></div>`;
       filterBans('');
     } catch { el.innerHTML = '<div class="empty">Failed to load bans</div>'; }
   },
@@ -273,7 +280,9 @@ const render = {
     const el = document.getElementById('content');
     logOffset = 0;
     logItems = [];
-    el.innerHTML = '<div class="search-bar"><input id="log-search" type="text" placeholder="Search log" oninput="filterLog(this.value)"></div><div id="log-list"></div>';
+    el.innerHTML = `<div class="toolbar">
+      <input type="text" id="log-search" placeholder="Search log" oninput="filterLog(this.value)">
+    </div><div id="log-list"></div>`;
     await loadMoreLog();
   },
 
@@ -282,30 +291,33 @@ const render = {
     const el = document.getElementById('content');
     try {
       const rooms = await api('/rooms');
-      let html = `<div class="search-bar">
-        <input id="room-name" type="text" placeholder="New room name" onkeydown="if(event.key==='Enter')createRoom()">
-        <select id="room-type" style="background:var(--bg-surface);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:var(--radius);font-size:13px">
-          <option value="general">general</option>
-          <option value="stage">stage</option>
+      let html = `<div class="toolbar">
+        <input type="text" id="room-name" placeholder="New room name" onkeydown="if(event.key==='Enter')createRoom()">
+        <select id="room-type">
+          <option value="general">general</option><option value="stage">stage</option>
         </select>
         <button class="btn btn-blue" onclick="createRoom()">Create</button>
       </div>`;
       if (!rooms.length) { el.innerHTML = html + '<div class="empty">No rooms</div>'; return; }
-      el.innerHTML = html + '<div class="card">' + rooms.map(r => `
-        <div class="room-row">
-          <span class="pill pill-${r.type === 'general' ? 'blue' : r.type === 'stage' ? 'green' : r.type === 'dm' ? 'amber' : 'blue'}">${esc(r.type)}</span>
-          <span class="room-name">${esc(r.name)}${r.is_main ? ' *' : ''}</span>
-          <span class="room-stat" style="color:var(--green)">${r.online_count} online</span>
-          <span class="room-stat">${r.message_count} msgs</span>
-          <span class="room-stat" style="color:var(--text-muted)">${ago(r.last_message_at)}</span>
-          ${r.is_main || r.type === 'dm' || r.type === 'meetup' ? '' : `<button class="btn btn-neutral" style="padding:4px 10px;font-size:12px" onclick="deleteRoom('${esc(r.id)}','${esc(r.name)}')">Delete</button>`}
-        </div>`).join('') + '</div>';
+      const typePill = t => t === 'general' ? 'pill-blue' : t === 'stage' ? 'pill-green' : t === 'dm' ? 'pill-amber' : 'pill-gray';
+      el.innerHTML = html + `<table class="tbl"><thead><tr>
+        <th>Name</th><th class="col-narrow">Type</th><th class="col-narrow">Online</th><th class="col-narrow">Messages</th><th class="col-narrow">Last activity</th><th class="col-actions">Actions</th>
+      </tr></thead><tbody>` + rooms.map(r => `<tr>
+        <td>${esc(r.name)}${r.is_main ? ' <span style="color:var(--text-muted)">(main)</span>' : ''}</td>
+        <td class="col-narrow"><span class="pill ${typePill(r.type)}">${esc(r.type)}</span></td>
+        <td class="col-narrow" style="color:var(--green)">${r.online_count}</td>
+        <td class="col-narrow">${r.message_count}</td>
+        <td class="col-narrow" style="color:var(--text-muted)">${ago(r.last_message_at)}</td>
+        <td class="col-actions">${r.is_main || r.type === 'dm' || r.type === 'meetup' ? '' :
+          `<button class="btn btn-neutral" onclick="deleteRoom('${esc(r.id)}','${esc(r.name)}')">Delete</button>`}</td>
+      </tr>`).join('') + '</tbody></table>';
     } catch { el.innerHTML = '<div class="empty">Failed to load rooms</div>'; }
   },
 };
 
+// --- Reports ---
 async function reportAction(reportId, userId, userName, action) {
-  dbg('[ACTION] reportAction', action, 'user:', userName, 'report:', reportId);
+  dbg('[ACTION] report', action, userName);
   if (action === 'ban') {
     if (!confirm('Ban ' + userName + '?')) return;
     await api('/ban/' + userId, {method: 'POST', body: JSON.stringify({reason: 'Banned via report'})});
@@ -320,20 +332,12 @@ async function reportAction(reportId, userId, userName, action) {
   render.reports();
 }
 
-function onUserSearch(q) {
-  dbg('[SEARCH] users:', q);
-  searchQuery = q;
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(loadUsers, 300);
-}
-function toggleOnline() {
-  dbg('[FILTER] toggleOnline:', !onlineOnly);
-  onlineOnly = !onlineOnly;
-  document.querySelector('.toggle')?.classList.toggle('on', onlineOnly);
-  loadUsers();
-}
+// --- Users ---
+function onUserSearch(q) { dbg('[SEARCH]', q); searchQuery = q; clearTimeout(searchTimer); searchTimer = setTimeout(loadUsers, 300); }
+function toggleOnline() { dbg('[FILTER] online:', !onlineOnly); onlineOnly = !onlineOnly; document.querySelector('.toggle')?.classList.toggle('on', onlineOnly); loadUsers(); }
+
 async function loadUsers() {
-  dbg('[USERS] loadUsers q:', searchQuery, 'online:', onlineOnly);
+  dbg('[USERS] load q:', searchQuery, 'online:', onlineOnly);
   const el = document.getElementById('user-list');
   if (!el) return;
   try {
@@ -342,111 +346,117 @@ async function loadUsers() {
     if (onlineOnly) params.set('online_only', 'true');
     const users = await api('/users?' + params);
     if (!users.length) { el.innerHTML = '<div class="empty">No users found</div>'; return; }
-    el.innerHTML = users.map(u => `
-      <div>
-        <div class="user-row" onclick="toggleUser('${esc(u.id)}')">
-          <img class="avatar" src="/chat/api/avatar/${esc(u.id)}?v=1" onerror="this.style.display='none'">
-          <div class="info">
-            <div class="name">${esc(u.display_name || u.username || u.id)}</div>
-            <div class="sub">${esc(u.username ? '@' + u.username : '')} ${esc(u.country || '')}</div>
-          </div>
-          ${u.is_online ? '<div class="online-dot"></div>' : ''}
-          ${u.strike_count ? '<span class="pill pill-amber">' + u.strike_count + ' strikes</span>' : ''}
-          ${u.muted_until && u.muted_until > new Date().toISOString() ? '<span class="pill pill-amber">MUTED</span>' : ''}
-          ${u.is_banned ? '<span class="pill pill-red">BANNED</span>' : ''}
-        </div>
-        <div id="detail-${esc(u.id)}"></div>
-      </div>`).join('');
+    el.innerHTML = `<table class="tbl"><thead><tr>
+      <th class="col-avatar"></th><th>Name</th><th>Username</th><th class="col-narrow">Country</th>
+      <th class="col-narrow">Provider</th><th class="col-narrow">Last seen</th><th>Status</th><th class="col-actions">Actions</th>
+    </tr></thead><tbody id="user-tbody">` + users.map(u => userRow(u)).join('') + '</tbody></table>';
     if (expandedUser) loadUserDetail(expandedUser);
   } catch { el.innerHTML = '<div class="empty">Failed to load users</div>'; }
 }
 
+function userRow(u) {
+  return `<tr class="${expandedUser === u.id ? 'expanded' : ''}" onclick="toggleUser('${esc(u.id)}')" style="cursor:pointer">
+    <td class="col-avatar"><img class="avatar" src="/chat/api/avatar/${esc(u.id)}?v=1" onerror="this.style.visibility='hidden'"></td>
+    <td>${esc(u.display_name || u.id)}</td>
+    <td style="color:var(--text-sec)">${esc(u.username ? '@' + u.username : '--')}</td>
+    <td class="col-narrow">${esc(u.country || '--')}</td>
+    <td class="col-narrow"><span class="pill pill-gray">${esc(u.provider)}</span></td>
+    <td class="col-narrow" style="color:var(--text-muted)">${ago(u.last_seen) || 'never'}</td>
+    <td>${statusPills(u)}</td>
+    <td class="col-actions"><div class="btn-group">
+      <button class="btn btn-amber" onclick="event.stopPropagation();adminStrike('${esc(u.id)}')">Strike</button>
+      <button class="btn btn-neutral" onclick="event.stopPropagation();adminMute('${esc(u.id)}')">Mute</button>
+      ${u.is_banned
+        ? `<button class="btn btn-neutral" onclick="event.stopPropagation();adminUnban('${esc(u.id)}','${esc(u.display_name||u.username)}')">Unban</button>`
+        : `<button class="btn btn-red" onclick="event.stopPropagation();adminBan('${esc(u.id)}','${esc(u.display_name||u.username)}')">Ban</button>`}
+    </div></td>
+  </tr><tr id="detail-row-${esc(u.id)}" style="display:none"><td colspan="8" style="padding:0"></td></tr>`;
+}
+
 async function toggleUser(userId) {
-  dbg('[USERS] toggleUser', userId);
+  dbg('[USERS] toggle', userId);
+  const row = document.getElementById('detail-row-' + userId);
   if (expandedUser === userId) {
     expandedUser = null;
-    const d = document.getElementById('detail-' + userId);
-    if (d) d.innerHTML = '';
+    if (row) row.style.display = 'none';
     return;
   }
+  document.querySelectorAll('[id^="detail-row-"]').forEach(r => r.style.display = 'none');
   expandedUser = userId;
-  document.querySelectorAll('[id^="detail-"]').forEach(d => d.innerHTML = '');
+  if (row) row.style.display = '';
   loadUserDetail(userId);
 }
 
 async function loadUserDetail(userId) {
-  dbg('[USERS] loadUserDetail', userId);
-  const el = document.getElementById('detail-' + userId);
-  if (!el) return;
+  dbg('[USERS] detail', userId);
+  const row = document.getElementById('detail-row-' + userId);
+  if (!row) return;
+  const cell = row.querySelector('td');
   try {
     const u = await api('/users/' + userId);
     const now = new Date().toISOString();
     const isMuted = u.muted_until && u.muted_until > now;
-    el.innerHTML = `
-      <div class="detail-panel">
-        <h3>Profile</h3>
-        <div class="detail-row"><b>Provider:</b> ${esc(u.provider)}</div>
-        <div class="detail-row"><b>Created:</b> ${ago(u.created_at)}</div>
-        <div class="detail-row"><b>Last seen:</b> ${ago(u.last_seen) || 'never'}</div>
-        <div class="detail-row"><b>Mute count:</b> ${u.mute_count} / 3</div>
-        <div class="detail-row"><b>Active messages:</b> ${u.message_count}</div>
-        ${isMuted ? '<div class="detail-row"><span class="pill pill-amber">MUTED until ' + new Date(u.muted_until).toLocaleTimeString() + '</span></div>' : ''}
-
-        <h3>Actions</h3>
-        <div class="actions">
-          <button class="btn btn-amber" onclick="adminStrike('${esc(u.id)}')">Strike</button>
-          <button class="btn btn-amber" onclick="adminMute('${esc(u.id)}')">Mute 30m</button>
-          ${u.bans.length ? `<button class="btn btn-neutral" onclick="adminUnban('${esc(u.id)}','${esc(u.display_name||u.username)}')">Unban</button>` : `<button class="btn btn-red" onclick="adminBan('${esc(u.id)}','${esc(u.display_name||u.username)}')">Ban</button>`}
-          <button class="btn btn-red" onclick="adminDeleteUser('${esc(u.id)}','${esc(u.display_name||u.username)}')">Delete user</button>
-        </div>
-
-        ${u.strikes.length ? '<h3>Strikes (' + u.strikes.length + ')</h3>' + u.strikes.map(s => '<div class="strike-item' + (s.is_active ? '' : ' expired') + '">' + esc(s.reason) + (s.detail ? ': ' + esc(s.detail) : '') + ' <span style="color:var(--text-muted);font-size:12px">' + ago(s.created_at) + (s.is_active ? ' (active)' : ' (expired)') + '</span></div>').join('') : ''}
-
-        ${u.reports_against.length ? '<h3>Reports against (' + u.reports_against.length + ')</h3>' + u.reports_against.map(r => '<div class="strike-item">' + esc(r.reason) + ': ' + esc(r.message_snapshot) + ' <span style="color:var(--text-muted);font-size:12px">' + ago(r.created_at) + ' (' + esc(r.status) + ')</span></div>').join('') : ''}
-
-        ${u.bans.length ? '<h3>Bans (' + u.bans.length + ')</h3>' + u.bans.map(b => '<div class="strike-item">' + esc(b.reason) + ' <span style="color:var(--text-muted);font-size:12px">' + ago(b.created_at) + '</span></div>').join('') : ''}
-      </div>`;
-  } catch { el.innerHTML = '<div class="detail-panel">Failed to load user details</div>'; }
+    row.style.display = '';
+    cell.innerHTML = `<div class="detail-panel">
+      <h3>Profile</h3>
+      <div class="detail-row"><b>Provider:</b> ${esc(u.provider)} &middot; <b>Created:</b> ${ago(u.created_at)} &middot; <b>Last seen:</b> ${ago(u.last_seen) || 'never'}</div>
+      <div class="detail-row"><b>Mute count:</b> ${u.mute_count} / 3 &middot; <b>Active messages:</b> ${u.message_count}</div>
+      ${isMuted ? '<div class="detail-row"><span class="pill pill-amber">MUTED until ' + new Date(u.muted_until).toLocaleTimeString() + '</span></div>' : ''}
+      <div style="margin-top:8px">
+        <button class="btn btn-red" onclick="event.stopPropagation();adminDeleteUser('${esc(u.id)}','${esc(u.display_name||u.username)}')">Delete user</button>
+      </div>
+      ${u.strikes.length ? '<h3>Strikes (' + u.strikes.length + ')</h3>' + u.strikes.map(s =>
+        '<div class="detail-sub-row' + (s.is_active ? '' : ' expired') + '">' +
+        esc(s.reason) + (s.detail ? ': ' + esc(s.detail) : '') +
+        ' <span style="color:var(--text-muted)">' + ago(s.created_at) + (s.is_active ? ' (active)' : ' (expired)') + '</span></div>'
+      ).join('') : ''}
+      ${u.reports_against.length ? '<h3>Reports (' + u.reports_against.length + ')</h3>' + u.reports_against.map(r =>
+        '<div class="detail-sub-row">' + esc(r.reason) + ': ' + esc(r.message_snapshot) +
+        ' <span style="color:var(--text-muted)">' + ago(r.created_at) + ' (' + esc(r.status) + ')</span></div>'
+      ).join('') : ''}
+      ${u.bans.length ? '<h3>Bans (' + u.bans.length + ')</h3>' + u.bans.map(b =>
+        '<div class="detail-sub-row">' + esc(b.reason) + ' <span style="color:var(--text-muted)">' + ago(b.created_at) + '</span></div>'
+      ).join('') : ''}
+    </div>`;
+  } catch { cell.innerHTML = '<div class="detail-panel">Failed to load details</div>'; }
 }
 
 async function adminStrike(userId) {
-  dbg('[ACTION] adminStrike', userId);
+  dbg('[ACTION] strike', userId);
   const result = await api('/strike/' + userId, {method: 'POST', body: JSON.stringify({reason: 'admin', detail: 'Manual admin action'})});
-  dbg('[ACTION] strike result:', result.action, 'count:', result.strike_count);
+  dbg('[ACTION] strike result:', result.action, result.strike_count);
   if (result.action === 'ban') alert('User has been banned (4th strike).');
   else if (result.action === 'mute') alert('User has been muted (3rd strike).');
-  refreshStats();
-  loadUserDetail(userId);
+  refreshStats(); loadUsers();
 }
 async function adminMute(userId) {
-  dbg('[ACTION] adminMute', userId);
+  dbg('[ACTION] mute', userId);
   await api('/mute/' + userId, {method: 'POST', body: JSON.stringify({minutes: 30})});
-  loadUserDetail(userId);
+  loadUsers();
 }
 async function adminBan(userId, name) {
-  dbg('[ACTION] adminBan', userId, name);
+  dbg('[ACTION] ban', userId);
   if (!confirm('Ban ' + name + '?')) return;
   await api('/ban/' + userId, {method: 'POST', body: JSON.stringify({reason: 'Banned by admin'})});
-  refreshStats();
-  loadUserDetail(userId);
+  refreshStats(); loadUsers();
 }
 async function adminUnban(userId, name) {
-  dbg('[ACTION] adminUnban', userId, name);
+  dbg('[ACTION] unban', userId);
   if (!confirm('Unban ' + name + '?')) return;
   await api('/unban/' + userId, {method: 'POST', body: '{}'});
-  refreshStats();
-  loadUserDetail(userId);
+  refreshStats(); loadUsers();
+}
+async function adminDeleteUser(userId, name) {
+  dbg('[ACTION] deleteUser', userId);
+  if (!confirm('Delete user ' + name + '? This cannot be undone.')) return;
+  await api('/users/' + userId, {method: 'DELETE'});
+  expandedUser = null;
+  refreshStats(); loadUsers();
 }
 
-async function unban(banId, name) {
-  dbg('[ACTION] unban', banId, name);
-  if (!confirm('Unban ' + (name || 'this user') + '?')) return;
-  await fetch('/chat/api/admin/bans/' + banId, {method: 'DELETE', headers: H(), credentials: 'include'});
-  refreshStats();
-  render.banned();
-}
-
+// --- Banned ---
 function filterBans(q) {
+  dbg('[FILTER] bans:', q);
   const el = document.getElementById('ban-list');
   if (!el || !window._bansData) return;
   const lq = q.toLowerCase();
@@ -456,65 +466,35 @@ function filterBans(q) {
     (b.reason || '').toLowerCase().includes(lq)
   ) : window._bansData;
   if (!filtered.length) { el.innerHTML = '<div class="empty">No matching bans</div>'; return; }
-  el.innerHTML = filtered.map(b => `
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-        <div>
-          <b>${esc(b.display_name || b.username || 'Deleted user')}</b>
-          <span style="color:var(--text-muted);font-size:12px;margin-left:8px">${esc(b.provider)}</span>
-        </div>
-        <span style="color:var(--text-muted);font-size:12px">${ago(b.created_at)}</span>
-      </div>
-      <div style="color:var(--text-sec);font-size:13px;margin-top:4px">${esc(b.reason)}</div>
-      <div class="actions">
-        <button class="btn btn-neutral" onclick="unban('${esc(b.ban_id)}','${esc(b.display_name || b.username || '')}')">Unban</button>
-      </div>
-    </div>`).join('');
+  el.innerHTML = `<table class="tbl"><thead><tr>
+    <th>Name</th><th>Username</th><th class="col-narrow">Provider</th><th>Reason</th><th class="col-narrow">Banned</th><th class="col-actions">Actions</th>
+  </tr></thead><tbody>` + filtered.map(b => `<tr>
+    <td>${esc(b.display_name || 'Deleted user')}</td>
+    <td style="color:var(--text-sec)">${esc(b.username ? '@' + b.username : '--')}</td>
+    <td class="col-narrow"><span class="pill pill-gray">${esc(b.provider)}</span></td>
+    <td class="truncate">${esc(b.reason)}</td>
+    <td class="col-narrow" style="color:var(--text-muted)">${ago(b.created_at)}</td>
+    <td class="col-actions"><button class="btn btn-neutral" onclick="unban('${esc(b.ban_id)}','${esc(b.display_name || b.username || '')}')">Unban</button></td>
+  </tr>`).join('') + '</tbody></table>';
+}
+async function unban(banId, name) {
+  dbg('[ACTION] unban', banId);
+  if (!confirm('Unban ' + (name || 'this user') + '?')) return;
+  await fetch('/chat/api/admin/bans/' + banId, {method: 'DELETE', headers: H(), credentials: 'include'});
+  refreshStats(); render.banned();
 }
 
-async function adminDeleteUser(userId, name) {
-  dbg('[ACTION] adminDeleteUser', userId, name);
-  if (!confirm('Delete user ' + name + '? This cannot be undone.')) return;
-  await api('/users/' + userId, {method: 'DELETE'});
-  expandedUser = null;
-  refreshStats();
-  loadUsers();
-}
-
-async function createRoom() {
-  dbg('[ACTION] createRoom');
-  const name = document.getElementById('room-name')?.value.trim();
-  const type = document.getElementById('room-type')?.value || 'general';
-  if (!name) return;
-  try {
-    await api('/rooms', {method: 'POST', body: JSON.stringify({name, type})});
-    refreshStats();
-    render.rooms();
-  } catch (e) {
-    alert('Failed to create room: ' + e.message);
-  }
-}
-
-async function deleteRoom(roomId, name) {
-  dbg('[ACTION] deleteRoom', roomId, name);
-  if (!confirm('Delete room "' + name + '"? All messages will be lost.')) return;
-  await api('/rooms/' + roomId, {method: 'DELETE'});
-  refreshStats();
-  render.rooms();
-}
-
+// --- Log ---
+let _logFilter = '';
 async function loadMoreLog() {
-  dbg('[LOG] loadMoreLog offset:', logOffset);
+  dbg('[LOG] load offset:', logOffset);
   try {
     const items = await api('/modlog?limit=50&offset=' + logOffset);
     logItems = logItems.concat(items);
     logOffset += items.length;
     renderLog(items.length === 50);
-  } catch {
-    document.getElementById('content').innerHTML = '<div class="empty">Failed to load log</div>';
-  }
+  } catch { (document.getElementById('log-list') || document.getElementById('content')).innerHTML = '<div class="empty">Failed to load log</div>'; }
 }
-let _logFilter = '';
 function renderLog(hasMore) {
   const el = document.getElementById('log-list') || document.getElementById('content');
   const items = _logFilter ? logItems.filter(i =>
@@ -523,22 +503,34 @@ function renderLog(hasMore) {
     (i.type || '').toLowerCase().includes(_logFilter)
   ) : logItems;
   if (!items.length) { el.innerHTML = '<div class="empty">No moderation activity</div>'; return; }
-  const badgeColor = t => t === 'ban' ? 'pill-red' : t === 'strike' ? 'pill-amber' : 'pill-blue';
-  const badgeLabel = t => t.replace('report_', '').replace('actioned', 'report actioned').replace('dismissed', 'report dismissed');
-  el.innerHTML = '<div class="card">' + items.map(item => `
-    <div class="log-item">
-      <span class="log-badge ${badgeColor(item.type)}">${esc(badgeLabel(item.type))}</span>
-      <div class="log-detail">
-        <b>${esc(item.display_name || 'Unknown')}</b>
-        <div style="color:var(--text-sec)">${esc(item.detail)}</div>
-      </div>
-      <span class="log-time">${ago(item.created_at)}</span>
-    </div>`).join('') + '</div>' +
+  const typePill = t => t === 'ban' ? 'pill-red' : t === 'strike' ? 'pill-amber' : 'pill-blue';
+  const typeLabel = t => t.replace('report_', '').replace('actioned', 'report actioned').replace('dismissed', 'report dismissed');
+  el.innerHTML = `<table class="tbl"><thead><tr>
+    <th class="col-narrow">Type</th><th>User</th><th>Detail</th><th class="col-narrow">Time</th>
+  </tr></thead><tbody>` + items.map(item => `<tr>
+    <td class="col-narrow"><span class="pill ${typePill(item.type)}">${esc(typeLabel(item.type))}</span></td>
+    <td>${esc(item.display_name || 'Unknown')}</td>
+    <td class="truncate" style="color:var(--text-sec)">${esc(item.detail)}</td>
+    <td class="col-narrow" style="color:var(--text-muted)">${ago(item.created_at)}</td>
+  </tr>`).join('') + '</tbody></table>' +
     (hasMore && !_logFilter ? '<div class="load-more"><button onclick="loadMoreLog()">Load more</button></div>' : '');
 }
-function filterLog(q) {
-  _logFilter = q.toLowerCase();
-  renderLog(logOffset > 0 && logItems.length === logOffset);
+function filterLog(q) { dbg('[FILTER] log:', q); _logFilter = q.toLowerCase(); renderLog(logOffset > 0 && logItems.length === logOffset); }
+
+// --- Rooms ---
+async function createRoom() {
+  dbg('[ACTION] createRoom');
+  const name = document.getElementById('room-name')?.value.trim();
+  const type = document.getElementById('room-type')?.value || 'general';
+  if (!name) return;
+  try { await api('/rooms', {method: 'POST', body: JSON.stringify({name, type})}); refreshStats(); render.rooms(); }
+  catch (e) { alert('Failed to create room: ' + e.message); }
+}
+async function deleteRoom(roomId, name) {
+  dbg('[ACTION] deleteRoom', roomId);
+  if (!confirm('Delete room "' + name + '"? All messages will be lost.')) return;
+  await api('/rooms/' + roomId, {method: 'DELETE'});
+  refreshStats(); render.rooms();
 }
 
 init();

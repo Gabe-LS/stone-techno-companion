@@ -1427,8 +1427,10 @@ async def admin_rooms(request: Request):
 
     online_counts = {}
     if hasattr(manager, "rooms"):
-        for room_id, conns in manager.rooms.items():
-            online_counts[room_id] = len(conns)
+        for room_id, room in manager.rooms.items():
+            online_counts[room_id] = (
+                len(room.connections) if hasattr(room, "connections") else 0
+            )
     db = _get_db()
     try:
         return get_room_stats(db, online_counts)
