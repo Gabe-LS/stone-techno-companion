@@ -119,7 +119,7 @@ Key design decisions:
 | `server/static/sw.js` | Service worker — handles push events and notification click navigation |
 | `server/static/manifest.json` | PWA manifest — enables Add to Home Screen and push on iOS |
 | `tests/test_chat_db.py` | 45 tests — users, sessions, bans, rooms, messages, meetups, DMs, blocks, reports, strikes |
-| `tests/test_chat_moderation.py` | 33 tests — word filter, strike system, AI moderation pipeline |
+| `tests/test_chat_moderation.py` | 39 tests — word filter, strike system (expiry, reset, mute cycling), AI moderation pipeline |
 | `tests/test_chat_ws.py` | 17 tests — WebSocket rooms, messaging, presence, moderation flow |
 | `tests/test_chat_api.py` | 31 tests — REST endpoints, auth, rooms, meetups, DMs, admin |
 
@@ -240,7 +240,8 @@ Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DB at `server/da
 | `VAPID_PRIVATE_KEY` | Yes | Push notification signing |
 | `VAPID_PUBLIC_KEY` | Yes | Push notification subscription |
 | `VAPID_CLAIMS_EMAIL` | Yes | VAPID contact email |
-| `GOOGLE_CLIENT_ID` | No | Google OAuth (not wired in frontend yet) |
+| `GOOGLE_CLIENT_ID` | Yes | Google OAuth client ID (from Google Cloud Console) |
+| `GOOGLE_CLIENT_SECRET` | Yes | Google OAuth client secret (for authorization code exchange) |
 
 ### DNS for Email (deftlab.dev)
 
@@ -283,10 +284,11 @@ Extends the existing FastAPI server — no separate service. Two SQLite database
 ### Chat Database (chat.db)
 
 ```
-users              — id, provider, provider_id, display_name, username, username_lower, country, avatar_url, color_index, device_fingerprint, muted_until
+users              — id, provider, provider_id, display_name, username, username_lower, country, avatar_url, color_index, device_fingerprint, muted_until, mute_count
 sessions           — id, user_id, token, expires_at
 email_tokens       — token, email, provider_id, fingerprint, expires_at (DB-backed, survives restart)
 avatars            — user_id (PK), data (BLOB, WebP 128x128)
+user_providers     — user_id, provider, provider_id (multi-provider auth: same user via Google + email)
 bans               — id, provider, provider_id, device_fingerprint, reason (survives user deletion)
 rooms              — id, event_id, type (general/meetup/dm), name, is_main
 room_memberships   — user_id + room_id (PK), joined_at, last_read_at (tracks joined rooms + unread)
@@ -297,7 +299,7 @@ meetup_attendees   — meetup_id + user_id (PK)
 dm_participants    — room_id + user_id (PK)
 blocks             — blocker_id + blocked_id (PK)
 reports            — id, reporter_id, reported_user_id, message_snapshot, reason, status
-strikes            — id, user_id, reason, detail
+strikes            — id, user_id, reason, detail, expires_at (4h TTL, reset on new strike)
 ```
 
 ### Auth
@@ -328,7 +330,7 @@ Layers 2 and 3 run in parallel via `asyncio.gather`. Word filter blocks before A
 
 **Optimistic delivery**: message saved to DB immediately, `message_acked` sent to sender, moderation runs in `asyncio.create_task`. If passes: broadcast to others. If fails: delete from DB, send `message_removed` + strike to sender.
 
-**Strike system**: 1st = warning, 2nd = 30-min mute, 3rd = permanent ban. Drug terms escalate: 2nd drug offense = immediate ban. Bans stored by provider_id + device fingerprint.
+**Strike system**: 4-step escalation with expiring strikes (4h TTL, reset on new violation). 1st = warning, 2nd = warning, 3rd = 30-min mute, 4th = permanent ban. Lifetime mute counter: 3 total mutes across the event = permanent ban (prevents cycling). Same escalation for all content types including drugs. Bans stored by provider_id + device fingerprint. `secure_delete=ON` zeros deleted data on disk.
 
 ### Chat UI
 
@@ -358,8 +360,8 @@ Main room auto-opens on login. Path-based routing (`/chat`, `/chat/r/{id}`, `/ch
 
 ### Chat Tests
 
-126 tests total: `python -m pytest tests/ -v`
+132 tests total: `python -m pytest tests/ -v`
 - `test_chat_db.py` (45) — all CRUD, cascade deletes, purge, wipe
-- `test_chat_moderation.py` (33) — word filter, AI mocks, strike escalation, drug detection
+- `test_chat_moderation.py` (39) — word filter, AI mocks, strike escalation (expiry, reset, mute cycling)
 - `test_chat_ws.py` (17) — WebSocket rooms, messaging, presence, moderation flow
 - `test_chat_api.py` (31) — REST endpoints, auth, rooms, meetups, DMs, admin

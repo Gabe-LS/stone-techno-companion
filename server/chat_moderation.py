@@ -317,46 +317,45 @@ def process_strike(
     detail: str | None,
     is_drug: bool = False,
 ) -> dict:
-    from chat_db import add_strike, mute_user, ban_user, get_user
+    from chat_db import (
+        add_strike,
+        mute_user,
+        ban_user,
+        get_user,
+        increment_mute_count,
+        MAX_MUTES_BEFORE_BAN,
+    )
 
     user = get_user(db, user_id)
     if not user:
         return {"action": "none"}
 
-    if is_drug:
-        count = add_strike(db, user_id, reason, detail)
-        if count >= 2:
-            ban_user(
-                db,
-                user_id,
-                user["provider"],
-                user["provider_id"],
-                f"Auto-ban: repeated drug-related content ({detail})",
-                user["device_fingerprint"],
-            )
-            return {"action": "ban", "strike_count": count, "reason": reason}
-        return {
-            "action": "strike",
-            "strike_count": count,
-            "reason": reason,
-            "message": "Drug-related content is not allowed. Next offense will result in a permanent ban.",
-        }
-
     count = add_strike(db, user_id, reason, detail)
 
-    if count >= 3:
+    if count >= 4:
         ban_user(
             db,
             user_id,
             user["provider"],
             user["provider_id"],
-            f"Auto-ban: 3 strikes ({detail})",
+            f"Auto-ban: 4 strikes ({detail})",
             user["device_fingerprint"],
         )
         return {"action": "ban", "strike_count": count, "reason": reason}
 
-    if count == 2:
+    if count == 3:
+        mute_count = increment_mute_count(db, user_id)
         mute_user(db, user_id, minutes=30)
+        if mute_count >= MAX_MUTES_BEFORE_BAN:
+            ban_user(
+                db,
+                user_id,
+                user["provider"],
+                user["provider_id"],
+                f"Auto-ban: muted {MAX_MUTES_BEFORE_BAN} times ({detail})",
+                user["device_fingerprint"],
+            )
+            return {"action": "ban", "strike_count": count, "reason": reason}
         return {
             "action": "mute",
             "strike_count": count,

@@ -41,6 +41,7 @@ def init_chat_db(db: sqlite3.Connection) -> None:
             session_id         TEXT,
             device_fingerprint TEXT,
             muted_until        TEXT,
+            mute_count         INTEGER NOT NULL DEFAULT 0,
             created_at         TEXT NOT NULL,
             last_seen          TEXT,
             UNIQUE (provider, provider_id)
@@ -178,7 +179,8 @@ def init_chat_db(db: sqlite3.Connection) -> None:
             user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             reason     TEXT NOT NULL,
             detail     TEXT,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            expires_at TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_strikes_user ON strikes(user_id);
 
@@ -211,6 +213,16 @@ def _migrate_chat_db(db: sqlite3.Connection) -> None:
         "SELECT id, provider, provider_id, created_at FROM users"
     )
     db.commit()
+
+    strike_cols = {r[1] for r in db.execute("PRAGMA table_info(strikes)").fetchall()}
+    if "expires_at" not in strike_cols:
+        db.execute("ALTER TABLE strikes ADD COLUMN expires_at TEXT")
+        db.commit()
+
+    user_cols = {r[1] for r in db.execute("PRAGMA table_info(users)").fetchall()}
+    if "mute_count" not in user_cols:
+        db.execute("ALTER TABLE users ADD COLUMN mute_count INTEGER NOT NULL DEFAULT 0")
+        db.commit()
 
 
 _chat_db_initialized = False
@@ -899,23 +911,45 @@ def purge_old_reports(db: sqlite3.Connection) -> int:
 # --- Strikes ---
 
 
+STRIKE_TTL_HOURS = 4
+MAX_MUTES_BEFORE_BAN = 3
+
+
 def add_strike(
     db: sqlite3.Connection, user_id: str, reason: str, detail: str | None = None
 ) -> int:
+    now = _now()
+    expires = (
+        datetime.now(timezone.utc) + timedelta(hours=STRIKE_TTL_HOURS)
+    ).isoformat()
     db.execute(
-        "INSERT INTO strikes (id, user_id, reason, detail, created_at) VALUES (?, ?, ?, ?, ?)",
-        (_uuid(), user_id, reason, detail, _now()),
+        "UPDATE strikes SET expires_at = ? WHERE user_id = ? AND expires_at > ?",
+        (expires, user_id, now),
+    )
+    db.execute(
+        "INSERT INTO strikes (id, user_id, reason, detail, created_at, expires_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (_uuid(), user_id, reason, detail, now, expires),
     )
     db.commit()
-    count = db.execute(
-        "SELECT COUNT(*) FROM strikes WHERE user_id = ?", (user_id,)
+    return db.execute(
+        "SELECT COUNT(*) FROM strikes WHERE user_id = ? AND expires_at > ?",
+        (user_id, now),
     ).fetchone()[0]
-    return count
 
 
 def get_strike_count(db: sqlite3.Connection, user_id: str) -> int:
     return db.execute(
-        "SELECT COUNT(*) FROM strikes WHERE user_id = ?", (user_id,)
+        "SELECT COUNT(*) FROM strikes WHERE user_id = ? AND expires_at > ?",
+        (user_id, _now()),
+    ).fetchone()[0]
+
+
+def increment_mute_count(db: sqlite3.Connection, user_id: str) -> int:
+    db.execute("UPDATE users SET mute_count = mute_count + 1 WHERE id = ?", (user_id,))
+    db.commit()
+    return db.execute(
+        "SELECT mute_count FROM users WHERE id = ?", (user_id,)
     ).fetchone()[0]
 
 

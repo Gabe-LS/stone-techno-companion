@@ -143,30 +143,40 @@ class TestStrikeSystem:
         assert result["strike_count"] == 1
         assert "flagged" in result["message"].lower()
 
-    def test_second_strike_mute(self, db, user):
+    def test_second_strike_warning(self, db, user):
         process_strike(db, user["id"], "word_filter", "first")
         result = process_strike(db, user["id"], "word_filter", "second")
-        assert result["action"] == "mute"
+        assert result["action"] == "strike"
         assert result["strike_count"] == 2
-        assert is_muted(db, user["id"])
 
-    def test_third_strike_ban(self, db, user):
+    def test_third_strike_mute(self, db, user):
         process_strike(db, user["id"], "word_filter", "1")
         process_strike(db, user["id"], "word_filter", "2")
         result = process_strike(db, user["id"], "word_filter", "3")
-        assert result["action"] == "ban"
+        assert result["action"] == "mute"
         assert result["strike_count"] == 3
+        assert is_muted(db, user["id"])
+
+    def test_fourth_strike_ban(self, db, user):
+        process_strike(db, user["id"], "word_filter", "1")
+        process_strike(db, user["id"], "word_filter", "2")
+        process_strike(db, user["id"], "word_filter", "3")
+        result = process_strike(db, user["id"], "word_filter", "4")
+        assert result["action"] == "ban"
         assert is_banned(db, "google", "google-123") is not None
 
     def test_drug_first_strike(self, db, user):
         result = process_strike(db, user["id"], "word_filter", "molly", is_drug=True)
         assert result["action"] == "strike"
         assert result["strike_count"] == 1
-        assert "next offense" in result["message"].lower()
 
-    def test_drug_second_strike_instant_ban(self, db, user):
+    def test_drug_follows_normal_escalation(self, db, user):
         process_strike(db, user["id"], "word_filter", "molly", is_drug=True)
-        result = process_strike(db, user["id"], "word_filter", "ket", is_drug=True)
+        process_strike(db, user["id"], "word_filter", "ket", is_drug=True)
+        result = process_strike(db, user["id"], "word_filter", "mdma", is_drug=True)
+        assert result["action"] == "mute"
+        assert result["strike_count"] == 3
+        result = process_strike(db, user["id"], "word_filter", "speed", is_drug=True)
         assert result["action"] == "ban"
         assert is_banned(db, "google", "google-123") is not None
 
@@ -174,8 +184,87 @@ class TestStrikeSystem:
         process_strike(db, user["id"], "word_filter", "1")
         process_strike(db, user["id"], "word_filter", "2")
         process_strike(db, user["id"], "word_filter", "3")
+        process_strike(db, user["id"], "word_filter", "4")
         ban = is_banned(db, "google", "google-123")
         assert ban["device_fingerprint"] == "fp-abc"
+
+    def test_repeated_mutes_trigger_ban(self, db, user):
+        for cycle in range(3):
+            process_strike(db, user["id"], "word_filter", f"a{cycle}")
+            process_strike(db, user["id"], "word_filter", f"b{cycle}")
+            result = process_strike(db, user["id"], "word_filter", f"c{cycle}")
+            if result["action"] == "ban":
+                break
+            db.execute("DELETE FROM strikes WHERE user_id = ?", (user["id"],))
+            db.execute(
+                "UPDATE users SET muted_until = NULL WHERE id = ?", (user["id"],)
+            )
+            db.commit()
+        assert result["action"] == "ban"
+        assert is_banned(db, "google", "google-123") is not None
+
+    def test_expired_strikes_dont_count(self, db, user):
+        from chat_db import add_strike, STRIKE_TTL_HOURS
+        from datetime import datetime, timedelta, timezone
+
+        expired = (
+            datetime.now(timezone.utc) - timedelta(hours=STRIKE_TTL_HOURS + 1)
+        ).isoformat()
+        db.execute(
+            "INSERT INTO strikes (id, user_id, reason, detail, created_at, expires_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("old-1", user["id"], "word_filter", "old", expired, expired),
+        )
+        db.execute(
+            "INSERT INTO strikes (id, user_id, reason, detail, created_at, expires_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("old-2", user["id"], "word_filter", "old", expired, expired),
+        )
+        db.commit()
+        result = process_strike(db, user["id"], "word_filter", "new")
+        assert result["action"] == "strike"
+        assert result["strike_count"] == 1
+
+    def test_new_strike_resets_expiry(self, db, user):
+        from chat_db import add_strike, STRIKE_TTL_HOURS
+        from datetime import datetime, timedelta, timezone
+
+        soon = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+        db.execute(
+            "INSERT INTO strikes (id, user_id, reason, detail, created_at, expires_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("about-to-expire", user["id"], "word_filter", "old", soon, soon),
+        )
+        db.commit()
+        process_strike(db, user["id"], "word_filter", "new")
+        row = db.execute(
+            "SELECT expires_at FROM strikes WHERE id = 'about-to-expire'"
+        ).fetchone()
+        new_expiry = datetime.fromisoformat(row[0])
+        assert new_expiry > datetime.fromisoformat(soon)
+
+    def test_fourth_strike_after_mute_ends(self, db, user):
+        process_strike(db, user["id"], "word_filter", "1")
+        process_strike(db, user["id"], "word_filter", "2")
+        result = process_strike(db, user["id"], "word_filter", "3")
+        assert result["action"] == "mute"
+        db.execute("UPDATE users SET muted_until = NULL WHERE id = ?", (user["id"],))
+        db.commit()
+        result = process_strike(db, user["id"], "word_filter", "4")
+        assert result["action"] == "ban"
+        assert is_banned(db, "google", "google-123") is not None
+
+    def test_mute_count_persists_after_strike_expiry(self, db, user):
+
+        process_strike(db, user["id"], "word_filter", "1")
+        process_strike(db, user["id"], "word_filter", "2")
+        process_strike(db, user["id"], "word_filter", "3")
+        db.execute("DELETE FROM strikes WHERE user_id = ?", (user["id"],))
+        db.execute("UPDATE users SET muted_until = NULL WHERE id = ?", (user["id"],))
+        db.commit()
+        u = get_user(db, user["id"])
+        assert u["mute_count"] == 1
+        assert get_strike_count(db, user["id"]) == 0
 
 
 # --- Full Pipeline ---
@@ -268,7 +357,15 @@ class TestModeratePipeline:
 
             r2 = await moderate_message(db, user["id"], "selling ket")
             assert r2["allowed"] is False
-            assert r2["action"] == "ban"
+            assert r2["action"] == "strike"
+
+            r3 = await moderate_message(db, user["id"], "got mdma")
+            assert r3["allowed"] is False
+            assert r3["action"] == "mute"
+
+            r4 = await moderate_message(db, user["id"], "more drugs")
+            assert r4["allowed"] is False
+            assert r4["action"] == "muted"
 
     @pytest.mark.asyncio
     async def test_three_strike_escalation(self, db, user):
@@ -289,20 +386,21 @@ class TestModeratePipeline:
                 assert r1["action"] == "strike"
 
                 r2 = await moderate_message(db, user["id"], "badword2")
-                assert r2["action"] == "mute"
+                assert r2["action"] == "strike"
 
                 r3 = await moderate_message(db, user["id"], "badword3")
-                assert r3["action"] == "muted"
+                assert r3["action"] == "mute"
 
-                from chat_db import mute_user
+                r4 = await moderate_message(db, user["id"], "badword3")
+                assert r4["action"] == "muted"
 
                 db.execute(
                     "UPDATE users SET muted_until = NULL WHERE id = ?", (user["id"],)
                 )
                 db.commit()
 
-                r4 = await moderate_message(db, user["id"], "badword3")
-                assert r4["action"] == "ban"
+                r5 = await moderate_message(db, user["id"], "badword3")
+                assert r5["action"] == "ban"
             finally:
                 wf_blocklist.unlink(missing_ok=True)
                 chat_moderation._word_filter = None
