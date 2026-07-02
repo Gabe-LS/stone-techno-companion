@@ -93,10 +93,8 @@ def _get_user_from_cookie(request: Request):
 
 
 def _require_admin(request: Request) -> None:
-    token = request.headers.get("X-Admin-Token") or request.query_params.get(
-        "admin_token"
-    )
-    if not ADMIN_TOKEN or not secrets.compare_digest(token or "", ADMIN_TOKEN):
+    token = request.headers.get("X-Admin-Token") or ""
+    if not ADMIN_TOKEN or not secrets.compare_digest(token, ADMIN_TOKEN):
         raise HTTPException(403, "Admin access required")
 
 
@@ -791,9 +789,6 @@ async def upload_avatar(request: Request, file: UploadFile = File(...)):
         (avatar_url, user["id"]),
     )
     db.execute(
-        "CREATE TABLE IF NOT EXISTS avatars (user_id TEXT PRIMARY KEY, data BLOB NOT NULL)"
-    )
-    db.execute(
         "INSERT OR REPLACE INTO avatars (user_id, data) VALUES (?, ?)",
         (user["id"], data),
     )
@@ -841,20 +836,23 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
     out_path = upload_dir / filename
     out_path.write_bytes(data)
 
-    try:
+    def _process_image():
         import pyvips
 
         img = pyvips.Image.new_from_buffer(data, "")
-        width, height = img.width, img.height
-
+        w, h = img.width, img.height
         mod_path = upload_dir / f"{token}_mod.webp"
-        max_side = max(width, height)
+        max_side = max(w, h)
         if max_side > 880:
             mod_scale = 800 / max_side
             mod = img.resize(mod_scale, kernel=pyvips.enums.Kernel.LANCZOS3)
             mod.webpsave(str(mod_path), Q=60)
         else:
             img.webpsave(str(mod_path), Q=60)
+        return w, h
+
+    try:
+        width, height = await asyncio.to_thread(_process_image)
     except Exception as e:
         out_path.unlink(missing_ok=True)
         logger.error("Image processing failed: %s", e)
@@ -889,7 +887,8 @@ async def upload_video(request: Request, file: UploadFile = File(...)):
     import subprocess
 
     try:
-        probe = subprocess.run(
+        probe = await asyncio.to_thread(
+            subprocess.run,
             [
                 "ffprobe",
                 "-v",
@@ -925,7 +924,8 @@ async def upload_video(request: Request, file: UploadFile = File(...)):
         frame_path = upload_dir / f"{token}_mod{i}.webp"
         seek = duration * frac if duration > 0 else 0
         try:
-            subprocess.run(
+            await asyncio.to_thread(
+                subprocess.run,
                 [
                     "ffmpeg",
                     "-v",
@@ -1072,7 +1072,6 @@ async def admin_unban(user_id: str, request: Request):
 
 @router.get("/admin", response_class=HTMLResponse)
 async def admin_page(request: Request):
-    _require_admin(request)
     return HTMLResponse("""<!DOCTYPE html>
 <html><head><title>Chat Admin</title>
 <style>
@@ -1090,8 +1089,8 @@ button { padding: 6px 16px; border: none; border-radius: 4px; cursor: pointer; f
 <div id="reports"></div>
 <script>
 const _p = new URLSearchParams(location.search);
-const token = _p.get('admin_token') || '';
-if (token) history.replaceState(null, '', location.pathname);
+const token = _p.get('admin_token') || sessionStorage.getItem('chat_admin_token') || '';
+if (_p.get('admin_token')) { sessionStorage.setItem('chat_admin_token', token); history.replaceState(null, '', location.pathname); }
 const _ah = {'X-Admin-Token': token};
 async function load() {
   const res = await fetch('/chat/api/admin/reports?status=pending', {headers: _ah});

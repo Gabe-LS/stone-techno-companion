@@ -117,7 +117,7 @@ _OEMBED_HOSTS = {
 }
 
 
-def _is_safe_preview_url(url: str) -> bool:
+async def _is_safe_preview_url(url: str) -> bool:
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         return False
@@ -131,7 +131,8 @@ def _is_safe_preview_url(url: str) -> bool:
     ):
         return False
     try:
-        for family, _, _, _, sockaddr in socket.getaddrinfo(hostname, None):
+        infos = await asyncio.to_thread(socket.getaddrinfo, hostname, None)
+        for family, _, _, _, sockaddr in infos:
             addr = ipaddress.ip_address(sockaddr[0])
             if (
                 addr.is_private
@@ -146,7 +147,7 @@ def _is_safe_preview_url(url: str) -> bool:
 
 
 async def _fetch_link_preview(url: str) -> dict | None:
-    if not _is_safe_preview_url(url):
+    if not await _is_safe_preview_url(url):
         return None
     try:
         from chat_moderation import _get_http_client
@@ -198,7 +199,7 @@ async def _fetch_og_preview(client, url: str) -> dict | None:
     )
     if resp.is_redirect:
         location = resp.headers.get("location", "")
-        if not location or not _is_safe_preview_url(location):
+        if not location or not await _is_safe_preview_url(location):
             return None
         resp = await asyncio.wait_for(
             client.get(location, headers=_og_headers, follow_redirects=False),
@@ -1169,6 +1170,13 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     "SELECT room_id FROM messages WHERE id = ?", (message_id,)
                 ).fetchone()
                 if msg_row:
+                    r_room = get_room(db, msg_row["room_id"])
+                    if r_room and r_room["type"] == "dm":
+                        if not db.execute(
+                            "SELECT 1 FROM dm_participants WHERE room_id = ? AND user_id = ?",
+                            (msg_row["room_id"], user_id),
+                        ).fetchone():
+                            continue
                     add_reaction(db, message_id, user_id, emoji)
                     reactions = get_message_reactions(db, message_id)
                     await manager.broadcast_to_room(
@@ -1189,6 +1197,13 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     "SELECT room_id FROM messages WHERE id = ?", (message_id,)
                 ).fetchone()
                 if msg_row:
+                    r_room = get_room(db, msg_row["room_id"])
+                    if r_room and r_room["type"] == "dm":
+                        if not db.execute(
+                            "SELECT 1 FROM dm_participants WHERE room_id = ? AND user_id = ?",
+                            (msg_row["room_id"], user_id),
+                        ).fetchone():
+                            continue
                     remove_reaction(db, message_id, user_id, emoji)
                     reactions = get_message_reactions(db, message_id)
                     await manager.broadcast_to_room(
@@ -1249,6 +1264,13 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     "SELECT * FROM messages WHERE id = ?", (message_id,)
                 ).fetchone()
                 if msg_row:
+                    report_room = get_room(db, msg_row["room_id"])
+                    if report_room and report_room["type"] == "dm":
+                        if not db.execute(
+                            "SELECT 1 FROM dm_participants WHERE room_id = ? AND user_id = ?",
+                            (msg_row["room_id"], user_id),
+                        ).fetchone():
+                            continue
                     create_report(
                         db,
                         user_id,

@@ -167,6 +167,11 @@ def _render_markdown(text: str) -> str:
     result = _re.sub(
         r"<(script|iframe|object|embed|form)[^>]*/?>", "", result, flags=_re.IGNORECASE
     )
+    result = _re.sub(r"""\bon\w+\s*=\s*["'][^"']*["']""", "", result, flags=_re.IGNORECASE)
+    result = _re.sub(r"\bon\w+\s*=\s*\S+", "", result, flags=_re.IGNORECASE)
+    result = _re.sub(
+        r"""href\s*=\s*["']javascript:[^"']*["']""", "", result, flags=_re.IGNORECASE
+    )
     return result.strip()
 
 

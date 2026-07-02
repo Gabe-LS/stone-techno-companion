@@ -101,6 +101,10 @@ def _init_db() -> None:
     # Migrate from old 6-digit code schema (must run before index creation)
     try:
         db.execute("ALTER TABLE sessions RENAME COLUMN edit_code TO session_id")
+        db.commit()
+    except sqlite3.OperationalError:
+        pass
+    try:
         db.execute("ALTER TABLE sessions RENAME COLUMN share_code TO share_token")
         db.commit()
     except sqlite3.OperationalError:

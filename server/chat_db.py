@@ -197,12 +197,21 @@ def _migrate_chat_db(db: sqlite3.Connection) -> None:
         db.commit()
 
 
+_chat_db_initialized = False
+
+
 def get_chat_db() -> sqlite3.Connection:
+    global _chat_db_initialized
     CHAT_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(str(CHAT_DB_PATH))
     db.row_factory = sqlite3.Row
-    init_chat_db(db)
-    _migrate_chat_db(db)
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute("PRAGMA busy_timeout=5000")
+    db.execute("PRAGMA foreign_keys=ON")
+    if not _chat_db_initialized:
+        init_chat_db(db)
+        _migrate_chat_db(db)
+        _chat_db_initialized = True
     return db
 
 
