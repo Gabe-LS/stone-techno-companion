@@ -895,6 +895,8 @@ def purge_expired_sessions(db: sqlite3.Connection) -> None:
 
 def wipe_all_chat_data(db: sqlite3.Connection) -> None:
     for table in (
+        "avatars",
+        "email_tokens",
         "chat_push_subscriptions",
         "strikes",
         "reports",

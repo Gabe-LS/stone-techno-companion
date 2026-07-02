@@ -268,13 +268,17 @@ def _get_room_notification_targets(db, room_id: str, sender_id: str) -> list[str
             "SELECT user_id FROM meetup_attendees WHERE meetup_id = ? AND user_id != ?",
             (room_id, sender_id),
         ).fetchall()
-        return [r["user_id"] for r in rows]
+        return [
+            r["user_id"] for r in rows if not is_blocked(db, r["user_id"], sender_id)
+        ]
     else:
         rows = db.execute(
             "SELECT user_id FROM room_memberships WHERE room_id = ? AND user_id != ?",
             (room_id, sender_id),
         ).fetchall()
-        return [r["user_id"] for r in rows]
+        return [
+            r["user_id"] for r in rows if not is_blocked(db, r["user_id"], sender_id)
+        ]
 
 
 async def _send_chat_push(

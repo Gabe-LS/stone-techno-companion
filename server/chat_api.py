@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import secrets
+import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -233,6 +234,10 @@ async def auth_email_start(request: Request):
     if len(_email_rate[ip]) >= 5:
         raise HTTPException(429, "Too many requests. Try again later.")
     _email_rate[ip].append(now)
+    if len(_email_rate) > 1000:
+        stale = [k for k, v in _email_rate.items() if all(now - t >= 900 for t in v)]
+        for k in stale:
+            del _email_rate[k]
     body = await request.json()
     email = (body.get("email") or "").strip().lower()
     fingerprint = body.get("device_fingerprint")
@@ -332,9 +337,11 @@ async def auth_logout(request: Request, response: Response):
     token = request.cookies.get("chat_session")
     if token:
         db = _get_db()
-        db.execute("DELETE FROM sessions WHERE token = ?", (token,))
-        db.commit()
-        db.close()
+        try:
+            db.execute("DELETE FROM sessions WHERE token = ?", (token,))
+            db.commit()
+        finally:
+            db.close()
     response.delete_cookie("chat_session")
     return {"ok": True}
 
@@ -486,8 +493,11 @@ async def auth_update_profile(request: Request):
             params.append(avatar_url)
         if updates:
             params.append(user["id"])
-            db.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", params)
-            db.commit()
+            try:
+                db.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", params)
+                db.commit()
+            except sqlite3.IntegrityError:
+                raise HTTPException(400, "Username taken")
         return {"ok": True}
     finally:
         db.close()

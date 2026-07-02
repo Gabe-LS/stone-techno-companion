@@ -448,7 +448,7 @@ async def moderate_message(
         logger.warning("Content detection error: %s", drug_result)
         drug_result = None
 
-    if ai_errored and drug_errored and os.environ.get("OPENAI_API_KEY"):
+    if (ai_errored or drug_errored) and os.environ.get("OPENAI_API_KEY"):
         return {
             "allowed": False,
             "reason": "Message could not be verified. Please try again.",
