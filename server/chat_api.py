@@ -65,6 +65,11 @@ from chat_db import (
     get_room_stats,
     mute_user,
     delete_room,
+    update_last_seen,
+    update_last_active,
+    delete_user_messages,
+    find_user_by_push_endpoint,
+    get_reachable_member_counts,
 )
 from chat_ws import handle_chat_ws, purge_loop
 
@@ -431,8 +436,22 @@ async def auth_logout(request: Request, response: Response):
 async def auth_delete_account(request: Request, response: Response):
     user, db = _get_user_from_cookie(request)
     try:
+        removed = delete_user_messages(db, user["id"])
         delete_user(db, user["id"])
         response.delete_cookie("chat_session")
+        from chat_ws import manager
+
+        for batch in removed:
+            asyncio.create_task(
+                manager.broadcast_to_room(
+                    batch["room_id"],
+                    {
+                        "event": "messages_expired",
+                        "room_id": batch["room_id"],
+                        "message_ids": batch["message_ids"],
+                    },
+                )
+            )
         return {"ok": True}
     finally:
         db.close()
@@ -627,6 +646,8 @@ async def list_rooms(request: Request):
             ).fetchall()
             member_rooms = {r["room_id"] for r in rows}
         rooms = get_rooms_by_event(db, DEFAULT_EVENT_ID)
+        room_ids = [r["id"] for r in rooms]
+        reachable = get_reachable_member_counts(db, room_ids)
         last_msgs = {}
         for row in db.execute(
             "SELECT room_id, MAX(created_at) as last_at FROM messages "
@@ -641,6 +662,7 @@ async def list_rooms(request: Request):
                 "name": r["name"],
                 "is_main": bool(r["is_main"]),
                 "online_count": len(manager.get_online_users(r["id"])),
+                "member_count": reachable.get(r["id"], 0),
                 "is_member": r["id"] in member_rooms,
                 "last_message_at": last_msgs.get(r["id"], ""),
             }
@@ -1257,6 +1279,25 @@ async def chat_push_status(request: Request):
         db.close()
 
 
+@router.post("/push/ack", status_code=204)
+async def chat_push_ack(request: Request):
+    body = await request.json()
+    endpoint = body.get("endpoint")
+    action = body.get("action")
+    if not endpoint or action not in ("delivered", "clicked", "dismissed"):
+        raise HTTPException(400, "endpoint and action required")
+    db = _get_db()
+    try:
+        user = find_user_by_push_endpoint(db, endpoint)
+        if not user:
+            return Response(status_code=204)
+        update_last_seen(db, user["id"])
+        if action == "clicked":
+            update_last_active(db, user["id"])
+    finally:
+        db.close()
+
+
 # --- Admin ---
 
 
@@ -1449,6 +1490,25 @@ async def admin_mute_user(user_id: str, request: Request):
         if not user:
             raise HTTPException(404, "User not found")
         mute_user(db, user_id, minutes=minutes)
+        removed = delete_user_messages(db, user_id)
+        from chat_ws import manager
+
+        for batch in removed:
+            asyncio.create_task(
+                manager.broadcast_to_room(
+                    batch["room_id"],
+                    {
+                        "event": "messages_expired",
+                        "room_id": batch["room_id"],
+                        "message_ids": batch["message_ids"],
+                    },
+                )
+            )
+        asyncio.create_task(
+            manager.send_to_user(
+                user_id, {"event": "muted", "reason": "Muted by admin"}
+            )
+        )
         return {"ok": True}
     finally:
         db.close()
@@ -1478,7 +1538,26 @@ async def admin_delete_user(user_id: str, request: Request):
         user = get_user(db, user_id)
         if not user:
             raise HTTPException(404, "User not found")
+        removed = delete_user_messages(db, user_id)
         delete_user(db, user_id)
+        from chat_ws import manager
+
+        for batch in removed:
+            asyncio.create_task(
+                manager.broadcast_to_room(
+                    batch["room_id"],
+                    {
+                        "event": "messages_expired",
+                        "room_id": batch["room_id"],
+                        "message_ids": batch["message_ids"],
+                    },
+                )
+            )
+        for conn_id, ws in list(manager.user_conns.get(user_id, {}).items()):
+            try:
+                asyncio.create_task(ws.close(code=4003, reason="Account deleted"))
+            except Exception:
+                pass
         return {"ok": True}
     finally:
         db.close()

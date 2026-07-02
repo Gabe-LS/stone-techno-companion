@@ -40,6 +40,8 @@ from chat_db import (
     is_blocked,
     create_report,
     update_last_seen,
+    update_last_active,
+    delete_user_messages,
     purge_expired_messages,
     purge_expired_meetups,
     purge_expired_sessions,
@@ -388,6 +390,15 @@ class ConnectionManager:
         self.user_unread: dict[str, dict[str, int]] = {}
         self._room_meta: dict[str, dict] = {}
         self._recent_msgs: dict[str, list] = {}
+        self._last_active_ts: dict[str, float] = {}
+
+    def should_update_last_active(self, user_id: str, interval: float = 60.0) -> bool:
+        now = time.monotonic()
+        last = self._last_active_ts.get(user_id, 0)
+        if now - last >= interval:
+            self._last_active_ts[user_id] = now
+            return True
+        return False
 
     def _get_room(self, room_id: str) -> ChatRoom:
         if room_id not in self.rooms:
@@ -417,6 +428,7 @@ class ConnectionManager:
             self.user_unread.pop(user_id, None)
             self._rate_buckets.pop(user_id, None)
             self._recent_msgs.pop(user_id, None)
+            self._last_active_ts.pop(user_id, None)
             for room_id in rooms:
                 room = self.rooms.get(room_id)
                 if room and not any(u == user_id for u in room.conn_users.values()):
@@ -615,6 +627,17 @@ async def _moderate_and_broadcast(
                     "reason": mod_result["reason"],
                 },
             )
+            if mod_result["action"] in ("ban", "mute"):
+                removed = delete_user_messages(db, user_id)
+                for batch in removed:
+                    await mgr.broadcast_to_room(
+                        batch["room_id"],
+                        {
+                            "event": "messages_expired",
+                            "room_id": batch["room_id"],
+                            "message_ids": batch["message_ids"],
+                        },
+                    )
             if mod_result["action"] == "ban":
                 await mgr.send_to_user(
                     user_id, {"event": "banned", "reason": mod_result["reason"]}
@@ -623,6 +646,15 @@ async def _moderate_and_broadcast(
                     await ws.close(code=4003, reason="Banned")
                 except Exception:
                     pass
+            elif mod_result["action"] == "mute":
+                await mgr.send_to_user(
+                    user_id,
+                    {
+                        "event": "muted",
+                        "reason": mod_result["reason"],
+                        "message": mod_result.get("message", ""),
+                    },
+                )
             elif mod_result.get("strike_count"):
                 await mgr.send_to_user(
                     user_id,
@@ -763,6 +795,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
     color_index = user["color_index"] if "color_index" in ukeys else 0
     avatar_url = user["avatar_url"] if "avatar_url" in ukeys else ""
     await manager.connect(ws, user_id, conn_id)
+    update_last_seen(db, user_id)
 
     memberships = get_user_memberships(db, user_id)
     dm_rooms = db.execute(
@@ -1326,6 +1359,20 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     await manager.send_to_user(
                         user_id, {"event": "report_confirmed", "message_id": message_id}
                     )
+
+            if event in (
+                "send_message",
+                "typing",
+                "add_reaction",
+                "remove_reaction",
+                "delete_message",
+                "create_meetup",
+                "join_meetup",
+                "leave_meetup",
+                "report_message",
+                "mark_read",
+            ) and manager.should_update_last_active(user_id):
+                update_last_active(db, user_id)
 
     except WebSocketDisconnect:
         pass

@@ -44,6 +44,7 @@ def init_chat_db(db: sqlite3.Connection) -> None:
             mute_count         INTEGER NOT NULL DEFAULT 0,
             created_at         TEXT NOT NULL,
             last_seen          TEXT,
+            last_active        TEXT,
             UNIQUE (provider, provider_id)
         );
         CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username_lower) WHERE username_lower != '';
@@ -223,6 +224,9 @@ def _migrate_chat_db(db: sqlite3.Connection) -> None:
     if "mute_count" not in user_cols:
         db.execute("ALTER TABLE users ADD COLUMN mute_count INTEGER NOT NULL DEFAULT 0")
         db.commit()
+    if "last_active" not in user_cols:
+        db.execute("ALTER TABLE users ADD COLUMN last_active TEXT")
+        db.commit()
 
 
 _chat_db_initialized = False
@@ -324,6 +328,11 @@ def update_display_name(db: sqlite3.Connection, user_id: str, name: str) -> None
 
 def update_last_seen(db: sqlite3.Connection, user_id: str) -> None:
     db.execute("UPDATE users SET last_seen = ? WHERE id = ?", (_now(), user_id))
+    db.commit()
+
+
+def update_last_active(db: sqlite3.Connection, user_id: str) -> None:
+    db.execute("UPDATE users SET last_active = ? WHERE id = ?", (_now(), user_id))
     db.commit()
 
 
@@ -960,14 +969,113 @@ def increment_mute_count(db: sqlite3.Connection, user_id: str) -> int:
     ).fetchone()[0]
 
 
+# --- Reachability ---
+
+REACHABILITY_HOURS = 2
+
+
+def get_reachable_member_count(db: sqlite3.Connection, room_id: str) -> int:
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(hours=REACHABILITY_HOURS)
+    ).isoformat()
+    return db.execute(
+        "SELECT COUNT(DISTINCT rm.user_id) FROM room_memberships rm "
+        "JOIN users u ON u.id = rm.user_id "
+        "WHERE rm.room_id = ? AND ("
+        "  u.last_seen > ? OR "
+        "  EXISTS (SELECT 1 FROM chat_push_subscriptions cps WHERE cps.user_id = rm.user_id)"
+        ")",
+        (room_id, cutoff),
+    ).fetchone()[0]
+
+
+def get_reachable_member_counts(
+    db: sqlite3.Connection, room_ids: list[str]
+) -> dict[str, int]:
+    if not room_ids:
+        return {}
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(hours=REACHABILITY_HOURS)
+    ).isoformat()
+    placeholders = ",".join("?" for _ in room_ids)
+    rows = db.execute(
+        f"SELECT rm.room_id, COUNT(DISTINCT rm.user_id) AS cnt "
+        f"FROM room_memberships rm "
+        f"JOIN users u ON u.id = rm.user_id "
+        f"WHERE rm.room_id IN ({placeholders}) AND ("
+        f"  u.last_seen > ? OR "
+        f"  EXISTS (SELECT 1 FROM chat_push_subscriptions cps WHERE cps.user_id = rm.user_id)"
+        f") GROUP BY rm.room_id",
+        list(room_ids) + [cutoff],
+    ).fetchall()
+    return {r["room_id"]: r["cnt"] for r in rows}
+
+
+def delete_user_messages(db: sqlite3.Connection, user_id: str) -> list[dict]:
+    now = _now()
+    msgs = db.execute(
+        "SELECT id, room_id, type, content FROM messages "
+        "WHERE user_id = ? AND expires_at > ?",
+        (user_id, now),
+    ).fetchall()
+
+    by_room: dict[str, list[str]] = {}
+    for msg in msgs:
+        by_room.setdefault(msg["room_id"], []).append(msg["id"])
+        if msg["type"] in ("image", "video"):
+            import json
+
+            try:
+                content = json.loads(msg["content"])
+                url = content.get("url", "")
+                if url:
+                    uploads = Path(__file__).resolve().parent / "chat" / "uploads"
+                    filename = url.rsplit("/", 1)[-1]
+                    (uploads / filename).unlink(missing_ok=True)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+    if msgs:
+        db.execute(
+            "DELETE FROM messages WHERE user_id = ? AND expires_at > ?",
+            (user_id, now),
+        )
+        db.commit()
+
+    return [{"room_id": rid, "message_ids": ids} for rid, ids in by_room.items()]
+
+
+def find_user_by_push_endpoint(
+    db: sqlite3.Connection, endpoint: str
+) -> sqlite3.Row | None:
+    row = db.execute(
+        "SELECT user_id FROM chat_push_subscriptions WHERE endpoint = ?",
+        (endpoint,),
+    ).fetchone()
+    if not row:
+        return None
+    return get_user(db, row["user_id"])
+
+
 # --- Admin queries ---
 
 
 def get_admin_stats(db: sqlite3.Connection, online_user_ids: set[str]) -> dict:
     now = _now()
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(hours=REACHABILITY_HOURS)
+    ).isoformat()
+    reachable = db.execute(
+        "SELECT COUNT(DISTINCT u.id) FROM users u WHERE "
+        "u.last_seen > ? OR EXISTS ("
+        "  SELECT 1 FROM chat_push_subscriptions cps WHERE cps.user_id = u.id"
+        ")",
+        (cutoff,),
+    ).fetchone()[0]
     return {
         "total_users": db.execute("SELECT COUNT(*) FROM users").fetchone()[0],
         "online_count": len(online_user_ids),
+        "reachable_count": reachable,
         "total_messages_active": db.execute(
             "SELECT COUNT(*) FROM messages WHERE expires_at > ?", (now,)
         ).fetchone()[0],
@@ -1007,9 +1115,10 @@ def search_users(
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
     rows = db.execute(
         f"SELECT u.id, u.display_name, u.username, u.country, u.avatar_url, "
-        f"u.provider, u.muted_until, u.mute_count, u.created_at, u.last_seen, "
+        f"u.provider, u.muted_until, u.mute_count, u.created_at, u.last_seen, u.last_active, "
         f"(SELECT COUNT(*) FROM strikes s WHERE s.user_id = u.id AND s.expires_at > ?) AS strike_count, "
-        f"(SELECT COUNT(*) FROM bans b WHERE b.user_id = u.id) AS ban_count "
+        f"(SELECT COUNT(*) FROM bans b WHERE b.user_id = u.id) AS ban_count, "
+        f"(SELECT COUNT(*) FROM chat_push_subscriptions cps WHERE cps.user_id = u.id) AS push_count "
         f"FROM users u {where_sql} "
         f"ORDER BY u.last_seen DESC NULLS LAST "
         f"LIMIT ? OFFSET ?",
@@ -1028,7 +1137,9 @@ def search_users(
             "mute_count": r["mute_count"],
             "created_at": r["created_at"],
             "last_seen": r["last_seen"],
+            "last_active": r["last_active"],
             "is_online": r["id"] in online_ids,
+            "has_push": r["push_count"] > 0,
             "strike_count": r["strike_count"],
             "is_banned": r["ban_count"] > 0,
         }

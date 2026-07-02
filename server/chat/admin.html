@@ -196,6 +196,7 @@ async function init() {
 
 function renderStatsHTML(s) {
   return `<div class="stat">Users <b>${s.total_users}</b></div>` +
+    `<div class="stat">Reachable <b style="color:var(--green)">${s.reachable_count}</b></div>` +
     `<div class="stat">Online <b style="color:var(--green)">${s.online_count}</b></div>` +
     `<div class="stat${s.pending_reports ? ' alert' : ''}">Reports <b>${s.pending_reports}</b></div>` +
     `<div class="stat">Bans <b>${s.active_bans}</b></div>` +
@@ -224,6 +225,7 @@ function statusPills(u) {
   if (u.is_banned) h += '<span class="pill pill-red">banned</span> ';
   else if (u.muted_until && u.muted_until > now) h += '<span class="pill pill-amber">muted</span> ';
   if (u.strike_count) h += '<span class="pill pill-amber">' + u.strike_count + ' strikes</span> ';
+  if (u.has_push) h += '<span class="pill pill-blue">push</span> ';
   return h || '<span style="color:var(--text-muted)">--</span>';
 }
 
@@ -348,7 +350,7 @@ async function loadUsers() {
     if (!users.length) { el.innerHTML = '<div class="empty">No users found</div>'; return; }
     el.innerHTML = `<table class="tbl"><thead><tr>
       <th class="col-avatar"></th><th>Name</th><th>Username</th><th class="col-narrow">Country</th>
-      <th class="col-narrow">Provider</th><th class="col-narrow">Last seen</th><th>Status</th><th class="col-actions">Actions</th>
+      <th class="col-narrow">Provider</th><th class="col-narrow">Last seen</th><th class="col-narrow">Last active</th><th>Status</th><th class="col-actions">Actions</th>
     </tr></thead><tbody id="user-tbody">` + users.map(u => userRow(u)).join('') + '</tbody></table>';
     if (expandedUser) loadUserDetail(expandedUser);
   } catch { el.innerHTML = '<div class="empty">Failed to load users</div>'; }
@@ -362,6 +364,7 @@ function userRow(u) {
     <td class="col-narrow">${esc(u.country || '--')}</td>
     <td class="col-narrow"><span class="pill pill-gray">${esc(u.provider)}</span></td>
     <td class="col-narrow" style="color:var(--text-muted)">${ago(u.last_seen) || 'never'}</td>
+    <td class="col-narrow" style="color:var(--text-muted)">${ago(u.last_active) || 'never'}</td>
     <td>${statusPills(u)}</td>
     <td class="col-actions"><div class="btn-group">
       <button class="btn btn-amber" onclick="event.stopPropagation();adminStrike('${esc(u.id)}')">Strike</button>
@@ -370,7 +373,7 @@ function userRow(u) {
         ? `<button class="btn btn-neutral" onclick="event.stopPropagation();adminUnban('${esc(u.id)}','${esc(u.display_name||u.username)}')">Unban</button>`
         : `<button class="btn btn-red" onclick="event.stopPropagation();adminBan('${esc(u.id)}','${esc(u.display_name||u.username)}')">Ban</button>`}
     </div></td>
-  </tr><tr id="detail-row-${esc(u.id)}" style="display:none"><td colspan="8" style="padding:0"></td></tr>`;
+  </tr><tr id="detail-row-${esc(u.id)}" style="display:none"><td colspan="9" style="padding:0"></td></tr>`;
 }
 
 async function toggleUser(userId) {

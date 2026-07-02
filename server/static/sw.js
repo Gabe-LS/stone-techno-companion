@@ -1,3 +1,14 @@
+function ackPush(action) {
+  self.registration.pushManager.getSubscription().then(function (sub) {
+    if (!sub) return;
+    fetch('/chat/api/push/ack', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: sub.endpoint, action: action }),
+    }).catch(function () {});
+  });
+}
+
 self.addEventListener('push', function (event) {
   var data = event.data ? event.data.json() : {};
   var title = data.title || 'Stone Techno Companion';
@@ -9,12 +20,17 @@ self.addEventListener('push', function (event) {
     renotify: !!data.tag,
     data: { url: data.url || '/' },
   };
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(
+    self.registration.showNotification(title, options).then(function () {
+      ackPush('delivered');
+    })
+  );
 });
 
 self.addEventListener('notificationclick', function (event) {
   event.preventDefault();
   event.notification.close();
+  ackPush('clicked');
   var targetUrl =
     (event.notification.data && event.notification.data.url) ||
     event.notification.tag ||
@@ -36,5 +52,27 @@ self.addEventListener('notificationclick', function (event) {
       }
       return self.clients.openWindow(fullUrl);
     }),
+  );
+});
+
+self.addEventListener('notificationclose', function (event) {
+  ackPush('dismissed');
+});
+
+self.addEventListener('pushsubscriptionchange', function (event) {
+  event.waitUntil(
+    self.registration.pushManager.subscribe(event.oldSubscription.options).then(function (sub) {
+      return fetch('/chat/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          endpoint: sub.endpoint,
+          keys: {
+            p256dh: btoa(String.fromCharCode.apply(null, new Uint8Array(sub.getKey('p256dh')))),
+            auth: btoa(String.fromCharCode.apply(null, new Uint8Array(sub.getKey('auth')))),
+          },
+        }),
+      });
+    }).catch(function () {})
   );
 });
