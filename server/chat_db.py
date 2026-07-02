@@ -26,6 +26,7 @@ def init_chat_db(db: sqlite3.Connection) -> None:
     db.execute("PRAGMA journal_mode=WAL")
     db.execute("PRAGMA busy_timeout=5000")
     db.execute("PRAGMA foreign_keys=ON")
+    db.execute("PRAGMA secure_delete=ON")
     db.executescript("""
         CREATE TABLE IF NOT EXISTS users (
             id                 TEXT PRIMARY KEY,
@@ -223,6 +224,7 @@ def get_chat_db() -> sqlite3.Connection:
     db.execute("PRAGMA journal_mode=WAL")
     db.execute("PRAGMA busy_timeout=5000")
     db.execute("PRAGMA foreign_keys=ON")
+    db.execute("PRAGMA secure_delete=ON")
     if not _chat_db_initialized:
         init_chat_db(db)
         _migrate_chat_db(db)
