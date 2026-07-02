@@ -1331,7 +1331,7 @@ async function loadDMs() {
     el.innerHTML = dms.map(dm => {
       const unread = unreadByRoom[dm.room_id] || 0;
       const badgeHtml = unread > 0 ? `<span class="unread-badge">${unread > 99 ? '99+' : unread}</span>` : '';
-      return `<li class="room-item${currentRoom === dm.room_id ? ' active' : ''}" data-room-id="${dm.room_id}" onclick="openRoom('${dm.room_id}','${esc(dm.other_name)}','dm')">
+      return `<li class="room-item${currentRoom === dm.room_id ? ' active' : ''}" data-room-id="${dm.room_id}" onclick="openRoom('${dm.room_id}','${jss(dm.other_name)}','dm')">
         ${avatarHtml(dm.other_name, 0)}
         <div class="room-info"><div class="room-name">${esc(dm.other_name)}</div></div>
         <div class="room-meta">${badgeHtml}</div>
@@ -1595,7 +1595,7 @@ function renderMessage(m) {
     <div class="msg-bubble msg-other-bubble" style="background:${color.pastel}" ontouchstart="msgTouchStart('${m.id}',event)" ontouchmove="msgTouchMove(event)" ontouchend="msgTouchEnd()" ondblclick="msgDblClick('${m.id}')" oncontextmenu="event.preventDefault();showMsgMenu(this.closest('.msg').getAttribute('data-msg-id'),false)">
       ${reactBtn}
       <div class="msg-header">
-        <span class="msg-name" style="color:${color.vivid}" onclick="event.stopPropagation();showUserMenu('${uid}','${escapeHtml(name)}')">${escapeHtml(name)}</span>
+        <span class="msg-name" style="color:${color.vivid}" onclick="event.stopPropagation();showUserMenu('${uid}','${jss(name)}')">${escapeHtml(name)}</span>
       </div>
       ${replyHtml}${contentHtml}
       ${time}${reactionsHtml}
@@ -1989,7 +1989,7 @@ async function _loadMenuSection(section, container) {
       container.innerHTML = '<ul class="room-list">' + dms.map(dm => {
         const unread = unreadByRoom[dm.room_id] || 0;
         const badgeHtml = unread > 0 ? `<span class="unread-badge">${unread > 99 ? '99+' : unread}</span>` : '';
-        return `<li class="room-item${currentRoom === dm.room_id ? ' active' : ''}" data-room-id="${dm.room_id}" onclick="closeChatMenu();openRoom('${dm.room_id}','${esc(dm.other_name)}','dm')">
+        return `<li class="room-item${currentRoom === dm.room_id ? ' active' : ''}" data-room-id="${dm.room_id}" onclick="closeChatMenu();openRoom('${dm.room_id}','${jss(dm.other_name)}','dm')">
           ${avatarHtml(dm.other_name, 0)}
           <div class="room-info"><div class="room-name">${esc(dm.other_name)}</div></div>
           <div class="room-meta">${badgeHtml}</div>
@@ -2546,7 +2546,7 @@ function showUserMenu(userId, name) {
   sheet.innerHTML = `<div class="action-sheet" onclick="event.stopPropagation()">
     <div class="action-sheet-title">${escapeHtml(name)}</div>
     <button class="action-sheet-btn" onclick="closeActionSheet();wsSend('open_dm',{target_user_id:'${userId}'})">Send Message</button>
-    <button class="action-sheet-btn action-sheet-danger" onclick="closeActionSheet();blockUserConfirm('${userId}','${escapeHtml(name)}')">Block User</button>
+    <button class="action-sheet-btn action-sheet-danger" onclick="closeActionSheet();blockUserConfirm('${userId}','${jss(name)}')">Block User</button>
     <button class="action-sheet-btn action-sheet-cancel" onclick="closeActionSheet()">Cancel</button>
   </div>`;
   sheet.addEventListener('click', closeActionSheet);
@@ -2573,7 +2573,7 @@ function blockUserConfirm(userId, name) {
   sheet.className = 'action-sheet-overlay';
   sheet.innerHTML = `<div class="action-sheet" onclick="event.stopPropagation()">
     <div class="action-sheet-title">Block ${escapeHtml(name)}?</div>
-    <button class="action-sheet-btn action-sheet-danger" onclick="closeActionSheet();wsSend('block_user',{target_user_id:'${userId}'});showToast('${escapeHtml(name)} blocked')">Block</button>
+    <button class="action-sheet-btn action-sheet-danger" onclick="closeActionSheet();wsSend('block_user',{target_user_id:'${userId}'});showToast('${jss(name)} blocked')">Block</button>
     <button class="action-sheet-btn action-sheet-cancel" onclick="closeActionSheet()">Cancel</button>
   </div>`;
   sheet.addEventListener('click', closeActionSheet);

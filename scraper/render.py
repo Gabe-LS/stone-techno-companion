@@ -172,6 +172,9 @@ def _render_markdown(text: str) -> str:
     result = _re.sub(
         r"""href\s*=\s*["']javascript:[^"']*["']""", "", result, flags=_re.IGNORECASE
     )
+    result = _re.sub(
+        r"""href\s*=\s*javascript:\S*""", "", result, flags=_re.IGNORECASE
+    )
     return result.strip()
 
 

@@ -851,9 +851,11 @@ def resolve_report(db: sqlite3.Connection, report_id: str, status: str) -> None:
 
 
 def purge_old_reports(db: sqlite3.Connection) -> int:
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
     result = db.execute(
         "DELETE FROM reports WHERE status IN ('actioned', 'dismissed') "
-        "AND reviewed_at < datetime('now', '-30 days')"
+        "AND reviewed_at < ?",
+        (cutoff,),
     )
     db.commit()
     return result.rowcount

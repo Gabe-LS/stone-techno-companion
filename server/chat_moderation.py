@@ -141,7 +141,9 @@ class WordFilter:
             if result:
                 return result
             for term in self._terms:
-                if len(term) >= 5 and term in part and part != term:
+                # Drug terms checked at 3+ chars to catch e.g. "ket" in "ketlover"
+                min_len = 3 if term in self._drug_terms else 5
+                if len(term) >= min_len and term in part and part != term:
                     return {"matched": term, "is_drug": term in self._drug_terms}
         return None
 

@@ -713,22 +713,19 @@ async def _moderate_and_broadcast(
 
     except Exception:
         logger.exception("Moderation task error for message %s", msg["id"])
-        await mgr.broadcast_to_room(
-            room_id,
+        try:
+            db.execute("DELETE FROM messages WHERE id = ?", (msg["id"],))
+            db.commit()
+        except Exception:
+            pass
+        await mgr.send_to_user(
+            user_id,
             {
-                "event": "message",
+                "event": "message_removed",
                 "id": msg["id"],
                 "room_id": room_id,
-                "user_id": user_id,
-                "display_name": display_name,
-                "username": username,
-                "color_index": color_index,
-                "avatar_url": avatar_url,
-                "type": msg_type,
-                "content": content,
-                "created_at": msg["created_at"],
+                "reason": "Message could not be verified. Please try again.",
             },
-            exclude_conn=conn_id,
         )
     finally:
         db.close()
@@ -741,6 +738,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
     db = get_chat_db()
     user = get_user_by_token(db, token)
     if not user:
+        db.close()
         await ws.close(code=4001, reason="Invalid session")
         return
 

@@ -86,9 +86,13 @@ def _get_user_from_cookie(request: Request):
     if not token:
         raise HTTPException(401, "Not authenticated")
     db = _get_db()
-    user = get_user_by_token(db, token)
-    if not user:
-        raise HTTPException(401, "Session expired")
+    try:
+        user = get_user_by_token(db, token)
+        if not user:
+            raise HTTPException(401, "Session expired")
+    except Exception:
+        db.close()
+        raise
     return user, db
 
 

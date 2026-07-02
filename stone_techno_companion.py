@@ -188,7 +188,9 @@ def main() -> None:
         stage_colors = load_stage_colors(db, event_id)
 
         has_timetable = any(
-            a.get("start_time") for artists in all_assignments.values() for a in artists
+            a.get("start_time") and a.get("end_time")
+            for artists in all_assignments.values()
+            for a in artists
         )
 
         event = get_event(db, event_id)

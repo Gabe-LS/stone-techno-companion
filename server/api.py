@@ -350,6 +350,7 @@ async def _push_notification_scheduler() -> None:
                             "VAPID_CLAIMS_EMAIL", "mailto:noreply@example.com"
                         )
                     }
+                    any_sent = False
                     for endpoint, p256dh, auth in subs:
                         try:
                             await asyncio.to_thread(
@@ -362,6 +363,7 @@ async def _push_notification_scheduler() -> None:
                                 vapid_private_key=os.environ["VAPID_PRIVATE_KEY"],
                                 vapid_claims=vapid_claims,
                             )
+                            any_sent = True
                         except WebPushException as e:
                             if e.response and e.response.status_code in (404, 410):
                                 db.execute(
@@ -371,11 +373,12 @@ async def _push_notification_scheduler() -> None:
                                 db.commit()
                             logger.warning("Push failed for %s: %s", endpoint[:60], e)
 
-                    db.execute(
-                        "INSERT OR IGNORE INTO sent_notifications (session_id, slot_id) VALUES (?, ?)",
-                        (session_id, slot_id),
-                    )
-                    db.commit()
+                    if any_sent:
+                        db.execute(
+                            "INSERT OR IGNORE INTO sent_notifications (session_id, slot_id) VALUES (?, ?)",
+                            (session_id, slot_id),
+                        )
+                        db.commit()
                     logger.info(
                         "Sent push for %s to session %s", artists, session_id[:8]
                     )
@@ -796,9 +799,9 @@ def push_status(code: str, request: Request):
 
 @app.get("/ics/{slot_id}")
 def generate_ics(slot_id: str):
-    if not TIMETABLE_PATH.exists():
+    timetable = _load_timetable()
+    if not timetable:
         raise HTTPException(404, "Timetable not available")
-    timetable = json.loads(TIMETABLE_PATH.read_text(encoding="utf-8"))
     slot = timetable.get("slots", {}).get(slot_id)
     if not slot:
         raise HTTPException(404, "Slot not found")
