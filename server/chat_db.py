@@ -24,6 +24,7 @@ def _uuid() -> str:
 
 def init_chat_db(db: sqlite3.Connection) -> None:
     db.execute("PRAGMA journal_mode=WAL")
+    db.execute("PRAGMA busy_timeout=5000")
     db.execute("PRAGMA foreign_keys=ON")
     db.executescript("""
         CREATE TABLE IF NOT EXISTS users (
@@ -594,9 +595,12 @@ def purge_expired_messages(db: sqlite3.Connection) -> list[dict]:
         if msg["type"] in ("image", "video"):
             import json
 
-            content = json.loads(msg["content"])
-            if "url" in content:
-                image_paths.append(content["url"])
+            try:
+                content = json.loads(msg["content"])
+                if "url" in content:
+                    image_paths.append(content["url"])
+            except (json.JSONDecodeError, TypeError):
+                pass
 
     if expired:
         db.execute("DELETE FROM messages WHERE expires_at <= ?", (now,))
@@ -874,6 +878,7 @@ def get_strike_count(db: sqlite3.Connection, user_id: str) -> int:
 
 def purge_expired_sessions(db: sqlite3.Connection) -> None:
     db.execute("DELETE FROM sessions WHERE expires_at <= ?", (_now(),))
+    db.execute("DELETE FROM email_tokens WHERE expires_at <= ?", (_now(),))
     db.commit()
 
 

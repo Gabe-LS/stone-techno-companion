@@ -131,7 +131,7 @@ def _init_db() -> None:
             p256dh      TEXT NOT NULL,
             auth        TEXT NOT NULL,
             created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-            FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+            FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_push_sub_session ON push_subscriptions(session_id);
         CREATE TABLE IF NOT EXISTS sent_notifications (
@@ -348,7 +348,8 @@ async def _push_notification_scheduler() -> None:
                     }
                     for endpoint, p256dh, auth in subs:
                         try:
-                            webpush(
+                            await asyncio.to_thread(
+                                webpush,
                                 subscription_info={
                                     "endpoint": endpoint,
                                     "keys": {"p256dh": p256dh, "auth": auth},

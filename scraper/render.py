@@ -2046,10 +2046,10 @@ def render_output_html(
       if (data.videos && data.videos.length) {
         let html = '<div class="bio-videos-title">Sets</div>';
         data.videos.forEach(function(v) {
-          html += '<a class="bio-video" href="' + v.url + '" target="_blank" rel="noopener noreferrer">';
+          html += '<a class="bio-video" href="' + _escHtml(v.url) + '" target="_blank" rel="noopener noreferrer">';
           html += '<img class="bio-video-thumb" src="thumbs/' + v.id + '.avif" alt="" loading="lazy">';
           html += '<div class="bio-video-info">';
-          html += '<div class="bio-video-title">' + v.title + '</div>';
+          html += '<div class="bio-video-title">' + _escHtml(v.title) + '</div>';
           var dateStr = '';
           if (v.date) { var ds = String(v.date); dateStr = ' \\u00b7 ' + ds.slice(0,4) + '-' + ds.slice(4,6) + '-' + ds.slice(6); }
           html += '<div class="bio-video-meta">' + _formatViews(v.views) + ' views \\u00b7 ' + v.duration + ' min' + dateStr + '</div>';

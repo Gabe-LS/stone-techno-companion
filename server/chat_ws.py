@@ -188,17 +188,22 @@ async def _fetch_oembed_preview(client, url: str, oembed_base: str) -> dict | No
 
 
 async def _fetch_og_preview(client, url: str) -> dict | None:
+    _og_headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; StoneCompanionBot/1.0)",
+        "Accept": "text/html",
+    }
     resp = await asyncio.wait_for(
-        client.get(
-            url,
-            headers={
-                "User-Agent": "Mozilla/5.0 (compatible; StoneCompanionBot/1.0)",
-                "Accept": "text/html",
-            },
-            follow_redirects=True,
-        ),
+        client.get(url, headers=_og_headers, follow_redirects=False),
         timeout=3.0,
     )
+    if resp.is_redirect:
+        location = resp.headers.get("location", "")
+        if not location or not _is_safe_preview_url(location):
+            return None
+        resp = await asyncio.wait_for(
+            client.get(location, headers=_og_headers, follow_redirects=False),
+            timeout=3.0,
+        )
     if resp.status_code != 200:
         return None
     ct = resp.headers.get("content-type", "")

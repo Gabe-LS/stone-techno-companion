@@ -1099,13 +1099,14 @@ async function load() {
   const el = document.getElementById('reports');
   if (!reports.length) { el.innerHTML = '<div class="empty">No pending reports</div>'; return; }
   const esc = s => {const d=document.createElement('div');d.textContent=s;return d.innerHTML.replace(/'/g,'&#39;');};
+  const jss = s => String(s).replace(/\\\\/g,'\\\\\\\\').replace(/'/g,"\\\\'" ).replace(/"/g,'\\\\x22');
   el.innerHTML = reports.map(r => `
     <div class="report">
       <div class="meta">${esc(r.reporter_name)} reported ${esc(r.reported_name)} · ${esc(r.created_at)}</div>
       <div>Reason: ${esc(r.reason)}</div>
       <div class="snapshot">${esc(r.message_snapshot)}</div>
       <div class="actions">
-        <button class="ban" onclick="action('${r.id}','${esc(r.reported_name)}','actioned','${r.reported_user_id}')">Ban User</button>
+        <button class="ban" onclick="action('${r.id}','${jss(r.reported_name)}','actioned','${r.reported_user_id}')">Ban User</button>
         <button class="dismiss" onclick="action('${r.id}','','dismissed')">Dismiss</button>
       </div>
     </div>`).join('');
@@ -1167,5 +1168,6 @@ def mount_chat(app):
 
     db = _get_db()
     seed_event_room(db, DEFAULT_EVENT_ID, "Stone Techno 2026")
+    db.close()
 
     return purge_loop
