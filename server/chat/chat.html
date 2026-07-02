@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Chat</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>if ('scrollRestoration' in history) history.scrollRestoration = 'manual';</script>
 <style>
 :root {
@@ -386,6 +387,8 @@ let _pendingDmTarget = null;
 let _pendingDmName = '';
 let isMobile = window.innerWidth < 768;
 let _toastTimer = null;
+let _googleClientId = null;
+let _googleInitialized = false;
 
 const REACTION_EMOJIS = {'👍':'thumbs_up','❤️':'heart','😂':'laugh','🔥':'fire','😮':'wow','👏':'clap'};
 const REACTION_KEYS = Object.entries(REACTION_EMOJIS);
@@ -468,28 +471,83 @@ async function checkAuth() {
   catch { currentUser = null; return false; }
 }
 
-function renderAuth() {
+async function renderAuth() {
   dbg('renderAuth');
-  document.getElementById('app').innerHTML = `
-    <div class="auth-screen">
-      <h2>Sign in to chat</h2>
-      <p>Choose how to sign in. No passwords needed.</p>
-      <button class="auth-btn" onclick="authGoogle()">Sign in with Google</button>
-      <button class="auth-btn" onclick="authApple()">Sign in with Apple</button>
+  if (!_googleClientId) {
+    try {
+      const cfg = await api('/config');
+      _googleClientId = cfg.google_client_id;
+      dbg('[AUTH] google client id loaded:', _googleClientId ? 'yes' : 'no');
+    } catch (e) { dbg('[AUTH] config fetch failed:', e.message); }
+  }
+  const googleSection = _googleClientId
+    ? `<div id="google-btn-container"></div>
       <div style="display:flex;align-items:center;gap:10px;width:280px;margin:8px 0">
         <hr style="flex:1;border:none;border-top:1px solid var(--color-border)">
         <span style="font-size:var(--font-xs);color:var(--color-muted)">or</span>
         <hr style="flex:1;border:none;border-top:1px solid var(--color-border)">
-      </div>
+      </div>`
+    : '';
+  document.getElementById('app').innerHTML = `
+    <div class="auth-screen">
+      <h2>Sign in to chat</h2>
+      <p>Choose how to sign in. No passwords needed.</p>
+      ${googleSection}
       <input class="auth-input" id="email-input" type="email" placeholder="your@email.com" onkeydown="if(event.key==='Enter')authEmail()">
       <button class="auth-btn" onclick="authEmail()">Send magic link</button>
     </div>`;
+  if (_googleClientId) _renderGoogleButton();
   verify('renderAuth', document.querySelector('.auth-screen'), 'auth screen rendered');
   verify('renderAuth', document.getElementById('email-input'), 'email input exists');
 }
 
-async function authGoogle() { dbg('[AUTH] authGoogle'); showToast('Google Sign-In not configured yet'); }
-async function authApple() { dbg('[AUTH] authApple'); showToast('Apple Sign-In not configured yet'); }
+function _initGoogle() {
+  if (_googleInitialized || !_googleClientId || !window.google?.accounts?.id) return false;
+  dbg('[AUTH] initializing google');
+  google.accounts.id.initialize({
+    client_id: _googleClientId,
+    callback: async (resp) => {
+      dbg('[AUTH] google callback received');
+      try {
+        const result = await api('/auth/google', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id_token: resp.credential }),
+        });
+        dbg('[AUTH] google auth success:', result.id);
+        currentUser = result;
+        route();
+      } catch (e) {
+        dbg('[AUTH] google auth failed:', e.message);
+        showToast(e.message);
+      }
+    },
+  });
+  _googleInitialized = true;
+  return true;
+}
+
+function _renderGoogleButton() {
+  const container = document.getElementById('google-btn-container');
+  if (!container) return;
+  if (!window.google?.accounts?.id) {
+    dbg('[AUTH] google SDK not loaded yet, retrying');
+    setTimeout(_renderGoogleButton, 200);
+    return;
+  }
+  _initGoogle();
+  if (!_googleInitialized) return;
+  dbg('[AUTH] rendering google button');
+  google.accounts.id.renderButton(container, {
+    type: 'standard',
+    shape: 'rectangular',
+    theme: 'outline',
+    size: 'large',
+    width: 280,
+    text: 'signin_with',
+  });
+}
+
 async function authEmail() {
   dbg('[AUTH] authEmail');
   const input = document.getElementById('email-input');
@@ -3284,7 +3342,7 @@ async function route() {
   if (targetRoom && currentRoom === targetRoom && currentRoomName) return;
 
   const authed = await checkAuth();
-  if (!authed) { renderAuth(); return; }
+  if (!authed) { await renderAuth(); return; }
   if (!currentUser.username || !currentUser.country || !currentUser.avatar_url) { renderProfilePrompt(); return; }
   await _checkPushStatus();
   if (!ws || ws.readyState !== 1) await connectWS();
@@ -3320,15 +3378,10 @@ async function route() {
     openRoom(roomId, roomName, roomType);
   } else if (rooms.length === 1) {
     openRoom(rooms[0].id, rooms[0].name, rooms[0].type);
-  } else if (isMobile) {
+  } else {
     const main = rooms.find(r => r.is_main) || rooms[0];
     if (main) openRoom(main.id, main.name, main.type);
     else renderRoomList();
-  } else {
-    currentRoom = null;
-    currentRoomName = null;
-    currentRoomType = null;
-    renderRoomList();
   }
   } catch (e) {
     console.error('Route error:', e);

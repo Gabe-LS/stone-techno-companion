@@ -20,3 +20,6 @@ output/
 reviews/
 .env
 server/.env
+
+# Local TLS certs (mkcert)
+*.pem

@@ -63,6 +63,15 @@ def init_chat_db(db: sqlite3.Connection) -> None:
             expires_at TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS user_providers (
+            user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            provider    TEXT NOT NULL,
+            provider_id TEXT NOT NULL,
+            created_at  TEXT NOT NULL,
+            UNIQUE (provider, provider_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_user_providers_user ON user_providers(user_id);
+
         CREATE TABLE IF NOT EXISTS bans (
             id                 TEXT PRIMARY KEY,
             user_id            TEXT,
@@ -196,6 +205,12 @@ def _migrate_chat_db(db: sqlite3.Connection) -> None:
         db.execute("ALTER TABLE messages ADD COLUMN link_preview TEXT")
         db.commit()
 
+    db.execute(
+        "INSERT OR IGNORE INTO user_providers (user_id, provider, provider_id, created_at) "
+        "SELECT id, provider, provider_id, created_at FROM users"
+    )
+    db.commit()
+
 
 _chat_db_initialized = False
 
@@ -246,6 +261,11 @@ def create_user(
             now,
         ),
     )
+    db.execute(
+        "INSERT OR IGNORE INTO user_providers (user_id, provider, provider_id, created_at) "
+        "VALUES (?, ?, ?, ?)",
+        (user_id, provider, provider_id, now),
+    )
     db.commit()
     return {
         "id": user_id,
@@ -261,9 +281,22 @@ def find_user_by_provider(
     db: sqlite3.Connection, provider: str, provider_id: str
 ) -> sqlite3.Row | None:
     return db.execute(
-        "SELECT * FROM users WHERE provider = ? AND provider_id = ?",
+        "SELECT u.* FROM users u "
+        "JOIN user_providers up ON up.user_id = u.id "
+        "WHERE up.provider = ? AND up.provider_id = ?",
         (provider, provider_id),
     ).fetchone()
+
+
+def add_user_provider(
+    db: sqlite3.Connection, user_id: str, provider: str, provider_id: str
+) -> None:
+    db.execute(
+        "INSERT OR IGNORE INTO user_providers (user_id, provider, provider_id, created_at) "
+        "VALUES (?, ?, ?, ?)",
+        (user_id, provider, provider_id, _now()),
+    )
+    db.commit()
 
 
 def get_user(db: sqlite3.Connection, user_id: str) -> sqlite3.Row | None:

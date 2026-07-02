@@ -28,8 +28,8 @@ python stone_techno_companion.py --event-id stone-techno-2026 --event-name "Ston
 python migrate_db.py
 
 # Run full server locally (lineup + chat)
-cd server && export $(cat .env | xargs) && uvicorn api:app --port 8080
-# Open http://localhost:8080/ (lineup) and http://localhost:8080/chat (chat)
+cd server && set -a && source .env && set +a && uvicorn api:app --port 64728 --ssl-keyfile localhost+1-key.pem --ssl-certfile localhost+1.pem
+# Open https://localhost:64728/ (lineup) and https://localhost:64728/chat (chat)
 
 # Run tests
 python -m pytest tests/ -v
@@ -41,9 +41,9 @@ python -m pytest tests/ -v
 
 **For lineup only**: `cd output && python3 -m http.server 8321` — expected 404s for `/manifest.json`, `/sw.js`, `/api/me`.
 
-**For lineup + chat**: run the full FastAPI server: `cd server && export $(cat .env | xargs) && uvicorn api:app --port 8080`. Symlinks in `server/static/` point to `output/` files so lineup reflects latest build.
+**For lineup + chat**: run the full FastAPI server: `cd server && set -a && source .env && set +a && uvicorn api:app --port 64728 --ssl-keyfile localhost+1-key.pem --ssl-certfile localhost+1.pem`. Symlinks in `server/static/` point to `output/` files so lineup reflects latest build.
 
-**Chat requires auth**: sign in via email magic link at `/chat`. For local dev, set `CHAT_BASE_URL=http://localhost:8080` in `.env` so the magic link points to localhost.
+**Chat requires auth**: sign in via email magic link at `/chat`. For local dev, set `CHAT_BASE_URL=https://localhost:64728` in `.env` so the magic link points to localhost.
 
 ## System Dependencies
 
@@ -113,7 +113,7 @@ Key design decisions:
 | `server/chat_db.py` | Chat SQLite schema (chat.db) — users, sessions, bans, rooms, messages, meetups, reactions, blocks, reports, strikes |
 | `server/chat_moderation.py` | Three-layer moderation: word filter + OpenAI omni-moderation + GPT-5.4-nano drug detection. All via raw httpx. |
 | `server/chat_ws.py` | Chat WebSocket server — rooms, optimistic messaging, presence, typing, reactions, replies, meetups, DMs, purge loop |
-| `server/chat_api.py` | Chat REST API — auth (Google/Apple/Email), rooms, meetups, DMs, media upload, admin page. Mounts routes + WS into FastAPI. |
+| `server/chat_api.py` | Chat REST API — auth (Google/Email), rooms, meetups, DMs, media upload, admin page. Mounts routes + WS into FastAPI. |
 | `server/chat/chat.html` | Chat frontend — single HTML file with inline CSS/JS. WhatsApp-style bubbles, reactions, replies, action menus. |
 | `server/chat/blocklist.txt` | Word filter blocklist (drug terms, slurs). Editable without deploy. |
 | `server/static/sw.js` | Service worker — handles push events and notification click navigation |
@@ -236,7 +236,7 @@ Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DB at `server/da
 | `OPENAI_API_KEY` | Yes | Chat moderation (omni-moderation + GPT drug detection) |
 | `MAILEROO_API_KEY` | Yes | Magic link email delivery (was Resend, switched July 2026) |
 | `CHAT_EMAIL_FROM` | No | From address for magic links (default: `no-reply@deftlab.dev`) |
-| `CHAT_BASE_URL` | Dev only | Set to `http://localhost:<port>` for local dev. Omit in production. |
+| `CHAT_BASE_URL` | Dev only | Set to `https://localhost:<port>` for local dev. Omit in production. |
 | `VAPID_PRIVATE_KEY` | Yes | Push notification signing |
 | `VAPID_PUBLIC_KEY` | Yes | Push notification subscription |
 | `VAPID_CLAIMS_EMAIL` | Yes | VAPID contact email |
@@ -302,7 +302,7 @@ strikes            — id, user_id, reason, detail
 
 ### Auth
 
-Three passwordless providers: Google OAuth, Apple Sign-In, Email magic link (via Maileroo, 3,000/mo free). Disposable domains blocked via 7,860-domain blocklist (`chat/disposable_domains.txt`). Email validation via `email-validator` library (RFC 5322 + DNS MX check). Device fingerprinting for ban enforcement. Session cookies (non-httpOnly for WS access, Secure in production, SameSite=Strict in production / Lax in dev, path=/). Email tokens stored in DB (not memory) — survive server restarts.
+Two passwordless providers: Google OAuth and Email magic link (via Maileroo, 3,000/mo free). Disposable domains blocked via 7,860-domain blocklist (`chat/disposable_domains.txt`). Email validation via `email-validator` library (RFC 5322 + DNS MX check). Device fingerprinting for ban enforcement. Session cookies (non-httpOnly for WS access, Secure in production, SameSite=Strict in production / Lax in dev, path=/). Email tokens stored in DB (not memory) — survive server restarts.
 
 ### Profile Setup
 

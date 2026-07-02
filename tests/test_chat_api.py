@@ -39,13 +39,26 @@ def _get_test_db():
     return _test_db
 
 
+class _UnclosableConnection:
+    """Wraps a sqlite3.Connection so .close() is a no-op during tests."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def close(self):
+        pass
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
 @pytest.fixture(autouse=True)
 def setup_db(monkeypatch):
     global _test_db
     conn = sqlite3.connect(":memory:", check_same_thread=False)
     conn.row_factory = sqlite3.Row
     init_chat_db(conn)
-    _test_db = conn
+    _test_db = _UnclosableConnection(conn)
     monkeypatch.setattr("chat_api._get_db", _get_test_db)
     monkeypatch.setattr("chat_api.DEFAULT_EVENT_ID", "test-event")
     monkeypatch.setattr("chat_api.ADMIN_TOKEN", "test-admin-token")
@@ -198,8 +211,8 @@ class TestRooms:
         r = auth_client.get("/chat/api/rooms/nonexistent/messages")
         assert r.status_code == 404
 
-    def test_room_online(self, client, stage_room):
-        r = client.get("/chat/api/rooms/grand-hall/online")
+    def test_room_online(self, auth_client, stage_room):
+        r = auth_client.get("/chat/api/rooms/grand-hall/online")
         assert r.status_code == 200
         assert r.json() == []
 

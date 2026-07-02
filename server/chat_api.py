@@ -28,6 +28,7 @@ from chat_db import (
     get_chat_db,
     create_user,
     find_user_by_provider,
+    add_user_provider,
     get_user,
     get_user_by_token,
     update_display_name,
@@ -64,7 +65,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat/api")
 DEFAULT_EVENT_ID = os.environ.get("CHAT_EVENT_ID", "stone-techno-2026")
 ADMIN_TOKEN = os.environ.get("CHAT_ADMIN_TOKEN", "")
-_apple_jwks_client = None
+
 _email_rate: dict[str, list[float]] = {}
 
 DISPOSABLE_DOMAINS: set[str] = set()
@@ -153,6 +154,12 @@ def _authenticate(
 # --- Auth ---
 
 
+@router.get("/config")
+async def get_config():
+    google_id = os.environ.get("GOOGLE_CLIENT_ID", "")
+    return {"google_client_id": google_id if google_id else None}
+
+
 @router.post("/auth/google")
 async def auth_google(request: Request, response: Response):
     body = await request.json()
@@ -173,55 +180,25 @@ async def auth_google(request: Request, response: Response):
             id_token, google_requests.Request(), client_id
         )
         provider_id = info["sub"]
-        name = info.get("name") or info.get("email", "").split("@")[0]
+        email = info.get("email", "")
+        name = info.get("name") or email.split("@")[0]
     except Exception as e:
         logger.warning("Google token verification failed: %s", e)
         raise HTTPException(401, "Invalid Google token")
 
     db = _get_db()
     try:
-        return _authenticate(db, "google", provider_id, name, fingerprint, response)
-    finally:
-        db.close()
-
-
-@router.post("/auth/apple")
-async def auth_apple(request: Request, response: Response):
-    body = await request.json()
-    id_token = body.get("id_token")
-    fingerprint = body.get("device_fingerprint")
-    if not id_token:
-        raise HTTPException(400, "id_token required")
-
-    apple_client_id = os.environ.get("APPLE_CLIENT_ID", "")
-    if not apple_client_id:
-        raise HTTPException(501, "Apple Sign-In not configured")
-
-    try:
-        import jwt
-
-        global _apple_jwks_client
-        if _apple_jwks_client is None:
-            _apple_jwks_client = jwt.PyJWKClient(
-                "https://appleid.apple.com/auth/keys", cache_keys=True
-            )
-        signing_key = _apple_jwks_client.get_signing_key_from_jwt(id_token)
-        payload = jwt.decode(
-            id_token,
-            signing_key.key,
-            algorithms=["RS256"],
-            audience=apple_client_id,
-            issuer="https://appleid.apple.com",
-        )
-        provider_id = payload["sub"]
-        name = body.get("display_name") or payload.get("email", "").split("@")[0]
-    except Exception as e:
-        logger.warning("Apple token verification failed: %s", e)
-        raise HTTPException(401, "Invalid Apple token")
-
-    db = _get_db()
-    try:
-        return _authenticate(db, "apple", provider_id, name, fingerprint, response)
+        user = find_user_by_provider(db, "google", provider_id)
+        if not user and email:
+            email_hash = hash_email(email)
+            user = find_user_by_provider(db, "email", email_hash)
+            if user:
+                add_user_provider(db, user["id"], "google", provider_id)
+                logger.info("Linked google provider to existing user %s", user["id"])
+        result = _authenticate(db, "google", provider_id, name, fingerprint, response)
+        if email:
+            add_user_provider(db, result["id"], "email", hash_email(email))
+        return result
     finally:
         db.close()
 
@@ -244,7 +221,9 @@ async def auth_email_start(request: Request):
     try:
         from email_validator import validate_email
 
-        result = await asyncio.to_thread(validate_email, email, check_deliverability=True)
+        result = await asyncio.to_thread(
+            validate_email, email, check_deliverability=True
+        )
         email = result.normalized
     except HTTPException:
         raise
@@ -326,7 +305,9 @@ async def auth_email_verify(request: Request, token: str = ""):
         base_url = os.environ.get("CHAT_BASE_URL", "")
         redirect_url = f"{base_url}/chat" if base_url else "/chat"
         redirect = RedirectResponse(url=redirect_url, status_code=302)
-        _authenticate(db, "email", row["provider_id"], name, row["fingerprint"], redirect)
+        _authenticate(
+            db, "email", row["provider_id"], name, row["fingerprint"], redirect
+        )
         return redirect
     finally:
         db.close()
@@ -478,7 +459,8 @@ async def auth_update_profile(request: Request):
                 )
             if ai_result:
                 raise HTTPException(
-                    400, f"Name not allowed: {ai_result.get('category', 'content policy')}"
+                    400,
+                    f"Name not allowed: {ai_result.get('category', 'content policy')}",
                 )
 
         country = body.get("country")
@@ -494,7 +476,9 @@ async def auth_update_profile(request: Request):
         if updates:
             params.append(user["id"])
             try:
-                db.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", params)
+                db.execute(
+                    f"UPDATE users SET {', '.join(updates)} WHERE id = ?", params
+                )
                 db.commit()
             except sqlite3.IntegrityError:
                 raise HTTPException(400, "Username taken")
@@ -683,6 +667,7 @@ async def room_online(room_id: str, request: Request):
             ).fetchone():
                 raise HTTPException(403, "Access denied")
         from chat_ws import manager
+
         return manager.get_online_users(room_id)
     finally:
         db.close()
@@ -741,7 +726,9 @@ async def list_meetups(request: Request, stage_id: str | None = None):
 async def get_meetup(meetup_id: str, request: Request):
     user, db = _get_user_from_cookie(request)
     try:
-        meetup = db.execute("SELECT * FROM meetups WHERE id = ?", (meetup_id,)).fetchone()
+        meetup = db.execute(
+            "SELECT * FROM meetups WHERE id = ?", (meetup_id,)
+        ).fetchone()
         if not meetup:
             raise HTTPException(404, "Meetup not found")
         attendees = get_meetup_attendees(db, meetup_id)
@@ -909,6 +896,7 @@ async def upload_avatar(request: Request, file: UploadFile = File(...)):
 
         try:
             import pyvips
+
             img = pyvips.Image.new_from_buffer(data, "")
             if img.width * img.height > 10_000_000:
                 raise HTTPException(400, "Image too large")
