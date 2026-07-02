@@ -1550,6 +1550,13 @@ async def admin_clear_warnings(user_id: str, request: Request):
             "UPDATE users SET muted_until = NULL, mute_count = 0 WHERE id = ?",
             (user_id,),
         )
+        from chat_db import _uuid, _now
+
+        db.execute(
+            "INSERT INTO strikes (id, user_id, reason, detail, created_at, expires_at) "
+            "VALUES (?, ?, 'warnings_cleared', 'Cleared by admin', ?, '2000-01-01T00:00:00+00:00')",
+            (_uuid(), user_id, _now()),
+        )
         db.commit()
         return {"ok": True}
     finally:

@@ -606,8 +606,8 @@ function renderLog(hasMore) {
     (i.type || '').toLowerCase().includes(_logFilter)
   ) : logItems;
   if (!items.length) { el.innerHTML = '<div class="empty">No moderation activity</div>'; return; }
-  const typePill = t => t === 'ban' ? 'pill-red' : t === 'strike' ? 'pill-amber' : 'pill-blue';
-  const typeLabel = t => t.replace('report_', '').replace('actioned', 'report actioned').replace('dismissed', 'report dismissed');
+  const typePill = t => t === 'ban' ? 'pill-red' : t === 'strike' ? 'pill-amber' : t === 'cleared' ? 'pill-green' : 'pill-blue';
+  const typeLabel = t => t === 'cleared' ? 'cleared' : t.replace('report_', '').replace('actioned', 'report actioned').replace('dismissed', 'report dismissed');
   el.innerHTML = `<table class="tbl"><thead><tr>
     <th class="col-narrow">Type</th><th>User</th><th>Detail</th><th class="col-narrow">Time</th>
   </tr></thead><tbody>` + items.map(item => `<tr>

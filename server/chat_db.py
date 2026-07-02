@@ -1301,7 +1301,8 @@ def get_moderation_log(
 ) -> list[dict]:
     rows = db.execute(
         "SELECT type, user_id, display_name, detail, created_at FROM ("
-        "  SELECT 'strike' AS type, s.user_id, u.display_name, "
+        "  SELECT CASE WHEN s.reason = 'warnings_cleared' THEN 'cleared' ELSE 'strike' END AS type, "
+        "    s.user_id, u.display_name, "
         "    s.reason || CASE WHEN s.detail IS NOT NULL THEN ': ' || s.detail ELSE '' END AS detail, "
         "    s.created_at "
         "  FROM strikes s LEFT JOIN users u ON u.id = s.user_id "
