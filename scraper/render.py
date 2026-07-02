@@ -2009,6 +2009,9 @@ def render_output_html(
     }
 
     // Bio overlay
+    function _escHtml(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
     function _formatViews(n) {
       if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\\.0$/, '') + 'M';
       if (n >= 1000) return (n / 1000).toFixed(1).replace(/\\.0$/, '') + 'K';
