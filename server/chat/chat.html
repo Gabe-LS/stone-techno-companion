@@ -71,11 +71,11 @@
   --shadow-lg: 0 4px 16px rgba(0,0,0,0.16);
 }
 *, *::before, *::after { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: var(--color-text); background: var(--color-bg); font-size: var(--font-base); line-height: 1.5; }
+html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: var(--color-text); background: var(--color-bg); font-size: var(--font-base); line-height: 1.5; overscroll-behavior: none; }
 
 /* --- Layout --- */
 .app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
-.header { display: flex; align-items: center; height: 48px; background: var(--gray-900); color: #fff; padding: 0 var(--space-lg); flex-shrink: 0; }
+.header { display: flex; align-items: center; height: 48px; background: var(--gray-900); color: #fff; padding: 0 var(--space-lg); flex-shrink: 0; position: sticky; top: 0; z-index: 50; }
 .header .back { background: none; border: none; color: #fff; font-size: var(--font-xl); cursor: default; padding: var(--space-sm); margin-right: var(--space-sm); line-height: 1; }
 .header .title { flex: 1; font-weight: 600; font-size: var(--font-base); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .header .subtitle { font-size: var(--font-xs); color: var(--gray-400); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -113,9 +113,9 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 
 /* --- Messages --- */
 .messages { padding: var(--space-lg) var(--space-md) var(--space-sm); display: flex; flex-direction: column; gap: 2px; min-height: 100%; justify-content: flex-end; }
-.msg { display: flex; gap: var(--space-sm); padding: var(--space-sm) 0; align-items: flex-end; }
+.msg { display: flex; gap: var(--space-sm); padding: var(--space-md) 0; align-items: flex-end; }
 .msg.msg-mine { justify-content: flex-end; }
-.msg-bubble { position: relative; padding: var(--space-md) var(--space-md) var(--space-xl); max-width: min(70%, 480px); min-width: 80px; display: inline-block; word-break: break-word; }
+.msg-bubble { position: relative; padding: var(--space-md) var(--space-md) var(--space-xl); max-width: min(70%, 480px); min-width: 80px; display: inline-block; word-break: break-word; -webkit-user-select: none; user-select: none; }
 .msg-mine-bubble { background: var(--user-7-bg); color: var(--color-text); border-radius: var(--radius-lg) var(--radius-lg) var(--radius-sm) var(--radius-lg); }
 .msg-other-bubble { background: var(--color-surface); color: var(--color-text); border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) var(--radius-sm); }
 .msg-header { display: flex; gap: var(--space-sm); align-items: baseline; margin-bottom: 2px; }
@@ -190,14 +190,15 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 @keyframes msg-highlight { 0% { background: rgba(185,28,28,0.1); } 100% { background: transparent; } }
 
 /* --- Reactions --- */
-.reaction-pills { position: absolute; bottom: -13px; display: flex; gap: 3px; z-index: 5; }
+.reaction-pills { position: absolute; bottom: -16px; display: flex; gap: 3px; z-index: 5; }
 .msg-mine-bubble .reaction-pills { right: var(--space-sm); }
 .msg-other-bubble .reaction-pills { left: var(--space-sm); }
-.reaction-pill { display: inline-flex; align-items: center; justify-content: center; gap: 2px; padding: 3px var(--space-sm); border: 1px solid var(--color-border); border-radius: var(--radius-pill); background: var(--color-surface); font-size: var(--font-xs); cursor: default; box-shadow: var(--shadow-sm); line-height: 1; text-align: center; }
-.reaction-pill.own { background: var(--user-1-bg); border-color: var(--color-accent); }
+.reaction-pill { display: inline-flex; align-items: center; justify-content: center; gap: 2px; padding: 4px 8px; border: 1px solid var(--color-border); border-radius: var(--radius-pill); background: var(--color-surface); font-size: 14px; cursor: default; box-shadow: var(--shadow-sm); line-height: 1; text-align: center; }
+.reaction-pill.own { border-color: var(--color-accent); }
 .react-btn { opacity: 0; position: absolute; top: 50%; transform: translateY(-50%); background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; cursor: default; z-index: 10; box-shadow: var(--shadow-sm); transition: opacity 0.15s; color: var(--color-text-secondary); }
 .react-btn svg { width: 20px; height: 20px; flex-shrink: 0; }
-.msg-bubble:hover .react-btn, .react-btn.active { opacity: 1; }
+@media (hover: hover) { .msg-bubble:hover .react-btn { opacity: 1; } }
+.react-btn.active { opacity: 1; }
 .msg-other-bubble .react-btn { left: auto; right: -38px; }
 .msg-mine-bubble .react-btn { right: auto; left: -38px; }
 .msg-bubble::after { content: ''; position: absolute; top: 0; bottom: 0; width: 88px; }
@@ -208,20 +209,15 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 @media (hover: hover) { .reaction-picker button:hover { background: var(--color-surface); } }
 
 /* --- Action sheet (mobile bottom drawer / desktop centered modal) --- */
-.action-sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200; display: flex; align-items: flex-end; justify-content: center; opacity: 0; transition: opacity 0.2s; }
+.action-sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; }
 .action-sheet-overlay.open { opacity: 1; }
-.action-sheet { background: var(--color-bg); width: 100%; max-width: 360px; border-radius: var(--radius-lg) var(--radius-lg) 0 0; padding: var(--space-sm) 0; padding-bottom: env(safe-area-inset-bottom, var(--space-sm)); transform: translateY(100%); transition: transform 0.25s ease-out; }
-.action-sheet-overlay.open .action-sheet { transform: translateY(0); }
+.action-sheet { background: var(--color-bg); width: 90%; max-width: 360px; border-radius: var(--radius-lg); padding: var(--space-sm) 0; transform: scale(0.95); opacity: 0; transition: transform 0.2s, opacity 0.2s; -webkit-user-select: none; user-select: none; }
+.action-sheet-overlay.open .action-sheet { transform: scale(1); opacity: 1; }
 .action-sheet-title { text-align: center; font-weight: 600; font-size: var(--font-sm); color: var(--color-muted); padding: var(--space-md) var(--space-lg); border-bottom: 1px solid var(--color-border); }
 .action-sheet-btn { display: block; width: 100%; padding: var(--space-md) var(--space-lg); border: none; background: none; font-size: var(--font-base); cursor: default; text-align: center; font-family: inherit; color: var(--color-text); }
 .action-sheet-btn:active { background: var(--color-surface); }
 .action-sheet-danger { color: var(--color-accent); }
 .action-sheet-cancel { color: var(--color-muted); border-top: 1px solid var(--color-border); margin-top: var(--space-xs); }
-@media (min-width: 768px) {
-  .action-sheet-overlay { align-items: center; }
-  .action-sheet { border-radius: var(--radius-lg); max-width: 360px; transform: scale(0.95); opacity: 0; padding-bottom: var(--space-sm); }
-  .action-sheet-overlay.open .action-sheet { transform: scale(1); opacity: 1; }
-}
 
 /* --- Image/video viewer --- */
 .image-viewer { position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 300; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; }
@@ -326,7 +322,7 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: var(--gray-900); color: #fff; padding: var(--space-md) var(--space-xl); border-radius: var(--radius-pill); font-size: var(--font-sm); z-index: 300; opacity: 0; transition: opacity 0.2s; pointer-events: none; max-width: min(360px, 90vw); text-align: center; text-wrap: balance; }
 .toast.show { opacity: 1; }
 
-/* --- Desktop sidebar --- */
+/* --- Desktop --- */
 @media (min-width: 768px) {
   .app { flex-direction: row; }
   .sidebar { width: 320px; border-right: 1px solid var(--color-border); display: flex; flex-direction: column; height: 100vh; height: 100dvh; flex-shrink: 0; }
@@ -341,6 +337,8 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
   .main-panel { display: none; }
   .main-panel.visible { display: flex; flex-direction: column; height: 100%; }
   .chat-hamburger { display: flex; }
+  .react-btn { opacity: 1; width: 24px; height: 24px; }
+  .react-btn svg { width: 16px; height: 16px; }
   .chat-menu { position: fixed; top: 48px; left: 0; right: 0; bottom: 0; z-index: 49; background: var(--gray-900); flex-direction: column; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
   .chat-menu::-webkit-scrollbar { display: none; }
   .chat-menu.open { display: flex; }
@@ -359,6 +357,7 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
   .menu-items .room-item .room-count { color: var(--gray-400); }
   .chat-menu-overlay.open { display: block; position: fixed; top: 48px; left: 0; right: 0; bottom: 0; z-index: 47; background: rgba(0,0,0,0.3); }
 }
+@media (max-width: 767px) and (max-height: 600px) { .profile-preview { display: none; } }
 </style>
 </head>
 <body>
@@ -1391,7 +1390,7 @@ async function openRoom(roomId, roomName, roomType) {
   verify('openRoom', currentRoom === roomId, 'currentRoom set to ' + roomId);
   verify('openRoom', document.getElementById('msg-input'), 'message input exists');
   verify('openRoom', document.getElementById('messages'), 'messages container exists');
-  if (!isMobile) document.getElementById('msg-input')?.focus();
+  document.getElementById('msg-input')?.focus();
 }
 
 function renderChatView(roomName) {
@@ -1721,16 +1720,19 @@ let _longPressTriggered = false;
 
 function msgTouchStart(msgId, e) {
   _longPressTriggered = false;
-  _swipeMsgId = msgId;
   _swipeMsgEl = e.currentTarget;
+  _swipeMsgId = _swipeMsgEl.dataset.msgId || msgId;
   const touch = e.touches[0];
   _swipeStartX = touch.clientX;
   _swipeStartY = touch.clientY;
   _longPressTimer = setTimeout(() => {
     _longPressTriggered = true;
+    window.getSelection()?.removeAllRanges();
+    const realId = _swipeMsgEl?.dataset?.msgId || msgId;
     const msgs = messagesByRoom[currentRoom] || [];
-    const m = msgs.find(msg => msg.id === msgId);
-    showMsgMenu(msgId, m && m.user_id === currentUser?.id);
+    const m = msgs.find(msg => msg.id === realId);
+    dbg('[MENU] longPress', realId, 'isOwn:', m?.user_id === currentUser?.id, 'created_at:', m?.created_at);
+    showMsgMenu(realId, m && m.user_id === currentUser?.id);
   }, 500);
 }
 
@@ -1744,7 +1746,7 @@ function msgTouchMove(e) {
   const isMe = _swipeMsgEl.classList.contains('msg-mine');
   const validSwipe = isMe ? dx < 0 : dx > 0;
   if (validSwipe && Math.abs(dx) > 10) {
-    const clamped = Math.sign(dx) * Math.min(Math.abs(dx), 60);
+    const clamped = Math.sign(dx) * Math.min(Math.abs(dx), 30);
     _swipeMsgEl.style.transform = `translateX(${clamped}px)`;
     _swipeMsgEl.style.transition = 'none';
   }
@@ -1758,7 +1760,7 @@ function msgTouchEnd() {
     const offset = match ? Math.abs(parseInt(match[1])) : 0;
     _swipeMsgEl.style.transition = 'transform 0.2s';
     _swipeMsgEl.style.transform = '';
-    if (offset >= 40 && !_longPressTriggered) {
+    if (offset >= 20 && !_longPressTriggered) {
       replyToMsg(_swipeMsgId);
     }
   }
@@ -1923,8 +1925,9 @@ function _renderChatMenuHtml() {
       <div class="menu-items" id="menu-meetups"></div>
       <button class="menu-section" onclick="toggleMenuSection('dms')">DMs <span class="menu-dot"></span><span class="menu-arrow"><svg class="arrow-right" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"/></svg><svg class="arrow-down" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M4.43057 8.51192C4.70014 8.19743 5.17361 8.161 5.48811 8.43057L12 14.0122L18.5119 8.43057C18.8264 8.16101 19.2999 8.19743 19.5695 8.51192C19.839 8.82642 19.8026 9.29989 19.4881 9.56946L12.4881 15.5695C12.2072 15.8102 11.7928 15.8102 11.5119 15.5695L4.51192 9.56946C4.19743 9.29989 4.161 8.82641 4.43057 8.51192Z"/></svg></span></button>
       <div class="menu-items" id="menu-dms"></div>
-      <button class="menu-section" onclick="openNotificationsModal();closeChatMenu()">Notifications</button>
-      <button class="menu-section" onclick="closeChatMenu();showSettingsMenu()">Profile</button>
+      <button class="menu-section" onclick="closeChatMenu();openProfileModal()">Profile</button>
+      <button class="menu-section" onclick="closeChatMenu();openNotificationsModal()">Notifications</button>
+      <button class="menu-section" onclick="closeChatMenu();confirmLogout()">Log out</button>
     </div>
     <div class="chat-menu-overlay" id="chat-menu-overlay" onclick="closeChatMenu()"></div>`;
 }
@@ -3334,7 +3337,18 @@ async function route() {
 }
 
 window.addEventListener('hashchange', route);
-window.addEventListener('resize', () => { isMobile = window.innerWidth < 768; });
+window.addEventListener('resize', () => {
+  const wasMobile = isMobile;
+  isMobile = window.innerWidth < 768;
+  if (wasMobile !== isMobile) {
+    _routing = false;
+    if (currentRoom) {
+      openRoom(currentRoom, currentRoomName, currentRoomType);
+    } else {
+      renderRoomList();
+    }
+  }
+});
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeViewer(); });
 document.addEventListener('contextmenu', (e) => { if (!e.target.closest('.msg')) e.preventDefault(); });
 document.addEventListener('visibilitychange', () => {
