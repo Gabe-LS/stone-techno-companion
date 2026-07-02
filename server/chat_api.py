@@ -660,7 +660,12 @@ async def list_rooms(request: Request):
                 "id": r["id"],
                 "type": r["type"],
                 "name": r["name"],
+                "description": r["description"] or "",
                 "is_main": bool(r["is_main"]),
+                "is_moderated": bool(r["is_moderated"]),
+                "is_read_only": bool(r["is_read_only"]),
+                "allows_media": bool(r["allows_media"]),
+                "ttl_minutes": r["ttl_minutes"],
                 "online_count": len(manager.get_online_users(r["id"])),
                 "member_count": reachable.get(r["id"], 0),
                 "is_member": r["id"] in member_rooms,
@@ -669,6 +674,7 @@ async def list_rooms(request: Request):
             for r in rooms
         ]
         result.sort(key=lambda r: r["last_message_at"] or "", reverse=True)
+        result.sort(key=lambda r: r.get("position", 0))
         return result
     finally:
         db.close()
@@ -1577,7 +1583,19 @@ async def admin_create_room(request: Request):
         existing = get_room(db, room_id)
         if existing:
             raise HTTPException(409, "Room already exists")
-        room = create_room(db, room_id, DEFAULT_EVENT_ID, room_type, name)
+        room = create_room(
+            db,
+            room_id,
+            DEFAULT_EVENT_ID,
+            room_type,
+            name,
+            description=body.get("description", ""),
+            is_moderated=body.get("is_moderated", True),
+            is_read_only=body.get("is_read_only", False),
+            allows_media=body.get("allows_media", True),
+            ttl_minutes=body.get("ttl_minutes", 60),
+            position=body.get("position", 0),
+        )
         return room
     finally:
         db.close()

@@ -88,12 +88,18 @@ def init_chat_db(db: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_bans_fingerprint ON bans(device_fingerprint);
 
         CREATE TABLE IF NOT EXISTS rooms (
-            id         TEXT PRIMARY KEY,
-            event_id   TEXT NOT NULL,
-            type       TEXT NOT NULL,
-            name       TEXT NOT NULL,
-            is_main    INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL
+            id            TEXT PRIMARY KEY,
+            event_id      TEXT NOT NULL,
+            type          TEXT NOT NULL,
+            name          TEXT NOT NULL,
+            description   TEXT NOT NULL DEFAULT '',
+            is_main       INTEGER NOT NULL DEFAULT 0,
+            is_moderated  INTEGER NOT NULL DEFAULT 1,
+            is_read_only  INTEGER NOT NULL DEFAULT 0,
+            allows_media  INTEGER NOT NULL DEFAULT 1,
+            ttl_minutes   INTEGER DEFAULT 60,
+            position      INTEGER NOT NULL DEFAULT 0,
+            created_at    TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS room_memberships (
@@ -227,6 +233,19 @@ def _migrate_chat_db(db: sqlite3.Connection) -> None:
     if "last_active" not in user_cols:
         db.execute("ALTER TABLE users ADD COLUMN last_active TEXT")
         db.commit()
+
+    room_cols = {r[1] for r in db.execute("PRAGMA table_info(rooms)").fetchall()}
+    for col, defn in [
+        ("description", "TEXT NOT NULL DEFAULT ''"),
+        ("is_moderated", "INTEGER NOT NULL DEFAULT 1"),
+        ("is_read_only", "INTEGER NOT NULL DEFAULT 0"),
+        ("allows_media", "INTEGER NOT NULL DEFAULT 1"),
+        ("ttl_minutes", "INTEGER DEFAULT 60"),
+        ("position", "INTEGER NOT NULL DEFAULT 0"),
+    ]:
+        if col not in room_cols:
+            db.execute(f"ALTER TABLE rooms ADD COLUMN {col} {defn}")
+    db.commit()
 
 
 _chat_db_initialized = False
@@ -432,15 +451,46 @@ def create_room(
     room_type: str,
     name: str,
     is_main: bool = False,
+    description: str = "",
+    is_moderated: bool = True,
+    is_read_only: bool = False,
+    allows_media: bool = True,
+    ttl_minutes: int | None = DEFAULT_MESSAGE_TTL_MIN,
+    position: int = 0,
 ) -> dict:
     now = _now()
     db.execute(
-        "INSERT OR IGNORE INTO rooms (id, event_id, type, name, is_main, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (room_id, event_id, room_type, name, 1 if is_main else 0, now),
+        "INSERT OR IGNORE INTO rooms (id, event_id, type, name, description, is_main, "
+        "is_moderated, is_read_only, allows_media, ttl_minutes, position, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            room_id,
+            event_id,
+            room_type,
+            name,
+            description,
+            1 if is_main else 0,
+            1 if is_moderated else 0,
+            1 if is_read_only else 0,
+            1 if allows_media else 0,
+            ttl_minutes,
+            position,
+            now,
+        ),
     )
     db.commit()
-    return {"id": room_id, "event_id": event_id, "type": room_type, "name": name}
+    return {
+        "id": room_id,
+        "event_id": event_id,
+        "type": room_type,
+        "name": name,
+        "description": description,
+        "is_moderated": is_moderated,
+        "is_read_only": is_read_only,
+        "allows_media": allows_media,
+        "ttl_minutes": ttl_minutes,
+        "position": position,
+    }
 
 
 def delete_room(db: sqlite3.Connection, room_id: str) -> None:
@@ -553,12 +603,16 @@ def create_message(
     user_id: str,
     msg_type: str,
     content: str,
-    ttl_minutes: int = DEFAULT_MESSAGE_TTL_MIN,
+    ttl_minutes: int | None = DEFAULT_MESSAGE_TTL_MIN,
     reply_to_id: str | None = None,
 ) -> dict:
     msg_id = _uuid()
     now = _now()
-    expires = (datetime.now(timezone.utc) + timedelta(minutes=ttl_minutes)).isoformat()
+    expires = (
+        (datetime.now(timezone.utc) + timedelta(minutes=ttl_minutes)).isoformat()
+        if ttl_minutes is not None
+        else "9999-12-31T23:59:59+00:00"
+    )
     db.execute(
         "INSERT INTO messages (id, room_id, user_id, type, content, reply_to_id, expires_at, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1242,10 +1296,11 @@ def get_moderation_log(
 def get_room_stats(db: sqlite3.Connection, online_counts: dict[str, int]) -> list[dict]:
     now = _now()
     rows = db.execute(
-        "SELECT r.id, r.name, r.type, r.is_main, "
+        "SELECT r.id, r.name, r.type, r.description, r.is_main, "
+        "r.is_moderated, r.is_read_only, r.allows_media, r.ttl_minutes, r.position, "
         "  (SELECT COUNT(*) FROM messages m WHERE m.room_id = r.id AND m.expires_at > ?) AS message_count, "
         "  (SELECT MAX(m.created_at) FROM messages m WHERE m.room_id = r.id) AS last_message_at "
-        "FROM rooms r ORDER BY last_message_at DESC NULLS LAST",
+        "FROM rooms r ORDER BY r.position, last_message_at DESC NULLS LAST",
         (now,),
     ).fetchall()
     return [
@@ -1253,8 +1308,14 @@ def get_room_stats(db: sqlite3.Connection, online_counts: dict[str, int]) -> lis
             "id": r["id"],
             "name": r["name"],
             "type": r["type"],
+            "description": r["description"] or "",
             "is_main": bool(r["is_main"]),
+            "is_moderated": bool(r["is_moderated"]),
+            "is_read_only": bool(r["is_read_only"]),
+            "allows_media": bool(r["allows_media"]),
+            "ttl_minutes": r["ttl_minutes"],
             "online_count": online_counts.get(r["id"], 0),
+            "member_count": 0,
             "message_count": r["message_count"],
             "last_message_at": r["last_message_at"],
         }

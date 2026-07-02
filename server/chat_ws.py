@@ -610,10 +610,14 @@ async def _moderate_and_broadcast(
     image_url,
     reply_to_id,
     ws,
+    is_moderated=True,
 ):
     db = get_chat_db()
     try:
-        mod_result = await moderate_message(db, user_id, text, image_url)
+        if is_moderated:
+            mod_result = await moderate_message(db, user_id, text, image_url)
+        else:
+            mod_result = {"allowed": True}
 
         if not mod_result["allowed"]:
             db.execute("DELETE FROM messages WHERE id = ?", (msg["id"],))
@@ -957,6 +961,26 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 send_room = get_room(db, room_id)
                 if not send_room:
                     continue
+                if send_room["is_read_only"]:
+                    await manager.send_to_user(
+                        user_id,
+                        {
+                            "event": "message_rejected",
+                            "temp_id": temp_id,
+                            "reason": "This room is read-only.",
+                        },
+                    )
+                    continue
+                if not send_room["allows_media"] and msg_type in ("image", "video"):
+                    await manager.send_to_user(
+                        user_id,
+                        {
+                            "event": "message_rejected",
+                            "temp_id": temp_id,
+                            "reason": "Media is not allowed in this room.",
+                        },
+                    )
+                    continue
                 if send_room["type"] == "dm":
                     if not db.execute(
                         "SELECT 1 FROM dm_participants WHERE room_id = ? AND user_id = ?",
@@ -1017,8 +1041,15 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                         )
                         continue
 
+                room_ttl = send_room["ttl_minutes"]
                 msg = create_message(
-                    db, room_id, user_id, msg_type, content, reply_to_id=reply_to_id
+                    db,
+                    room_id,
+                    user_id,
+                    msg_type,
+                    content,
+                    ttl_minutes=room_ttl,
+                    reply_to_id=reply_to_id,
                 )
 
                 try:
@@ -1076,6 +1107,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                         image_url,
                         reply_to_id,
                         ws,
+                        is_moderated=bool(send_room["is_moderated"]),
                     )
                 )
 

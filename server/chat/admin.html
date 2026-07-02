@@ -294,21 +294,39 @@ const render = {
     try {
       const rooms = await api('/rooms');
       let html = `<div class="toolbar">
-        <input type="text" id="room-name" placeholder="New room name" onkeydown="if(event.key==='Enter')createRoom()">
+        <input type="text" id="room-name" placeholder="Room name" onkeydown="if(event.key==='Enter')createRoom()">
+        <input type="text" id="room-desc" placeholder="Description (optional)">
         <select id="room-type">
           <option value="general">general</option><option value="stage">stage</option>
+        </select>
+        <select id="room-ttl">
+          <option value="30">30m TTL</option>
+          <option value="60" selected>1h TTL</option>
+          <option value="360">6h TTL</option>
+          <option value="1440">24h TTL</option>
+          <option value="">No expiry</option>
         </select>
         <button class="btn btn-blue" onclick="createRoom()">Create</button>
       </div>`;
       if (!rooms.length) { el.innerHTML = html + '<div class="empty">No rooms</div>'; return; }
       const typePill = t => t === 'general' ? 'pill-blue' : t === 'stage' ? 'pill-green' : t === 'dm' ? 'pill-amber' : 'pill-gray';
+      const ttlLabel = t => t === null ? 'permanent' : t < 60 ? t + 'm' : (t / 60) + 'h';
+      const flagPills = r => {
+        let h = '';
+        if (!r.is_moderated) h += '<span class="pill pill-amber">unmoderated</span> ';
+        if (r.is_read_only) h += '<span class="pill pill-red">read-only</span> ';
+        if (!r.allows_media) h += '<span class="pill pill-gray">text-only</span> ';
+        return h;
+      };
       el.innerHTML = html + `<table class="tbl"><thead><tr>
-        <th>Name</th><th class="col-narrow">Type</th><th class="col-narrow">Online</th><th class="col-narrow">Messages</th><th class="col-narrow">Last activity</th><th class="col-actions">Actions</th>
+        <th>Name</th><th class="col-narrow">Type</th><th class="col-narrow">TTL</th><th class="col-narrow">Members</th><th class="col-narrow">Online</th><th>Flags</th><th class="col-narrow">Last activity</th><th class="col-actions">Actions</th>
       </tr></thead><tbody>` + rooms.map(r => `<tr>
-        <td>${esc(r.name)}${r.is_main ? ' <span style="color:var(--text-muted)">(main)</span>' : ''}</td>
+        <td>${esc(r.name)}${r.is_main ? ' <span style="color:var(--text-muted)">(main)</span>' : ''}${r.description ? '<div style="color:var(--text-muted);font-size:12px">' + esc(r.description) + '</div>' : ''}</td>
         <td class="col-narrow"><span class="pill ${typePill(r.type)}">${esc(r.type)}</span></td>
+        <td class="col-narrow">${ttlLabel(r.ttl_minutes)}</td>
+        <td class="col-narrow">${r.member_count}</td>
         <td class="col-narrow" style="color:var(--green)">${r.online_count}</td>
-        <td class="col-narrow">${r.message_count}</td>
+        <td>${flagPills(r)}</td>
         <td class="col-narrow" style="color:var(--text-muted)">${ago(r.last_message_at)}</td>
         <td class="col-actions">${r.is_main || r.type === 'dm' || r.type === 'meetup' ? '' :
           `<button class="btn btn-neutral" onclick="deleteRoom('${esc(r.id)}','${esc(r.name)}')">Delete</button>`}</td>
@@ -524,10 +542,15 @@ function filterLog(q) { dbg('[FILTER] log:', q); _logFilter = q.toLowerCase(); r
 async function createRoom() {
   dbg('[ACTION] createRoom');
   const name = document.getElementById('room-name')?.value.trim();
+  const description = document.getElementById('room-desc')?.value.trim() || '';
   const type = document.getElementById('room-type')?.value || 'general';
+  const ttlVal = document.getElementById('room-ttl')?.value;
+  const ttl_minutes = ttlVal === '' ? null : parseInt(ttlVal) || 60;
   if (!name) return;
-  try { await api('/rooms', {method: 'POST', body: JSON.stringify({name, type})}); refreshStats(); render.rooms(); }
-  catch (e) { alert('Failed to create room: ' + e.message); }
+  try {
+    await api('/rooms', {method: 'POST', body: JSON.stringify({name, description, type, ttl_minutes})});
+    refreshStats(); render.rooms();
+  } catch (e) { alert('Failed to create room: ' + e.message); }
 }
 async function deleteRoom(roomId, name) {
   dbg('[ACTION] deleteRoom', roomId);
