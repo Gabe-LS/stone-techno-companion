@@ -111,7 +111,7 @@ def _set_session_cookie(response: Response, token: str) -> None:
     response.set_cookie(
         "chat_session",
         token,
-        httponly=False,
+        httponly=False,  # JS reads cookie for WebSocket auth URL
         secure=is_prod,
         samesite="lax" if not is_prod else "strict",
         max_age=7 * 24 * 3600,
@@ -865,6 +865,8 @@ async def create_dm(request: Request):
 async def block_user_endpoint(user_id: str, request: Request):
     user, db = _get_user_from_cookie(request)
     try:
+        if not get_user(db, user_id):
+            raise HTTPException(404, "User not found")
         db_block_user(db, user["id"], user_id)
         return {"ok": True}
     finally:
@@ -1059,6 +1061,7 @@ async def upload_video(request: Request, file: UploadFile = File(...)):
         out_path.unlink(missing_ok=True)
         raise HTTPException(400, "Could not process video file")
 
+    mod_frames = 0
     for i, frac in enumerate([0.25, 0.5, 0.75]):
         frame_path = upload_dir / f"{token}_mod{i}.webp"
         seek = duration * frac if duration > 0 else 0
@@ -1083,8 +1086,14 @@ async def upload_video(request: Request, file: UploadFile = File(...)):
                 ],
                 timeout=10,
             )
+            if frame_path.exists():
+                mod_frames += 1
         except Exception:
             pass
+
+    if mod_frames == 0:
+        out_path.unlink(missing_ok=True)
+        raise HTTPException(400, "Could not process video for moderation")
 
     return {
         "url": f"/chat/uploads/{filename}",

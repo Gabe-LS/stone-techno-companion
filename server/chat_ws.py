@@ -43,6 +43,7 @@ from chat_db import (
     purge_expired_messages,
     purge_expired_meetups,
     purge_expired_sessions,
+    purge_old_reports,
     join_room_membership,
     leave_room_membership,
     mark_room_read,
@@ -56,6 +57,7 @@ from chat_moderation import moderate_message
 logger = logging.getLogger(__name__)
 
 _UPLOADS_DIR = Path(__file__).resolve().parent / "chat" / "uploads"
+_UPLOAD_URL_RE = re.compile(r"^/chat/uploads/[a-f0-9]{32}\.(webp|mp4)$")
 
 
 def _image_to_data_uri(rel_url: str) -> str | None:
@@ -735,6 +737,7 @@ async def _moderate_and_broadcast(
 
 
 ALLOWED_REACTIONS = {"thumbs_up", "heart", "laugh", "fire", "wow", "clap"}
+SENDABLE_MSG_TYPES = {"text", "image", "video", "location"}
 
 
 async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
@@ -879,6 +882,9 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 reply_to_id = data.get("reply_to_id")
 
                 if not room_id or not content:
+                    continue
+
+                if msg_type not in SENDABLE_MSG_TYPES:
                     continue
 
                 max_content = 10000 if msg_type == "text" else 2000
@@ -1364,6 +1370,7 @@ async def purge_loop() -> None:
                 manager._room_meta.pop(meetup_id, None)
 
             purge_expired_sessions(db)
+            purge_old_reports(db)
         except Exception:
             logger.exception("Purge loop error")
         finally:
