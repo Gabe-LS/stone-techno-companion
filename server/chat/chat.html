@@ -1475,7 +1475,7 @@ function renderMemberItems() {
     const blocked = blockedUserIds.has(u.user_id);
     const av = avatarHtml(name, u.color_index || 0, true, u.avatar_url || '');
     const flag = countryFlag(u.country);
-    const onclick = isSelf ? 'showSettingsMenu()' : `showUserMenu('${u.user_id}','${jss(name)}')`;
+    const onclick = isSelf ? 'openProfileModal()' : `showUserMenu('${u.user_id}','${jss(name)}')`;
     return `<div class="member-item${isSelf ? ' member-item-self' : ''}${blocked ? ' member-blocked' : ''}" data-user-id="${u.user_id}" onclick="${onclick}">
       ${av}
       <span class="member-name">${esc(name)}${isSelf ? ' (you)' : ''}</span>
@@ -2326,7 +2326,7 @@ async function _loadMenuSection(section, container) {
       const isSelf = u.user_id === currentUser?.id;
       const av = avatarHtml(name, u.color_index || 0, true, u.avatar_url || '');
       const flag = countryFlag(u.country);
-      const onclick = isSelf ? 'closeChatMenu();showSettingsMenu()' : `showUserMenu('${u.user_id}','${jss(name)}')`;
+      const onclick = isSelf ? 'closeChatMenu();openProfileModal()' : `showUserMenu('${u.user_id}','${jss(name)}')`;
       return `<div class="menu-member${isSelf ? ' menu-member-self' : ''}" onclick="${onclick}">${av}<span class="menu-member-name">${esc(name)}${isSelf ? ' (you)' : ''}</span>${flag ? `<span class="menu-member-flag">${flag}</span>` : ''}</div>`;
     }).join('');
   }
