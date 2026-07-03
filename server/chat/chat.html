@@ -10,6 +10,7 @@
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>if ('scrollRestoration' in history) history.scrollRestoration = 'manual';</script>
 <style>
+/* ===== PAGE-SPECIFIC TOKENS ===== */
 :root {
   /* 12 user colors: vivid (name) + pastel (bubble) */
   --user-1: #B91C1C; --user-1-bg: #FEE2E2;
@@ -26,14 +27,16 @@
   --user-12: #BE185D; --user-12-bg: #FCE7F3;
   --user-self: #64748B; --user-self-bg: #E2E8F0;
 }
+/* ===== BASE OVERRIDES ===== */
 html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-behavior: none; touch-action: pan-x pan-y; -webkit-tap-highlight-color: transparent; }
+
+/* ===== COMPONENTS ===== */
 
 /* --- Layout --- */
 .app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
-.header { display: flex; align-items: center; height: var(--header-h); background: #111; color: #fff; padding: 0 var(--space-lg); flex-shrink: 0; z-index: var(--z-header); position: relative; }
+.header { display: flex; align-items: center; height: var(--header-h); background: var(--gray-900); color: #fff; padding: 0 var(--space-lg); flex-shrink: 0; z-index: var(--z-header); position: relative; }
 .header .back { background: none; border: none; color: #fff; font-size: var(--font-xl); cursor: default; padding: var(--space-sm); margin-right: var(--space-sm); line-height: 1; }
 .header .title { flex: 1; font-weight: 600; font-size: var(--font-base); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.header .subtitle { font-size: var(--font-xs); color: var(--gray-400); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .header .online { font-size: var(--font-xs); color: var(--gray-400); }
 .header .header-info { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; padding-left: 40px; padding-right: 40px; }
 .header .header-info .title { font-size: var(--font-sm); line-height: 1.3; }
@@ -55,7 +58,6 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .room-item:active { background: var(--color-surface); }
 .room-info { flex: 1; min-width: 0; }
 .room-name { font-weight: 600; font-size: var(--font-sm); line-height: 1.5; }
-.room-preview { font-size: var(--font-xs); color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
 .room-meta { text-align: right; flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .room-count { font-size: var(--font-xs); color: var(--gray-400); line-height: 1.2; margin-bottom: 2px; }
 .room-bell { width: 32px; height: 32px; padding: 0; border: none; border-radius: 50%; background: none; cursor: default; display: flex; align-items: center; justify-content: center; color: var(--gray-400); flex-shrink: 0; }
@@ -104,9 +106,9 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .msg-link-preview { display: block; text-decoration: none; color: inherit; margin-bottom: var(--space-sm); border-radius: var(--radius-md); overflow: hidden; background: var(--color-surface); max-width: 480px; }
 .msg-link-preview:active { opacity: 0.85; }
 .link-preview-img { width: 100%; aspect-ratio: auto; display: block; -webkit-touch-callout: none; }
-.link-preview-body { padding: 10px 12px; }
+.link-preview-body { padding: 10px var(--space-md); }
 .link-preview-title { font-weight: 600; font-size: var(--font-sm); line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.link-preview-desc { font-size: var(--font-xs); color: var(--color-muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.4; }
+.link-preview-desc { font-size: var(--font-xs); color: var(--color-muted); margin-top: var(--space-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.4; }
 .link-preview-domain { font-size: var(--font-xs); color: var(--color-muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* --- Input bar --- */
@@ -133,14 +135,14 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .reply-preview.visible { display: flex; }
 .reply-preview-content { flex: 1; min-width: 0; border-left: 3px solid var(--color-accent); padding-left: var(--space-sm); }
 .reply-preview-name { font-weight: 600; font-size: var(--font-xs); display: block; margin-bottom: 2px; }
-.reply-preview-text { font-size: 14px; line-height: 1.4; color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.reply-preview-text { font-size: var(--font-sm); line-height: 1.4; color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
 .reply-preview-close { background: none; border: none; font-size: 18px; color: var(--color-muted); cursor: default; padding: var(--space-xs) var(--space-sm); }
 
 /* --- Reply quote in message --- */
 .reply-quote { border-left: 3px solid var(--color-accent); padding: var(--space-xs) var(--space-sm); margin: 6px 0; cursor: default; background: rgba(0,0,0,0.04); border-radius: var(--radius-sm); }
 .msg-mine-bubble .reply-quote { background: rgba(0,0,0,0.06); }
 .reply-quote-name { font-weight: 600; font-size: var(--font-xs); display: block; margin-bottom: 2px; }
-.reply-quote-text { font-size: 14px; line-height: 1.4; color: var(--color-muted); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+.reply-quote-text { font-size: var(--font-sm); line-height: 1.4; color: var(--color-muted); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
 .msg.highlight { animation: msg-highlight 1.5s ease-out; }
 @keyframes msg-highlight { 0% { background: rgba(185,28,28,0.1); } 100% { background: transparent; } }
 
@@ -148,9 +150,9 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .reaction-pills { position: absolute; bottom: -16px; display: flex; gap: 3px; z-index: 5; }
 .msg-mine-bubble .reaction-pills { right: var(--space-sm); }
 .msg-other-bubble .reaction-pills { left: var(--space-sm); }
-.reaction-pill { display: inline-flex; align-items: center; justify-content: center; gap: 2px; padding: 4px 8px; border: 1px solid var(--color-border); border-radius: var(--radius-pill); background: var(--color-surface); font-size: 14px; cursor: default; box-shadow: var(--shadow-sm); line-height: 1; text-align: center; }
+.reaction-pill { display: inline-flex; align-items: center; justify-content: center; gap: 2px; padding: var(--space-xs) var(--space-sm); border: 1px solid var(--color-border); border-radius: var(--radius-pill); background: var(--color-surface); font-size: var(--font-sm); cursor: default; box-shadow: var(--shadow-sm); line-height: 1; text-align: center; }
 .reaction-pill.own { border-color: var(--color-accent); }
-.react-btn { opacity: 0; position: absolute; top: 50%; transform: translateY(-50%); background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; cursor: default; z-index: 10; box-shadow: var(--shadow-sm); transition: opacity 0.15s; color: var(--color-text-secondary); }
+.react-btn { opacity: 0; position: absolute; top: 50%; transform: translateY(-50%); background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; cursor: default; z-index: var(--z-sticky); box-shadow: var(--shadow-sm); transition: opacity var(--transition-fast); color: var(--color-text-secondary); }
 .react-btn svg { width: 20px; height: 20px; flex-shrink: 0; }
 @media (hover: hover) { .msg-bubble:hover .react-btn { opacity: 1; } }
 .react-btn.active { opacity: 1; }
@@ -271,7 +273,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 /* --- Typing --- */
 .typing-indicator { padding: var(--space-xs) var(--space-lg); font-size: var(--font-xs); color: var(--color-muted); font-style: italic; min-height: 20px; }
 
-
+/* ===== MEDIA QUERIES ===== */
 
 /* --- Desktop --- */
 @media (min-width: 768px) {
@@ -291,7 +293,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
   .hamburger { display: flex; }
   .react-btn { opacity: 1; width: 24px; height: 24px; }
   .react-btn svg { width: 16px; height: 16px; }
-  .chat-menu { position: fixed; top: var(--header-h); left: 0; right: 0; bottom: 0; z-index: var(--z-menu); background: #111; flex-direction: column; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
+  .chat-menu { position: fixed; top: var(--header-h); left: 0; right: 0; bottom: 0; z-index: var(--z-menu); background: var(--gray-900); flex-direction: column; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
   .chat-menu::-webkit-scrollbar { display: none; }
   .chat-menu.open { display: flex; }
   .menu-section { background: none; color: #ccc; border: none; border-top: 1px solid var(--gray-700); padding: 14px var(--space-lg); font-size: 15px; text-align: left; font-family: inherit; display: flex; align-items: center; gap: var(--space-sm); width: 100%; font-weight: 600; }
@@ -304,7 +306,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
   .menu-dot.active { display: inline-block; }
   .menu-items { display: none; background: var(--gray-800); }
   .menu-items.open { display: block; }
-  .menu-items .room-item { padding: var(--space-sm) var(--space-lg) var(--space-sm) 24px; border-bottom-color: var(--gray-700); }
+  .menu-items .room-item { padding: var(--space-sm) var(--space-lg) var(--space-sm) var(--space-xl); border-bottom-color: var(--gray-700); }
   .menu-items .room-item .room-name { color: #fff; }
   .menu-items .room-item .room-count { color: var(--gray-400); }
 }
@@ -1206,7 +1208,7 @@ function _renderRoomItemsHtml() {
     const isMember = r.is_member !== false;
     const bellHtml = r.is_main ? '' : `<button type="button" class="room-bell${isMember ? ' active' : ''}" onclick="event.stopPropagation();_toggleRoomMembership('${r.id}',this)" aria-label="${isMember ? 'Mute room' : 'Get notified'}"><svg width="16" height="16" viewBox="0 0 24 24" fill="${isMember ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>`;
     return `<li class="room-item${currentRoom === r.id ? ' active' : ''}" data-room-id="${r.id}" onclick="closeChatMenu();openRoom('${r.id}','${jss(r.name)}','${r.type}')">
-      <div class="room-info"><div class="room-name">${esc(r.name)}</div><div class="room-count">${count} online</div></div>
+      <div class="room-info"><div class="room-name">${esc(r.name)}</div><div class="room-count">${r.member_count || 0} members</div></div>
       <div class="room-meta">${badgeHtml}</div>
       ${bellHtml}
     </li>`;
@@ -1229,9 +1231,11 @@ function updateSidebarCount(roomId) {
   const meetupInfo = item.dataset.meetupInfo;
   if (countEl) {
     if (meetupInfo) {
-      countEl.textContent = count > 0 ? meetupInfo + ' · ' + count + ' online' : meetupInfo;
+      countEl.textContent = meetupInfo;
     } else {
-      countEl.textContent = count + ' online';
+      const room = rooms.find(r => r.id === roomId);
+      const members = room ? (room.member_count || 0) : 0;
+      countEl.textContent = members + ' members';
     }
   }
 }
@@ -1241,7 +1245,9 @@ function updateHeaderCount() {
   if (!currentRoom) return;
   const count = (onlineByRoom[currentRoom] || []).length;
   const el = document.querySelector('.header .online');
-  if (el) el.textContent = count + ' online';
+  const room = rooms.find(r => r.id === currentRoom);
+  const members = room ? (room.member_count || 0) : 0;
+  if (el) el.textContent = members + ' members';
 }
 
 function updateBadge(roomId) {
@@ -1416,6 +1422,9 @@ async function openRoom(roomId, roomName, roomType) {
 function renderChatView(roomName) {
   dbg('[CHAT] renderChatView', roomName);
   const onlineCount = (onlineByRoom[currentRoom] || []).length;
+  const currentRoomObj = rooms.find(r => r.id === currentRoom);
+  const memberCount = currentRoomObj ? (currentRoomObj.member_count || 0) : 0;
+  const countText = memberCount + ' members';
   const isMeetup = currentRoomType === 'meetup';
   const showMeetupBtn = !isMeetup;
 
@@ -1451,7 +1460,7 @@ function renderChatView(roomName) {
         <a href="/line-up" class="nav-icon" aria-label="Line-up"><svg width="24" height="24" viewBox="-1.7 -1.7 27.4 27.4" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12C2 8.22876 2 6.34315 3.17157 5.17157C4.34315 4 6.22876 4 10 4H14C17.7712 4 19.6569 4 20.8284 5.17157C22 6.34315 22 8.22876 22 12V14C22 17.7712 22 19.6569 20.8284 20.8284C19.6569 22 17.7712 22 14 22H10C6.22876 22 4.34315 22 3.17157 20.8284C2 19.6569 2 17.7712 2 14V12Z"/><path d="M7 4V2.5" stroke-linecap="round"/><path d="M17 4V2.5" stroke-linecap="round"/><path d="M2.5 9H21.5" stroke-linecap="round"/><circle cx="17" cy="13" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="13" r="1" fill="currentColor" stroke="none"/><circle cx="7" cy="13" r="1" fill="currentColor" stroke="none"/><circle cx="17" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="7" cy="17" r="1" fill="currentColor" stroke="none"/></svg></a>
         <div class="header-info">
           <span class="title">${esc(roomName)}</span>
-          <span class="online">${onlineCount} online</span>
+          <span class="online">${countText}</span>
         </div>
         <button class="hamburger" onclick="toggleChatMenu()">${ICON_HAMBURGER}<span class="hamburger-dot"></span></button>
       </div>
@@ -1468,7 +1477,7 @@ function renderChatView(roomName) {
         <div class="header">
           <div class="header-info">
             <span class="title">${esc(roomName)}</span>
-            <span class="online">${onlineCount} online</span>
+            <span class="online">${countText}</span>
           </div>
           ${headerAvatar}
         </div>
