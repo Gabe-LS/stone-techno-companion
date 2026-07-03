@@ -396,6 +396,7 @@ class ConnectionManager:
         self._room_meta: dict[str, dict] = {}
         self._recent_msgs: dict[str, list] = {}
         self._last_active_ts: dict[str, float] = {}
+        self._last_ws_activity: dict[str, float] = {}
 
     def should_update_last_active(self, user_id: str, interval: float = 60.0) -> bool:
         now = time.monotonic()
@@ -414,6 +415,7 @@ class ConnectionManager:
         self.user_conns.setdefault(user_id, {})[conn_id] = ws
         self.conn_user[conn_id] = user_id
         self.user_rooms.setdefault(user_id, set())
+        self._last_ws_activity[user_id] = time.monotonic()
 
     def disconnect(self, conn_id: str) -> tuple[str | None, set[str]]:
         user_id = self.conn_user.pop(conn_id, None)
@@ -777,10 +779,16 @@ async def _moderate_and_broadcast(
 
         connected_uids = set(mgr.user_conns.keys())
         all_targets = _get_room_notification_targets(db, room_id, user_id)
-        offline_targets = [uid for uid in all_targets if uid not in connected_uids]
+        now = time.monotonic()
+        push_targets = []
+        for uid in all_targets:
+            if uid not in connected_uids:
+                push_targets.append(uid)
+            elif now - mgr._last_ws_activity.get(uid, 0) > 30:
+                push_targets.append(uid)
         room_type = meta.get("type", "general")
         room_name = meta.get("name", "")
-        for uid in offline_targets:
+        for uid in push_targets:
             asyncio.create_task(
                 _send_chat_push(
                     uid,
@@ -917,6 +925,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
             event = data.get("event")
             if not event:
                 continue
+            manager._last_ws_activity[user_id] = time.monotonic()
 
             if event == "join_room":
                 room_id = data.get("room_id")
