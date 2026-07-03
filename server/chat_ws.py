@@ -56,6 +56,7 @@ from chat_db import (
     get_unread_counts,
     get_push_subscriptions,
     delete_push_subscription_by_endpoint,
+    get_setting,
 )
 from chat_moderation import moderate_message
 
@@ -829,6 +830,10 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
         return
 
     await ws.accept()
+    try:
+        msg_char_limit = int(get_setting(db, "msg_char_limit", "1000"))
+    except (ValueError, TypeError):
+        msg_char_limit = 1000
     user_id = user["id"]
     conn_id = secrets.token_hex(8)
     display_name = user["display_name"]
@@ -983,7 +988,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 if msg_type not in SENDABLE_MSG_TYPES:
                     continue
 
-                max_content = 1100 if msg_type == "text" else 2000
+                max_content = msg_char_limit + 100 if msg_type == "text" else 2000
                 if len(content) > max_content:
                     await manager.send_to_user(
                         user_id,

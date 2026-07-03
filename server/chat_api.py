@@ -239,9 +239,17 @@ def _authenticate(
 @router.get("/config")
 async def get_config():
     google_id = os.environ.get("GOOGLE_CLIENT_ID", "")
+    db = _get_db()
+    try:
+        msg_limit = int(get_setting(db, "msg_char_limit", "1000"))
+    except (ValueError, TypeError):
+        msg_limit = 1000
+    finally:
+        db.close()
     return {
         "google_client_id": google_id if google_id else None,
         "site_short": _SITE_SHORT or None,
+        "msg_char_limit": msg_limit,
     }
 
 

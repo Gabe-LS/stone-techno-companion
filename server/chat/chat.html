@@ -122,6 +122,9 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .input-wrap { flex: 1; position: relative; display: flex; align-items: flex-end; }
 .input-wrap textarea { width: 100%; padding: 10px 44px 10px var(--space-lg); border: 1px solid var(--color-border); border-radius: 20px; font-size: var(--font-base); outline: none; font-family: inherit; resize: none; overflow-y: hidden; line-height: 1.4; box-sizing: content-box; scrollbar-width: none; }
 .input-wrap textarea:focus { border-color: var(--gray-400); }
+.input-wrap textarea.overlimit { border-color: #e53935; }
+.input-wrap textarea.overlimit:focus { border-color: #e53935; }
+.input-bar .send.disabled { opacity: 0.3; pointer-events: none; }
 .input-wrap textarea::-webkit-scrollbar { display: none; }
 .input-wrap textarea.multiline { border-radius: var(--radius-lg); }
 .input-bar .emoji-btn { position: absolute; right: 10px; bottom: 9px; width: 22px; height: 22px; padding: 0; background: none; border: none; color: var(--color-disabled); display: flex; align-items: center; justify-content: center; margin-bottom: 0; }
@@ -377,6 +380,7 @@ let isMobile = window.innerWidth < 768;
 let _googleClientId = null;
 let _googleInitialized = false;
 let _siteShort = null;
+let _msgCharLimit = 1000;
 
 const REACTION_EMOJIS = {'👍':'thumbs_up','❤️':'heart','😂':'laugh','🔥':'fire','😮':'wow','👏':'clap'};
 const REACTION_KEYS = Object.entries(REACTION_EMOJIS);
@@ -452,6 +456,7 @@ async function renderAuth() {
       const cfg = await api('/config');
       _googleClientId = cfg.google_client_id;
       _siteShort = cfg.site_short;
+      if (cfg.msg_char_limit) _msgCharLimit = cfg.msg_char_limit;
       if (_siteShort) document.title = 'Chat · ' + _siteShort;
       dbg('[AUTH] google client id loaded:', _googleClientId ? 'yes' : 'no');
     } catch (e) { dbg('[AUTH] config fetch failed:', e.message); }
@@ -1561,7 +1566,7 @@ function renderChatView(roomName) {
         <button onclick="uploadVideo(); closeActionMenu()"><svg viewBox="0 0 24 24" fill="none" width="16" height="16"><path d="M2 12C2 7.28595 2 4.92893 3.46447 3.46447C4.92893 2 7.28595 2 12 2C16.714 2 19.0711 2 20.5355 3.46447C22 4.92893 22 7.28595 22 12C22 16.714 22 19.0711 20.5355 20.5355C19.0711 22 16.714 22 12 22C7.28595 22 4.92893 22 3.46447 20.5355C2 19.0711 2 16.714 2 12Z" stroke="currentColor" stroke-width="1.5"/><path d="M9.5 8.96533C9.5 8.48805 9.5 8.24941 9.59974 8.11618C9.68666 8.00007 9.81971 7.92744 9.96438 7.9171C10.1304 7.90525 10.3311 8.03429 10.7326 8.29239L15.4532 11.3271C15.8016 11.551 15.9758 11.663 16.0359 11.8054C16.0885 11.9298 16.0885 12.0702 16.0359 12.1946C15.9758 12.337 15.8016 12.449 15.4532 12.6729L10.7326 15.7076C10.3311 15.9657 10.1304 16.0948 9.96438 16.0829C9.81971 16.0726 9.68666 15.9999 9.59974 15.8838C9.5 15.7506 9.5 15.512 9.5 15.0347V8.96533Z" stroke="currentColor" stroke-width="1.5"/></svg> Share Video</button>
       </div>
       <div class="input-wrap">
-        <textarea id="msg-input" placeholder="Type a message..." autocomplete="off" maxlength="1000" rows="1"
+        <textarea id="msg-input" placeholder="Type a message..." autocomplete="off" rows="1"
           onkeydown="if(event.key==='Enter'&&!event.shiftKey){sendMessage();event.preventDefault()}"
           oninput="autoResizeInput(this)"></textarea>
         <button class="emoji-btn" onclick="openEmoji()"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/><path d="M9 16C9.85038 16.6303 10.8846 17 12 17C13.1154 17 14.1496 16.6303 15 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M16 10.5C16 11.3284 15.5523 12 15 12C14.4477 12 14 11.3284 14 10.5C14 9.67157 14.4477 9 15 9C15.5523 9 16 9.67157 16 10.5Z" fill="currentColor"/><ellipse cx="9" cy="10.5" rx="1" ry="1.5" fill="currentColor"/></svg></button>
@@ -2045,6 +2050,8 @@ function sendChatMessage(type, content, replyToId) {
 }
 
 function autoResizeInput(el) {
+  var hardMax = _msgCharLimit + 50;
+  if (el.value.length > hardMax) el.value = el.value.slice(0, hardMax);
   var cs = getComputedStyle(el);
   var lineH = Math.round(parseFloat(cs.fontSize) * 1.4);
   var pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
@@ -2057,11 +2064,16 @@ function autoResizeInput(el) {
   var scrolling = contentH > maxH;
   el.style.overflowY = scrolling ? 'auto' : 'hidden';
   if (scrolling) el.scrollTop = el.scrollHeight;
+  var over = el.value.length > _msgCharLimit;
+  el.classList.toggle('overlimit', over);
+  var sendBtn = el.closest('.input-bar')?.querySelector('.send');
+  if (sendBtn) sendBtn.classList.toggle('disabled', over);
 }
 
 async function sendMessage() {
   const input = document.getElementById('msg-input');
   if (!input || !input.value.trim()) return;
+  if (input.value.length > _msgCharLimit) return;
   const text = input.value.trim();
   if (_pendingDmTarget && currentRoom === 'pending-dm') {
     dbg('[DM] creating DM room on first message');
@@ -3444,8 +3456,9 @@ async function route() {
       const cfg = await api('/config');
       _googleClientId = cfg.google_client_id;
       _siteShort = cfg.site_short;
+      if (cfg.msg_char_limit) _msgCharLimit = cfg.msg_char_limit;
       if (_siteShort) document.title = 'Chat · ' + _siteShort;
-      dbg('[CONFIG] loaded, site_short:', _siteShort);
+      dbg('[CONFIG] loaded, site_short:', _siteShort, 'msg_char_limit:', _msgCharLimit);
     } catch (e) { dbg('[CONFIG] fetch failed:', e.message); }
   }
   dbg('route:', location.href);

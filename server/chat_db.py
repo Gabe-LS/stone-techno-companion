@@ -212,6 +212,7 @@ def init_chat_db(db: sqlite3.Connection) -> None:
             value TEXT NOT NULL
         );
         INSERT OR IGNORE INTO chat_settings (key, value) VALUES ('room_sort', 'auto');
+        INSERT OR IGNORE INTO chat_settings (key, value) VALUES ('msg_char_limit', '1000');
     """)
     db.commit()
 
