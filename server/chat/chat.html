@@ -3798,6 +3798,14 @@ document.addEventListener('visibilitychange', () => {
 });
 route();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(function() { /* sw not available */ });
+document.addEventListener('visibilitychange', function() {
+  if (document.hidden) {
+    try { navigator.sendBeacon('/chat/api/push/idle'); } catch(e) {}
+  }
+});
+window.addEventListener('pagehide', function() {
+  try { navigator.sendBeacon('/chat/api/push/idle'); } catch(e) {}
+});
 
 if (window.visualViewport) {
   const vv = window.visualViewport;

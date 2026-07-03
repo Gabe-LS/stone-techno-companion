@@ -1461,6 +1461,16 @@ async def chat_push_status(request: Request):
         db.close()
 
 
+@router.post("/push/idle", status_code=204)
+async def chat_push_idle(request: Request):
+    user, db = _get_user_from_cookie(request)
+    db.close()
+    from chat_ws import manager
+
+    manager._last_ws_activity[user["id"]] = 0
+    return Response(status_code=204)
+
+
 @router.post("/push/ack", status_code=204)
 async def chat_push_ack(request: Request):
     body = await request.json()
