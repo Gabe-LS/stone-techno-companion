@@ -29,7 +29,7 @@ python migrate_db.py
 
 # Run full server locally (lineup + chat)
 cd server && set -a && source .env && set +a && uvicorn api:app --port 64728 --ssl-keyfile localhost+1-key.pem --ssl-certfile localhost+1.pem
-# Open https://localhost:64728/ (lineup) and https://localhost:64728/chat (chat)
+# Open https://localhost:64728/line-up and https://localhost:64728/chat
 
 # Run tests
 python -m pytest tests/ -v
@@ -70,7 +70,7 @@ System: `ffmpeg` + `ffprobe` must be in PATH for video upload (frame extraction 
 ### Database schema
 
 ```
-events            — id, name, edition, source_url, website, start/end_date, timezone, address, lat/lng
+events            — id, name, short_name, edition, source_url, website, start/end_date, timezone, address, lat/lng
 venues            — id, name, about, address, lat/lng
 stages            — id, name, about, venue_id (FK → venues)
 event_stages      — event_id + stage_id (PK), color (RGB), position
@@ -115,6 +115,7 @@ Key design decisions:
 | `server/chat_ws.py` | Chat WebSocket server — rooms, optimistic messaging, presence, typing, reactions, replies, meetups, DMs, purge loop |
 | `server/chat_api.py` | Chat REST API — auth (Google/Email), rooms, meetups, DMs, media upload, admin page. Mounts routes + WS into FastAPI. |
 | `server/chat/chat.html` | Chat frontend — single HTML file with inline CSS/JS. WhatsApp-style bubbles, reactions, replies, action menus. |
+| `server/chat/admin.html` | Admin dashboard — dark-themed SPA with tabs: Rooms, Users, Reports, Banned, Logs. Room management (create/edit/delete/reorder), user moderation (strike/mute/ban/clear), moderation log. |
 | `server/chat/blocklist.txt` | Word filter blocklist (drug terms, slurs). Editable without deploy. |
 | `server/static/sw.js` | Service worker — handles push events and notification click navigation |
 | `server/static/manifest.json` | PWA manifest — enables Add to Home Screen and push on iOS |
@@ -242,6 +243,9 @@ Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DB at `server/da
 | `VAPID_CLAIMS_EMAIL` | Yes | VAPID contact email |
 | `GOOGLE_CLIENT_ID` | Yes | Google OAuth client ID (from Google Cloud Console) |
 | `GOOGLE_CLIENT_SECRET` | Yes | Google OAuth client secret (for authorization code exchange) |
+| `CHAT_ADMIN_EMAILS` | No | Comma-separated admin emails for cookie-based admin auth |
+| `CHAT_ADMIN_TOKEN` | No | Admin token for header-based admin auth (fallback) |
+| `CHAT_EVENT_ID` | No | Event ID (default: `stone-techno-2026`) |
 
 ### DNS for Email (deftlab.dev)
 
@@ -249,7 +253,7 @@ Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DB at `server/da
 - **DKIM**: TXT record at `mta._domainkey.deftlab.dev` (from Maileroo dashboard)
 - **DMARC**: existing `_dmarc.deftlab.dev` record works as-is
 
-### Deploy Checklist (when merging chat-prototype)
+### Deploy Checklist
 
 1. Add `MAILEROO_API_KEY` to production `.env` (replace `RESEND_API_KEY`)
 2. Remove `RESEND_API_KEY` from production `.env`
@@ -284,22 +288,23 @@ Extends the existing FastAPI server — no separate service. Two SQLite database
 ### Chat Database (chat.db)
 
 ```
-users              — id, provider, provider_id, display_name, username, username_lower, country, avatar_url, color_index, device_fingerprint, muted_until, mute_count
+users              — id, provider, provider_id, display_name, username, username_lower, country, avatar_url, color_index, session_id, device_fingerprint, muted_until, mute_count, created_at, last_seen, last_active
 sessions           — id, user_id, token, expires_at
 email_tokens       — token, email, provider_id, fingerprint, expires_at (DB-backed, survives restart)
 avatars            — user_id (PK), data (BLOB, WebP 128x128)
-user_providers     — user_id, provider, provider_id (multi-provider auth: same user via Google + email)
-bans               — id, provider, provider_id, device_fingerprint, reason (survives user deletion)
-rooms              — id, event_id, type (general/meetup/dm), name, is_main
+user_providers     — user_id, provider, provider_id, created_at (multi-provider auth: same user via Google + email)
+bans               — id, user_id, provider, provider_id, device_fingerprint, reason, created_at (survives user deletion)
+rooms              — id, event_id, type, name, description, is_main, is_moderated, is_read_only, allows_media, ttl_minutes, position, created_at
 room_memberships   — user_id + room_id (PK), joined_at, last_read_at (tracks joined rooms + unread)
-messages           — id, room_id, user_id, type, content, reply_to_id, expires_at (60 min default)
-message_reactions  — message_id + user_id + emoji (PK), CASCADE on message delete
-meetups            — id, creator_id, stage_id, title, location, meetup_time, expires_at (meetup_time + 30 min)
-meetup_attendees   — meetup_id + user_id (PK)
+messages           — id, room_id, user_id, type, content, link_preview, reply_to_id, expires_at, created_at
+message_reactions  — message_id + user_id + emoji (PK), created_at, CASCADE on message delete
+meetups            — id, creator_id, stage_id, title, location_lat, location_lng, location_label, meetup_time, note, created_at, expires_at
+meetup_attendees   — meetup_id + user_id (PK), joined_at
 dm_participants    — room_id + user_id (PK)
-blocks             — blocker_id + blocked_id (PK)
-reports            — id, reporter_id, reported_user_id, message_snapshot, reason, status
-strikes            — id, user_id, reason, detail, expires_at (4h TTL, reset on new strike)
+blocks             — blocker_id + blocked_id (PK), created_at
+reports            — id, reporter_id, reported_user_id, message_snapshot, room_id, reason, status, created_at, reviewed_at
+strikes            — id, user_id, reason, detail, created_at, expires_at (4h TTL, reset on new strike)
+chat_push_subscriptions — id, user_id, endpoint, p256dh, auth, created_at
 ```
 
 ### Auth
@@ -332,6 +337,33 @@ Layers 2 and 3 run in parallel via `asyncio.gather`. Word filter blocks before A
 
 **Strike system**: 4-step escalation with expiring strikes (4h TTL, reset on new violation). 1st = warning, 2nd = warning, 3rd = 30-min mute, 4th = permanent ban. Lifetime mute counter: 3 total mutes across the event = permanent ban (prevents cycling). Same escalation for all content types including drugs. Bans stored by provider_id + device fingerprint. `secure_delete=ON` zeros deleted data on disk.
 
+### Room Properties
+
+Rooms have configurable properties set via the admin page:
+- `description` — what the room is for
+- `ttl_minutes` — per-room message TTL (NULL = permanent, 30/60/360/1440 minutes)
+- `is_moderated` — toggles word filter + AI moderation for the room
+- `is_read_only` — only admins can post
+- `allows_media` — disable image/video uploads
+- `position` — custom sort order (drag-to-reorder in admin)
+
+### Membership Model
+
+Room "member count" reflects **reachable** users — those who can be notified:
+- Has active WebSocket connection, OR
+- Has valid push subscription AND `last_seen` < 2 hours ago
+
+`last_seen` updated on: WS connect, WS disconnect, push notification delivery (via `POST /chat/api/push/ack`).
+`last_active` updated on: engagement events (send message, react, join meetup, etc.), throttled to 1 write per 60s.
+
+Push ack signals from service worker: `delivered` (updates last_seen), `clicked` (updates last_seen + last_active), `dismissed` (updates last_seen). Auto-resubscribe on `pushsubscriptionchange`.
+
+Mute/delete user → all their messages deleted from DB + `messages_expired` broadcast to connected clients for instant removal.
+
+### Admin Page
+
+Dark-themed SPA at `/chat/api/admin`. Auth via chat session cookie (matching `CHAT_ADMIN_EMAILS`) or `X-Admin-Token` header. Tabs: Rooms (create/edit/delete/reorder/set main), Users (search, strike/mute/ban/unban/delete, view history), Reports (ban/strike/dismiss), Banned (unban), Logs (moderation timeline). Stats footer with auto-refresh.
+
 ### Chat UI
 
 Main room auto-opens on login. Path-based routing (`/chat`, `/chat/r/{id}`, `/chat/d/{user}`, `/chat/m/{id}`, `/chat/msg/{id}`). Single HTML file (`server/chat/chat.html`).
@@ -354,9 +386,11 @@ Main room auto-opens on login. Path-based routing (`/chat`, `/chat/r/{id}`, `/ch
 - **Optimistic messaging**: messages appear instantly with pending state, confirmed on ack, removed if moderation rejects
 - **Scroll**: messages pushed to bottom via flex justify-content, app hidden until routing completes, ResizeObserver locks scroll for 1.5s after render
 - **Desktop**: sidebar + chat panel side-by-side (768px breakpoint)
-- **URL structure**: `/chat` (main), `/chat/r/{id}` (room), `/chat/d/{user}` (DM), `/chat/m/{id}` (meetup), `/chat/v/{token}` (verify email), `/chat/msg/{id}` (message permalink). API under `/chat/api/` with flat routes (`/me`, `/login`, `/verify`, `/profile`, `/logout`, `/rooms`, etc.)
+- **URL structure**: `/line-up` (lineup), `/timetable` (timetable), `/chat` (main chat), `/chat/r/{id}` (room), `/chat/d/{user}` (DM), `/chat/m/{id}` (meetup), `/chat/v/{token}` (verify email), `/chat/msg/{id}` (message permalink). API under `/chat/api/` with flat routes (`/me`, `/login`, `/verify`, `/profile`, `/logout`, `/rooms`, etc.). Admin at `/chat/api/admin`.
+- **Page titles**: `Line-up · ST26`, `Timetable · ST26`, `Chat · ST26` — short name from `events.short_name` in lineup DB, loaded at server startup
+- **Mobile navigation**: chat icon (dialog bubbles) on lineup/timetable header left, calendar icon on chat header left. Both `position: absolute; left: 4px`, matching hamburger at `right: 4px`. SVG viewBox scaled to match hamburger visual weight.
 - **Toast**: word-based duration (1.5s + 300ms/word, min 4s), balanced text, max 360px
-- **Debug**: 126 `dbg()` calls with timecodes across all functions, `verify()` checks DOM state
+- **Debug**: 181 `dbg()` calls with timecodes across all functions, `verify()` checks DOM state
 
 ### Chat Tests
 
