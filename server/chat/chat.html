@@ -3550,7 +3550,14 @@ async function _unblockUser(userId, btn) {
   try {
     await api('/users/' + userId + '/block', { method: 'DELETE' });
     blockedUserIds.delete(userId);
-    if (btn) btn.closest('div').remove();
+    if (btn) {
+      const row = btn.closest('div');
+      const container = row.parentElement;
+      row.remove();
+      if (container && !container.children.length) {
+        container.innerHTML = '<p style="color:var(--color-muted);text-align:center;font-size:var(--font-sm)">No blocked users</p>';
+      }
+    }
     renderMessages();
     renderMemberItems();
     showToast('User unblocked');
