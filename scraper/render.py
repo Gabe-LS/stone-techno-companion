@@ -862,13 +862,13 @@ def render_output_html(
         )
         if photo_file:
             parts.append(
-                f'        <img class="artist-photo" src="photos/{esc(photo_file)}" alt="{esc(name)}" width="120" height="120" loading="lazy" tabindex="0" role="button" onclick="openBio(this)" onkeydown="if(event.key===\'Enter\')openBio(this)">'
+                f'        <img class="artist-photo" src="photos/{esc(photo_file)}" alt="{esc(name)}" width="120" height="120" loading="lazy" tabindex="0" role="button">'
             )
         else:
             parts.append('        <div class="photo-placeholder"></div>')
         parts.append('        <div class="artist-info">')
         parts.append(
-            f'        <span class="artist-name" tabindex="0" role="button" onclick="openBio(this)" onkeydown="if(event.key===\'Enter\')openBio(this)">{esc(name)}</span>'
+            f'        <span class="artist-name" tabindex="0" role="button">{esc(name)}</span>'
         )
         if sched_main:
             parts.append(
@@ -889,7 +889,7 @@ def render_output_html(
             parts.append(f'        <span class="artist-also">{esc(sched_also)}</span>')
         parts.append("        </div>")
         parts.append(
-            '        <button class="heart-btn" onclick="toggleHeart(this)" aria-label="Add to favorites" aria-pressed="false"><svg viewBox="0 0 24 24"><use href="#i-heart"/></svg></button>'
+            '        <button class="heart-btn" aria-label="Add to favorites" aria-pressed="false"><svg viewBox="0 0 24 24"><use href="#i-heart"/></svg></button>'
         )
         parts.append("      </li>")
 
@@ -1210,7 +1210,7 @@ def render_output_html(
                     is_b2b = len(group) > 1
 
                     cal_btn = (
-                        f'<button class="tt-cal" onclick="event.stopPropagation(); toggleSchedule(this)" '
+                        f'<button class="tt-cal" '
                         f'aria-label="Add to schedule" aria-pressed="false">{cal_svg}</button>'
                     )
                     parts.append(
@@ -1231,7 +1231,7 @@ def render_output_html(
                         else:
                             photo_el = '<div class="tt-photo-placeholder"></div>'
                         heart_btn = (
-                            f'<button type="button" class="tt-photo-heart" onclick="event.stopPropagation(); toggleHeart(this)" '
+                            f'<button type="button" class="tt-photo-heart" '
                             f'aria-label="Add to favorites" aria-pressed="false">{heart_svg}</button>'
                         )
                         parts.append(
@@ -1240,7 +1240,7 @@ def render_output_html(
                             f'<span class="tt-name">{esc(name)}</span></div>'
                         )
                     parts.append(
-                        '<button type="button" class="tt-ics" onclick="event.stopPropagation(); downloadICS(this.closest(\'[data-ics-start]\'))">Add to calendar</button>'
+                        '<button type="button" class="tt-ics">Add to calendar</button>'
                         "</div></div>"
                     )
 
@@ -1330,7 +1330,7 @@ def render_output_html(
 
                     cal_svg = '<svg viewBox="0 0 24 24"><use href="#i-cal"/></svg>'
                     cal_btn = (
-                        f'<button class="tt-cal" onclick="event.stopPropagation(); toggleSchedule(this)" '
+                        f'<button class="tt-cal" '
                         f'aria-label="Add to schedule" aria-pressed="false">{cal_svg}</button>'
                     )
 
@@ -1353,7 +1353,7 @@ def render_output_html(
                         else:
                             photo_el = '<div class="tt-photo-placeholder"></div>'
                         heart_btn = (
-                            f'<button type="button" class="tt-photo-heart" onclick="event.stopPropagation(); toggleHeart(this)" '
+                            f'<button type="button" class="tt-photo-heart" '
                             f'aria-label="Add to favorites" aria-pressed="false">{heart_svg}</button>'
                         )
                         block_parts.append(
@@ -1362,7 +1362,7 @@ def render_output_html(
                             f'<span class="tt-name">{esc(name)}</span></div>'
                         )
                     block_parts.append(
-                        '<button type="button" class="tt-ics" onclick="event.stopPropagation(); downloadICS(this.closest(\'[data-ics-start]\'))">Add to calendar</button>'
+                        '<button type="button" class="tt-ics">Add to calendar</button>'
                         "</div></div>"
                     )
                     block_html = "".join(block_parts)
@@ -1605,6 +1605,30 @@ def render_output_html(
         h3.style.display = found ? '' : 'none';
       });
     }
+
+    // Delegated event listeners for list view
+    var listView = document.getElementById('list-view') || document.querySelector('main');
+    listView.addEventListener('click', function(e) {
+      var heartBtn = e.target.closest('.heart-btn');
+      if (heartBtn) { toggleHeart(heartBtn); return; }
+      var bio = e.target.closest('.artist-photo, .artist-name');
+      if (bio) { openBio(bio); return; }
+    });
+    listView.addEventListener('keydown', function(e) {
+      if (e.key !== 'Enter') return;
+      var bio = e.target.closest('.artist-photo, .artist-name');
+      if (bio) openBio(bio);
+    });
+
+    // Delegated event listeners for timetable blocks
+    document.addEventListener('click', function(e) {
+      var cal = e.target.closest('.tt-cal');
+      if (cal) { e.stopPropagation(); toggleSchedule(cal); return; }
+      var heart = e.target.closest('.tt-photo-heart');
+      if (heart) { e.stopPropagation(); toggleHeart(heart); return; }
+      var ics = e.target.closest('.tt-ics');
+      if (ics) { e.stopPropagation(); downloadICS(ics.closest('[data-ics-start]')); return; }
+    });
 
     let _sessionPromise = null;
     async function ensureSession() {
