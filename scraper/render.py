@@ -1459,7 +1459,7 @@ def render_output_html(
     (function() {
       var pathView = location.pathname === '/timetable' ? 'timetable' : location.pathname === '/line-up' ? 'list' : null;
       var vp = pathView || new URLSearchParams(location.search).get('view');
-      var v = vp || localStorage.getItem('stc_view');
+      var v = vp || storageGet('stc_view');
       history.replaceState(null, '', v === 'timetable' ? '/timetable' : '/line-up');
       document.title = (v === 'timetable' ? 'Timetable' : 'Line-up') + ' · ' + siteShort;
       if (v === 'timetable') {
@@ -1513,26 +1513,26 @@ def render_output_html(
     // Hearts
     const API = '/api';
     // Migrate old localStorage keys
-    if (localStorage.getItem('stc_edit_code') && !localStorage.getItem('stc_session_id')) {
-      localStorage.setItem('stc_session_id', localStorage.getItem('stc_edit_code'));
-      localStorage.removeItem('stc_edit_code');
+    if (storageGet('stc_edit_code') && !storageGet('stc_session_id')) {
+      storageSet('stc_session_id', storageGet('stc_edit_code'));
+      storageRemove('stc_edit_code');
     }
-    if (localStorage.getItem('stc_share_code') && !localStorage.getItem('stc_share_token')) {
-      localStorage.setItem('stc_share_token', localStorage.getItem('stc_share_code'));
-      localStorage.removeItem('stc_share_code');
+    if (storageGet('stc_share_code') && !storageGet('stc_share_token')) {
+      storageSet('stc_share_token', storageGet('stc_share_code'));
+      storageRemove('stc_share_code');
     }
-    let sessionId = localStorage.getItem('stc_session_id');
-    let shareToken = localStorage.getItem('stc_share_token');
-    let localPicks; try { localPicks = new Set(JSON.parse(localStorage.getItem('stc_picks') || '[]')); } catch { localPicks = new Set(); localStorage.removeItem('stc_picks'); }
-    let localSchedule; try { localSchedule = new Set(JSON.parse(localStorage.getItem('stc_schedule') || '[]')); } catch { localSchedule = new Set(); localStorage.removeItem('stc_schedule'); }
+    let sessionId = storageGet('stc_session_id');
+    let shareToken = storageGet('stc_share_token');
+    let localPicks; try { localPicks = new Set(JSON.parse(storageGet('stc_picks') || '[]')); } catch { localPicks = new Set(); storageRemove('stc_picks'); }
+    let localSchedule; try { localSchedule = new Set(JSON.parse(storageGet('stc_schedule') || '[]')); } catch { localSchedule = new Set(); storageRemove('stc_schedule'); }
     let readOnly = false;
     let filterActive = false;
     let scheduleFilterActive = false;
-    let currentView = localStorage.getItem('stc_view') || 'list';
+    let currentView = storageGet('stc_view') || 'list';
 
     function saveLocal() {
-      localStorage.setItem('stc_picks', JSON.stringify([...localPicks]));
-      localStorage.setItem('stc_schedule', JSON.stringify([...localSchedule]));
+      storageSet('stc_picks', JSON.stringify([...localPicks]));
+      storageSet('stc_schedule', JSON.stringify([...localSchedule]));
       updateUI();
     }
 
@@ -1641,8 +1641,8 @@ def render_output_html(
           const data = await res.json();
           sessionId = data.session_id;
           shareToken = data.share_token;
-          localStorage.setItem('stc_session_id', sessionId);
-          localStorage.setItem('stc_share_token', shareToken);
+          storageSet('stc_session_id', sessionId);
+          storageSet('stc_share_token', shareToken);
           connectWS(sessionId);
           for (const id of localPicks) {
             fetch(API + '/session/' + sessionId + '/pick/' + id, {method: 'POST'}).catch(() => {});
@@ -1680,8 +1680,8 @@ def render_output_html(
         const res = await fetch(API + '/session/' + sessionId + '/pick/' + id, {method});
         if (res.status === 404) {
           sessionId = null; shareToken = null;
-          localStorage.removeItem('stc_session_id');
-          localStorage.removeItem('stc_share_token');
+          storageRemove('stc_session_id');
+          storageRemove('stc_share_token');
           await ensureSession();
           return;
         }
@@ -1717,8 +1717,8 @@ def render_output_html(
         const res = await fetch(API + '/session/' + sessionId + '/schedule/' + id, {method});
         if (res.status === 404) {
           sessionId = null; shareToken = null;
-          localStorage.removeItem('stc_session_id');
-          localStorage.removeItem('stc_share_token');
+          storageRemove('stc_session_id');
+          storageRemove('stc_share_token');
           await ensureSession();
           return;
         }
@@ -1743,8 +1743,8 @@ def render_output_html(
         if (!readOnly) {
           sessionId = data.session_id || null;
           shareToken = data.share_token || null;
-          if (sessionId) localStorage.setItem('stc_session_id', sessionId); else localStorage.removeItem('stc_session_id');
-          if (shareToken) localStorage.setItem('stc_share_token', shareToken); else localStorage.removeItem('stc_share_token');
+          if (sessionId) storageSet('stc_session_id', sessionId); else storageRemove('stc_session_id');
+          if (shareToken) storageSet('stc_share_token', shareToken); else storageRemove('stc_share_token');
           saveLocal();
         }
         applyHearts();
@@ -1767,8 +1767,8 @@ def render_output_html(
         const res = await fetch(API + '/session/' + sessionId);
         if (res.status === 404) {
           sessionId = null; shareToken = null;
-          localStorage.removeItem('stc_session_id');
-          localStorage.removeItem('stc_share_token');
+          storageRemove('stc_session_id');
+          storageRemove('stc_share_token');
           await ensureSession();
           return;
         }
@@ -2022,8 +2022,8 @@ def render_output_html(
         if (!readOnly) {
           sessionId = data.session_id || null;
           shareToken = data.share_token || null;
-          if (sessionId) localStorage.setItem('stc_session_id', sessionId); else localStorage.removeItem('stc_session_id');
-          if (shareToken) localStorage.setItem('stc_share_token', shareToken); else localStorage.removeItem('stc_share_token');
+          if (sessionId) storageSet('stc_session_id', sessionId); else storageRemove('stc_session_id');
+          if (shareToken) storageSet('stc_share_token', shareToken); else storageRemove('stc_share_token');
           saveLocal();
         }
         applyHearts();
@@ -2114,7 +2114,7 @@ def render_output_html(
     function updateBellState() {
       const btn = document.getElementById('btn-bell');
       const dd = document.getElementById('dd-bell');
-      const on = localStorage.getItem('stc_push') === '1';
+      const on = storageGet('stc_push') === '1';
       if (btn) { btn.style.display = _supportsPush ? '' : 'none'; btn.classList.toggle('active', on); }
       if (dd) { dd.style.display = (_supportsPush || _isIOS) ? '' : 'none'; dd.textContent = on ? 'Disable notifications' : 'Enable notifications'; }
     }
@@ -2137,7 +2137,7 @@ def render_output_html(
         await ensureSession();
         if (!sessionId) return;
         await fetch(API + '/session/' + sessionId + '/push/subscribe', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(sub.toJSON()) });
-        localStorage.setItem('stc_push', '1');
+        storageSet('stc_push', '1');
         track('push-enable');
       } catch (e) {
         if (navigator.brave && e.name === 'AbortError') { openDialog('m-brave'); return; }
@@ -2158,13 +2158,13 @@ def render_output_html(
           }
         }
       } catch (e) { dbg('disableNotifications failed', e.message); }
-      localStorage.removeItem('stc_push');
+      storageRemove('stc_push');
       track('push-disable');
       updateBellState();
     }
 
     async function toggleNotifications() {
-      if (localStorage.getItem('stc_push') === '1') { await disableNotifications(); }
+      if (storageGet('stc_push') === '1') { await disableNotifications(); }
       else { await enableNotifications(); }
     }
 
@@ -2204,7 +2204,7 @@ def render_output_html(
       track('view-switch', {view});
       _viewScrollPos[currentView] = window.scrollY;
       currentView = view;
-      localStorage.setItem('stc_view', view);
+      storageSet('stc_view', view);
       history.replaceState(null, '', view === 'timetable' ? '/timetable' : '/line-up');
       document.title = (view === 'timetable' ? 'Timetable' : 'Line-up') + ' · ' + siteShort;
       const listView = document.getElementById('list-view');
@@ -2513,8 +2513,8 @@ def render_output_html(
             if (data.schedule) localSchedule = new Set(data.schedule);
             sessionId = data.session_id;
             shareToken = data.share_token;
-            localStorage.setItem('stc_session_id', sessionId);
-            localStorage.setItem('stc_share_token', shareToken);
+            storageSet('stc_session_id', sessionId);
+            storageSet('stc_share_token', shareToken);
             saveLocal();
             connectWS(sessionId);
           }
@@ -2541,14 +2541,14 @@ def render_output_html(
       syncDropdownState();
       setTimeout(syncDropdownState, 100);
       // Re-sync push subscription to server (handles purged DB, reinstalls, etc.)
-      if (localStorage.getItem('stc_push') === '1' && 'serviceWorker' in navigator) {
+      if (storageGet('stc_push') === '1' && 'serviceWorker' in navigator) {
         try {
           var swReg = await navigator.serviceWorker.ready;
           var existingSub = await swReg.pushManager.getSubscription();
           if (existingSub && sessionId) {
             fetch(API + '/session/' + sessionId + '/push/subscribe', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(existingSub.toJSON()) }).catch(function() {});
           } else if (!existingSub) {
-            localStorage.removeItem('stc_push');
+            storageRemove('stc_push');
             updateBellState();
           }
         } catch (e) { dbg('push re-sync failed', e.message); }
@@ -2559,7 +2559,7 @@ def render_output_html(
     })();
 
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(function() {});
+      navigator.serviceWorker.register('/sw.js').catch(function() { /* sw not available */ });
     }
 
     function setStickyTops() {
