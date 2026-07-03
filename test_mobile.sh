@@ -74,7 +74,7 @@ fi
 echo "[4/4] Starting mitmproxy on :$PROXY_PORT..."
 kill $(lsof -ti :$PROXY_PORT 2>/dev/null) 2>/dev/null || true
 sleep 1
-nohup mitmdump -p $PROXY_PORT --set block_global=false -q \
+nohup mitmdump -p $PROXY_PORT --set block_global=false --ssl-insecure -q \
     > /dev/null 2>&1 &
 sleep 2
 if lsof -i :$PROXY_PORT | grep -q LISTEN; then
