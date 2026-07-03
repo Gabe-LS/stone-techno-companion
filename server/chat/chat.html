@@ -2782,20 +2782,19 @@ function showUserMenu(userId, name) {
   const sheet = document.createElement('div');
   sheet.id = 'action-sheet';
   sheet.className = 'action-sheet-overlay';
+  const isBlocked = blockedUserIds.has(userId);
+  const blockBtn = isBlocked
+    ? `<button class="action-sheet-btn" onclick="closeActionSheet();_unblockUser('${userId}');showToast('${jss(name)} unblocked')">Unblock User</button>`
+    : `<button class="action-sheet-btn action-sheet-danger" onclick="closeActionSheet();blockUserConfirm('${userId}','${jss(name)}')">Block User</button>`;
   sheet.innerHTML = `<div class="action-sheet" onclick="event.stopPropagation()">
     <div class="action-sheet-title">${escapeHtml(name)}</div>
-    <button class="action-sheet-btn" onclick="closeActionSheet();wsSend('open_dm',{target_user_id:'${userId}'})">Send Message</button>
-    <button class="action-sheet-btn action-sheet-danger" onclick="closeActionSheet();blockUserConfirm('${userId}','${jss(name)}')">Block User</button>
+    ${isBlocked ? '' : `<button class="action-sheet-btn" onclick="closeActionSheet();wsSend('open_dm',{target_user_id:'${userId}'})">Send Message</button>`}
+    ${blockBtn}
     <button class="action-sheet-btn action-sheet-cancel" onclick="closeActionSheet()">Cancel</button>
   </div>`;
   sheet.addEventListener('click', closeActionSheet);
   document.body.appendChild(sheet);
-  requestAnimationFrame(() => {
-    sheet.classList.add('open');
-    verify('showUserMenu', document.getElementById('action-sheet'), 'action sheet in DOM');
-    verify('showUserMenu', document.querySelector('.action-sheet-title'), 'shows name: ' + name);
-    verify('showUserMenu', document.querySelectorAll('.action-sheet-btn').length === 3, '3 buttons (DM, Block, Cancel)');
-  });
+  requestAnimationFrame(() => sheet.classList.add('open'));
 }
 
 function closeActionSheet() {
@@ -3440,9 +3439,8 @@ async function _unblockUser(userId, btn) {
   try {
     await api('/users/' + userId + '/block', { method: 'DELETE' });
     blockedUserIds.delete(userId);
-    btn.closest('div').remove();
+    if (btn) btn.closest('div').remove();
     renderMessages();
-    showToast('User unblocked');
   } catch (e) { showToast(e.message); }
 }
 

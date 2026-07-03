@@ -21,6 +21,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from chat_db import (
     get_chat_db,
+    get_user,
     get_user_by_token,
     get_room,
     get_main_room,
@@ -1447,11 +1448,20 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                             (msg_row["room_id"], user_id),
                         ).fetchone():
                             continue
+                    sender = get_user(db, msg_row["user_id"])
+                    sender_name = sender["display_name"] if sender else "Unknown"
+                    try:
+                        text = json.loads(msg_row["content"]).get(
+                            "text", msg_row["content"]
+                        )
+                    except (json.JSONDecodeError, AttributeError):
+                        text = msg_row["content"]
+                    snapshot = f"[{msg_row['created_at']}] {sender_name}: {text}"
                     create_report(
                         db,
                         user_id,
                         msg_row["user_id"],
-                        msg_row["content"],
+                        snapshot,
                         msg_row["room_id"],
                         reason,
                     )
