@@ -329,7 +329,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
   .header .header-info { padding-right: calc(var(--header-h) + 36px); }
   .react-btn { opacity: 1; width: 24px; height: 24px; }
   .react-btn svg { width: 16px; height: 16px; }
-  .chat-menu { position: fixed; top: var(--header-h); left: 0; right: 0; bottom: 0; z-index: var(--z-menu); background: var(--gray-900); flex-direction: column; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
+  .chat-menu { position: fixed; top: calc(var(--header-h) + env(safe-area-inset-top, 0px)); left: 0; right: 0; bottom: 0; z-index: var(--z-menu); background: var(--gray-900); flex-direction: column; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
   .chat-menu::-webkit-scrollbar { display: none; }
   .chat-menu.open { display: flex; }
   .menu-section { background: none; color: #ccc; border: none; border-top: 1px solid var(--gray-700); padding: 14px var(--space-lg); font-size: 15px; text-align: left; font-family: inherit; display: flex; align-items: center; gap: var(--space-sm); width: 100%; font-weight: 600; cursor: pointer; }
