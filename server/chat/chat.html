@@ -2326,16 +2326,21 @@ async function _loadMenuSection(section, container) {
     const sorted = [...users].sort((a, b) => {
       if (a.user_id === currentUser?.id) return -1;
       if (b.user_id === currentUser?.id) return 1;
+      const aBlocked = blockedUserIds.has(a.user_id) ? 1 : 0;
+      const bBlocked = blockedUserIds.has(b.user_id) ? 1 : 0;
+      if (aBlocked !== bBlocked) return aBlocked - bBlocked;
       return (a.display_name || a.username || '').localeCompare(b.display_name || b.username || '');
     });
     if (!sorted.length) { container.innerHTML = '<div class="empty">No users</div>'; return; }
     container.innerHTML = sorted.map(u => {
-      const name = u.display_name || u.username || 'Anonymous';
       const isSelf = u.user_id === currentUser?.id;
-      const av = avatarHtml(name, u.color_index || 0, true, u.avatar_url || '');
+      const name = isSelf ? (currentUser.display_name || currentUser.username || 'Anonymous') : (u.display_name || u.username || 'Anonymous');
+      const avatarUrl = isSelf ? (currentUser.avatar_url || '') : (u.avatar_url || '');
+      const blocked = blockedUserIds.has(u.user_id);
+      const av = avatarHtml(name, u.color_index || 0, true, avatarUrl);
       const flag = countryFlag(u.country);
       const onclick = isSelf ? 'openProfileModal()' : `showUserMenu('${u.user_id}','${jss(name)}')`;
-      return `<div class="menu-member${isSelf ? ' menu-member-self' : ''}" onclick="${onclick}">${av}<span class="menu-member-name">${esc(name)}${isSelf ? ' (you)' : ''}</span>${flag ? `<span class="menu-member-flag">${flag}</span>` : ''}</div>`;
+      return `<div class="menu-member${isSelf ? ' menu-member-self' : ''}${blocked ? ' member-blocked' : ''}" onclick="${onclick}">${av}<span class="menu-member-name">${esc(name)}${isSelf ? ' (you)' : ''}</span>${flag ? `<span class="menu-member-flag">${flag}</span>` : ''}</div>`;
     }).join('');
   }
 }
