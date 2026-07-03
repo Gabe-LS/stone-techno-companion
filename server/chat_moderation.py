@@ -278,6 +278,8 @@ async def check_openai_moderation(
 async def check_content_detection(text: str) -> dict | None:
     if not os.environ.get("OPENAI_API_KEY"):
         return None
+    if not text or not text.strip():
+        return None
 
     try:
         import httpx
