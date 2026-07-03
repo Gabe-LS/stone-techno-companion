@@ -1089,7 +1089,10 @@ async def upload_avatar(request: Request, file: UploadFile = File(...)):
         try:
             import pyvips
 
-            img = pyvips.Image.new_from_buffer(data, "")
+            try:
+                img = pyvips.Image.new_from_buffer(data, "")
+            except pyvips.Error:
+                img = pyvips.Image.new_from_buffer(data, "", unlimited=True)
             if img.width * img.height > 10_000_000:
                 raise HTTPException(400, "Image too large")
             data = img.webpsave_buffer(Q=80)
@@ -1166,7 +1169,10 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
         import pyvips
 
         t_start = time.monotonic()
-        img = pyvips.Image.new_from_buffer(data, "")
+        try:
+            img = pyvips.Image.new_from_buffer(data, "")
+        except pyvips.Error:
+            img = pyvips.Image.new_from_buffer(data, "", unlimited=True)
         t_decode = time.monotonic()
         w, h = img.width, img.height
         if w * h > 40_000_000:
@@ -1911,7 +1917,10 @@ def mount_chat(app):
     ):
         chat_html = CHAT_DIR / "chat.html"
         if chat_html.exists():
-            return HTMLResponse(chat_html.read_text(encoding="utf-8"))
+            return HTMLResponse(
+                chat_html.read_text(encoding="utf-8"),
+                headers={"Cache-Control": "no-store"},
+            )
         raise HTTPException(404, "Chat not available")
 
     uploads_dir = CHAT_DIR / "uploads"

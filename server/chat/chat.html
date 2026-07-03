@@ -1003,7 +1003,11 @@ function connectWS() {
     if (!token) { _wsConnecting = false; resolve(); return; }
     const sock = new WebSocket(`${proto}://${location.host}/ws/chat/${token.split('=')[1]}`);
     const done = () => { _wsConnecting = false; resolve(); };
-    sock.onopen = () => { ws = sock; done(); };
+    sock.onopen = () => {
+      ws = sock;
+      if (currentRoom) wsSend('join_room', { room_id: currentRoom });
+      done();
+    };
     sock.onmessage = (e) => { try { handleWSEvent(JSON.parse(e.data)); } catch (err) { dbg('[WS] event handler error:', err); } };
     sock.onclose = () => { ws = null; _wsConnecting = false; if (currentUser) setTimeout(() => connectWS(), 3000); };
     sock.onerror = () => { done(); };

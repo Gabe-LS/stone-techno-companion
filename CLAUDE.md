@@ -125,11 +125,17 @@ Key design decisions:
 | `tests/test_chat_moderation.py` | 39 tests — word filter, strike system (expiry, reset, mute cycling), AI moderation pipeline |
 | `tests/test_chat_ws.py` | 17 tests — WebSocket rooms, messaging, presence, moderation flow |
 | `tests/test_chat_api.py` | 31 tests — REST endpoints, auth, rooms, meetups, DMs, admin |
+| `stress_test/run.py` | Chat stress test — 200 concurrent WS users, multi-room + DMs, burst testing, media uploads, latency/throughput/resource metrics, moderation cost estimation |
 
-### Two deploy paths
+### Deploy
+
+Manual SSH deploy (no GitHub Actions):
+```bash
+ssh root@209.38.244.136 'cd /root/services/stone-techno && rm -rf server/data.bak && cp -r server/data server/data.bak && git pull origin main && cd server && docker compose up -d --build --force-recreate'
+```
 
 - **Content** (HTML + photos + thumbs + timetable.json + bios.json + sw.js + manifest.json): `--deploy` flag rsyncs to VPS static dir. No container restart — files are volume-mounted.
-- **Server code**: push to `main` with changes in `server/` triggers GitHub Actions → SSH → `git pull` + `docker compose up -d --build --force-recreate`.
+- **Server code**: merge to `main`, then run the deploy command above. Backs up `server/data/` (databases + VAPID keys) before pulling.
 
 ## Generated Artifacts (gitignored)
 
@@ -140,6 +146,13 @@ Key design decisions:
 - `output/photos/*.avif` — processed artist photos
 - `output/timetable.json` — slot UUID → set time mapping for push notifications
 - `output/thumbs/*.avif` — YouTube video thumbnails (240px max, AVIF)
+
+- `server/data/` — runtime databases (hearts.db, chat.db), VAPID keys (gitignored)
+- `server/chat/uploads/` — uploaded images/videos (WebP, MP4)
+- `server/chat/tmp/` — intermediate processing files (auto-cleaned on startup)
+- `stress_test/media/` — auto-generated test images (WebP 1500px Q=80) + videos (H.264 MP4) + user-provided files
+- `stress_test/report_*.txt` — stress test reports
+- `stress_test/debug_*.log` — stress test debug logs
 
 These are regenerable. Source of truth is the live website + `overrides.toml` + DB enrichment data.
 
@@ -238,7 +251,9 @@ FastAPI (`server/api.py`). Sessions via 128-bit URL-safe tokens. Cross-device sy
 
 Static file routes (`/bios.json`, `/timetable.json`, `/manifest.json`, `/sw.js`, `/favicon.*`) are explicit endpoints before the catch-all `/{path:path}` (which serves `index.html`). New static files need an explicit route in `api.py`.
 
-Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DB at `server/data/hearts.db` volume-mounted.
+The catch-all `/{path:path}` serves `index.html` with `Cache-Control: no-store` and explicitly rejects `/chat*` paths (returns 404). Chat module import is **required** — if `chat_api.py` fails to import, the server crashes at startup (fail-fast, no silent degradation).
+
+Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DBs at `server/data/` volume-mounted (hearts.db, chat.db, vapid_private.pem).
 
 ### Environment Variables (`server/.env`)
 
@@ -265,16 +280,16 @@ Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DB at `server/da
 
 ### Deploy Checklist
 
-1. Add `MAILEROO_API_KEY` to production `.env` (replace `RESEND_API_KEY`)
-2. Remove `RESEND_API_KEY` from production `.env`
-3. Remove `CHAT_BASE_URL` from production `.env` (or don't set it)
-4. Update DNS: replace `include:amazonses.com` with `include:_spf.maileroo.com` in SPF
-5. Add DKIM record `mta._domainkey.deftlab.dev` if not already done
-6. Ensure `ffmpeg` + `ffprobe` are in the Docker image (video upload)
-7. Install new Python deps: `pip install email-validator maileroo regex`
-8. `chat/disposable_domains.txt` and `chat/blocklist.txt` are committed — ship with the code
-9. `chat/uploads/` directory is auto-created — no manual setup needed
-10. Run DB migration: add columns `username`, `username_lower`, `color_index`, `is_main` to existing tables; create `room_memberships`, `email_tokens`, `avatars` tables
+**VPS env vars** (add to `/root/services/stone-techno/server/.env`):
+1. `MAILEROO_API_KEY` — required for email magic links
+2. `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` — required for Google OAuth
+3. `CHAT_ADMIN_EMAILS` — comma-separated admin emails
+4. Rename `VAPID_SUBJECT` → `VAPID_CLAIMS_EMAIL` (code expects this name)
+5. Remove `CHAT_BASE_URL` (must not be set in production)
+
+**DNS** (already done): SPF includes `_spf.maileroo.com`, DKIM at `mta._domainkey.deftlab.dev`
+
+**Automatic on deploy**: Dockerfile installs ffmpeg + libvips + all Python deps. `chat.db` created fresh on first run. `chat/uploads/` and `chat/tmp/` auto-created.
 
 ## Push Notifications
 
@@ -305,7 +320,7 @@ avatars            — user_id (PK), data (BLOB, WebP 128x128)
 user_providers     — user_id, provider, provider_id, created_at (multi-provider auth: same user via Google + email)
 bans               — id, user_id, provider, provider_id, device_fingerprint, reason, created_at (survives user deletion)
 rooms              — id, event_id, type, name, description, is_main, is_moderated, is_read_only, auto_join, allows_media, ttl_minutes, position, created_at
-chat_settings      — key, value (app-level config: room_sort mode)
+chat_settings      — key, value (app-level config: room_sort, msg_char_limit)
 room_memberships   — user_id + room_id (PK), joined_at, last_read_at (tracks joined rooms + unread)
 messages           — id, room_id, user_id, type, content, link_preview, reply_to_id, expires_at, created_at
 message_reactions  — message_id + user_id + emoji (PK), created_at, CASCADE on message delete
@@ -387,14 +402,16 @@ Main room auto-opens on login. Path-based routing (`/chat`, `/chat/r/{id}`, `/ch
 - **Header**: room name + member count (reachable users), user avatar (opens settings menu: Profile, Notifications, Log out). Desktop header includes calendar icon linking to lineup.
 - **Replies**: double-click on desktop, swipe toward center on mobile. Quote shown inside bubble.
 - **Reactions**: hover-based on desktop (200ms dismiss), long-press on mobile. 6-emoji picker. Button outside bubble with 88px hover zone.
-- **Input bar**: + button (meetup, location, photo, video) on left, emoji picker icon inside input, send button on right. All SVG icons.
-- **Images**: client-side resize via createImageBitmap (high quality), WebP storage, image viewer overlay on click
-- **Videos**: client-side processing via Mediabunny + WebCodecs. HEVC with H.264 fallback, hardware-accelerated. Auto re-encodes if >1080p, >10Mbps, >30fps, or non-AAC audio. Trim editor for >60s. Inline playback (click play/pause, fullscreen icon), expanded viewer with frame sync.
+- **Input bar**: + button (meetup, location, photo, video) on left, emoji picker inside textarea, send button on right. Textarea expands from 1 to 5 lines as you type (grows upward, buttons stay anchored). Shift+Enter for newline. No scrollbar when scrolling past 5 lines. Pill shape for single line, rounded rectangle when multiline.
+- **Message char limit**: configurable via `chat_settings.msg_char_limit` (default 1000). Client reads from `/chat/api/config`, shows red border + disables send at limit, allows typing up to limit+50 for visibility. Server rejects at limit+20 (JSON wrapper overhead). Change in DB, no deploy needed.
+- **Images**: client resizes to max 1500px via `createImageBitmap` + converts to WebP Q=0.8 before upload. Server always re-processes through pyvips (OWASP: strip injected metadata), creates 800px moderation copy. HEIC supported via `unlimited=True` fallback for iPhone Live Photos.
+- **Videos**: client-side processing via Mediabunny + WebCodecs. HEVC with H.264 fallback, hardware-accelerated. Auto re-encodes if >1080p, >10Mbps, >30fps, or non-AAC audio. Trim editor for >60s. Server validates in temp file (ffprobe) before moving to uploads dir. Frame extraction: ffmpeg→PNG (lossless)→pyvips→WebP Q=60. Intermediate files in `chat/tmp/`, cleaned on server startup. Inline playback (click play/pause, fullscreen icon), expanded viewer with frame sync.
 - **Location sharing**: GPS with confirmation dialog, card with map pin icon
 - **Meetup cards**: calendar icon, title, time, "N going" count. Full-width Join/Joined button below card (hidden for creator). Join auto-subscribes to meetup chat for notifications.
 - **Meetup creation**: modal with title, date + hour/minute selects (15-min intervals), GPS location, note.
 - **Message delete**: right-click bubble (desktop) or long-press (mobile), confirmation in same action sheet, 120s window, server enforced
 - **Message permalinks**: `/chat/msg/{id}` resolves to room, opens it, scrolls to and highlights message. Graceful fallback for deleted messages.
+- **Upload security** (OWASP File Upload Cheat Sheet): all images re-processed through pyvips (strips metadata/payloads). Videos validated in temp file before moving to served directory. Uploads served via secure endpoint with filename allowlist (`[a-f0-9]{32}.(webp|mp4)`), `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'`. No directory listing. Moderation intermediate files (`_mod*.webp`) not served. Upload rate limit: 10/min per user. Moderation files deleted after use; startup sweeps `chat/tmp/`.
 - **Unread badges**: red pill badges on room items and tab headers. `room_memberships` table tracks joined rooms + `last_read_at`. Server sends `badge_counts` on connect and `badge_update` on new messages for offline members. `mark_read` clears on room open. Duplicate message detection (2-min window, 5+ chars).
 - **User menu**: action sheet (Send Message, Block User with inline confirmation, Cancel). Centered modal on desktop.
 - **Optimistic messaging**: messages appear instantly with pending state, confirmed on ack, removed if moderation rejects
@@ -413,3 +430,28 @@ Main room auto-opens on login. Path-based routing (`/chat`, `/chat/r/{id}`, `/ch
 - `test_chat_moderation.py` (39) — word filter, AI mocks, strike escalation (expiry, reset, mute cycling)
 - `test_chat_ws.py` (17) — WebSocket rooms, messaging, presence, moderation flow
 - `test_chat_api.py` (31) — REST endpoints, auth, rooms, meetups, DMs, admin
+
+### Stress Test
+
+```bash
+# Quick smoke test (20 users, 2 min, no OpenAI cost)
+python stress_test/run.py --users 20 --duration 120 --insecure --no-moderation
+
+# Full production-like test (200 users, 30 min, moderation on)
+python stress_test/run.py --insecure
+
+# On VPS
+python stress_test/run.py --url https://stonetechno.deftlab.dev \
+    --db /root/services/stone-techno/server/data/chat.db
+
+# Clean up interrupted run
+python stress_test/run.py --cleanup-only
+```
+
+Dependencies: `pip install websockets httpx psutil`
+
+Features tested: text messages (with random suffix to avoid dedup), replies, image uploads (1500px WebP Q=80 matching browser output), video uploads (H.264 MP4 matching Mediabunny output), reactions, location sharing, meetup create/join, message deletion, mark read, DMs, multi-room messaging, burst testing (50 concurrent messages, 10 concurrent image uploads with 12s rate-limit cooldown).
+
+Metrics: ack/broadcast/room-history/upload(image+video)/connect latency (p50/p95/p99/max), ack latency over time in 5-min windows, send/recv rates, CPU, RAM, chat.db + uploads/ size growth, network I/O, message delivery verification (sent vs seen), burst test results, estimated moderation cost. Server-side upload instrumentation logs per-step timing (decode/save/mod for images, write/probe/frames for videos).
+
+Cleanup: only deletes users with `provider='stress_test'` and rooms with `name LIKE 'Stress:%'`. Verifies non-test room count is unchanged.

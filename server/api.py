@@ -960,20 +960,18 @@ async def serve_shared_js():
     raise HTTPException(404, "Not found")
 
 
-_chat_purge_coro = None
-try:
-    from chat_api import mount_chat
+from chat_api import mount_chat
 
-    _chat_purge_coro = mount_chat(app)
-except Exception:
-    logging.getLogger(__name__).warning("Chat module not loaded", exc_info=True)
+_chat_purge_coro = mount_chat(app)
 
 
 @app.get("/line-up")
 @app.get("/timetable")
 @app.get("/{path:path}")
 async def serve_index(path: str = ""):
+    if path.startswith("chat"):
+        raise HTTPException(404, "Not found")
     file_path = STATIC_DIR / "index.html"
     if file_path.exists():
-        return FileResponse(file_path)
+        return FileResponse(file_path, headers={"Cache-Control": "no-store"})
     raise HTTPException(404, "Not found")

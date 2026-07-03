@@ -337,17 +337,35 @@ def cleanup_db(db_path: str, test_rooms: list[str] | None, user_ids: list[str] |
     db.execute("PRAGMA busy_timeout=5000")
     db.execute("PRAGMA foreign_keys=ON")
 
+    before = db.execute("SELECT COUNT(*) FROM rooms").fetchone()[0]
+
     if user_ids:
-        db.executemany("DELETE FROM users WHERE id = ?", [(u,) for u in user_ids])
+        db.executemany(
+            "DELETE FROM users WHERE id = ? AND provider = 'stress_test'",
+            [(u,) for u in user_ids],
+        )
     else:
         db.execute("DELETE FROM users WHERE provider = 'stress_test'")
 
     if test_rooms:
-        db.executemany("DELETE FROM rooms WHERE id = ?", [(r,) for r in test_rooms])
+        db.executemany(
+            "DELETE FROM rooms WHERE id = ? AND name LIKE 'Stress:%'",
+            [(r,) for r in test_rooms],
+        )
     else:
         db.execute("DELETE FROM rooms WHERE name LIKE 'Stress:%'")
 
+    # Also clean up meetups created by stress test users
+    db.execute("DELETE FROM meetups WHERE creator_id NOT IN (SELECT id FROM users)")
+
     db.commit()
+    after = db.execute("SELECT COUNT(*) FROM rooms").fetchone()[0]
+    non_test = db.execute(
+        "SELECT COUNT(*) FROM rooms WHERE name NOT LIKE 'Stress:%'"
+    ).fetchone()[0]
+    log.info(
+        "Cleanup: rooms %d -> %d (non-test rooms: %d intact)", before, after, non_test
+    )
     db.close()
 
 
@@ -411,9 +429,35 @@ def _generate_test_media(
             print(f"{p.stat().st_size / 1024:.0f}KB")
         images.append(p)
 
-    for f in media_dir.iterdir():
-        if f.suffix.lower() in IMAGE_EXTS and f not in images:
-            images.append(f)
+    # Pre-process user-provided images the same way the browser does:
+    # resize to 1500px max side, convert to WebP Q=80
+    generated = {p.name for p in images}
+    for f in sorted(media_dir.iterdir()):
+        if (
+            f.suffix.lower() in IMAGE_EXTS
+            and f.name not in generated
+            and not f.name.startswith(".")
+        ):
+            cached = media_dir / f".processed_{f.stem}.webp"
+            if not cached.exists():
+                print(f"  processing {f.name} ...", end=" ", flush=True)
+                try:
+                    import pyvips
+
+                    try:
+                        img = pyvips.Image.new_from_file(str(f))
+                    except pyvips.Error:
+                        img = pyvips.Image.new_from_file(str(f), unlimited=True)
+                    max_side = max(img.width, img.height)
+                    if max_side > 1500:
+                        scale = 1500 / max_side
+                        img = img.resize(scale, kernel=pyvips.enums.Kernel.LANCZOS3)
+                    img.webpsave(str(cached), Q=80)
+                    print(f"{cached.stat().st_size / 1024:.0f}KB")
+                except Exception as e:
+                    print(f"SKIP ({e})")
+                    continue
+            images.append(cached)
 
     # Generate test videos matching browser output spec:
     # MP4, H.264 (AVC) 4Mbps, AAC 128kbps, ≤1080p, ≤60s
@@ -603,6 +647,9 @@ async def simulate_user(
 
                         if stop.is_set():
                             break
+
+                        if fired_burst and burst.msg_slots == -1:
+                            continue
 
                         if fired_burst and burst.msg_slots > 0:
                             burst.msg_slots -= 1
@@ -830,12 +877,13 @@ async def _send_text(
     burst_tag: str = "",
 ):
     tid = secrets.token_hex(6)
+    tag = f" #{secrets.token_hex(3)}"
     # 5% of text messages are long (near 1K char limit) to stress DB + broadcast
     if random.random() < 0.05:
         base = random.choice(MESSAGES)
-        content = (base + " ") * (950 // (len(base) + 1))
+        content = (base + " ") * (900 // (len(base) + 1)) + tag
     else:
-        content = random.choice(MESSAGES)
+        content = random.choice(MESSAGES) + tag
     metrics._send_times[tid] = time.monotonic()
     await ws.send(
         json.dumps(
@@ -965,7 +1013,7 @@ async def _pick_action(
                     "event": "send_message",
                     "room_id": room_id,
                     "type": "text",
-                    "content": random.choice(MESSAGES),
+                    "content": random.choice(MESSAGES) + f" #{secrets.token_hex(3)}",
                     "temp_id": tid,
                     "reply_to_id": reply_to,
                 }
@@ -1118,7 +1166,14 @@ async def burst_coordinator(
 
         # --- Message burst ---
         cycle += 1
-        blog.info("MSG_BURST #%d starting, %d slots", cycle, msg_burst_size)
+        blog.info("MSG_BURST #%d cooldown 12s for rate limit drain", cycle)
+        burst.msg_slots = -1
+        burst.trigger.set()
+        await asyncio.sleep(0)
+        burst.trigger.clear()
+        await asyncio.sleep(12)
+
+        blog.info("MSG_BURST #%d firing, %d slots", cycle, msg_burst_size)
         burst.msg_slots = msg_burst_size
         t0 = time.monotonic()
         burst.trigger.set()
@@ -1162,7 +1217,14 @@ async def burst_coordinator(
         if not images:
             continue
 
-        blog.info("IMG_BURST #%d starting, %d slots", cycle, img_burst_size)
+        blog.info("IMG_BURST #%d cooldown 12s", cycle)
+        burst.msg_slots = -1
+        burst.trigger.set()
+        await asyncio.sleep(0)
+        burst.trigger.clear()
+        await asyncio.sleep(12)
+
+        blog.info("IMG_BURST #%d firing, %d slots", cycle, img_burst_size)
         burst.img_slots = img_burst_size
         t0 = time.monotonic()
         burst.trigger.set()
