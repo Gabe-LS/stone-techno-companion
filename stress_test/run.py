@@ -1700,6 +1700,324 @@ async def run(args):
         print("Cleanup complete.")
 
 
+# ---------------------------------------------------------------------------
+# Throughput benchmark
+# ---------------------------------------------------------------------------
+
+THROUGHPUT_SCENARIOS = [
+    {"name": "200 text/s", "users": 200, "type": "text", "target_rate": 200},
+    {"name": "50 image/s", "users": 50, "type": "image", "target_rate": 50},
+    {"name": "20 video/s", "users": 20, "type": "video", "target_rate": 20},
+    {"name": "270 combined/s", "users": 270, "type": "mixed", "target_rate": 270},
+]
+
+
+async def _throughput_worker(
+    idx,
+    token,
+    room_id,
+    msg_type,
+    base_url,
+    ssl_ctx,
+    images,
+    videos,
+    http,
+    metrics,
+    moderated,
+    stop,
+    ulog,
+):
+    ws_base = base_url.replace("https://", "wss://").replace("http://", "ws://")
+    try:
+        async with websockets.connect(
+            f"{ws_base}/ws/chat/{token}",
+            ssl=ssl_ctx,
+            additional_headers={"Cookie": f"chat_session={token}"},
+            ping_interval=20,
+            ping_timeout=10,
+            close_timeout=5,
+            max_size=2**20,
+        ) as ws:
+            metrics.connections_active += 1
+            await ws.send(json.dumps({"event": "join_room", "room_id": room_id}))
+            recv_task = asyncio.create_task(_receiver(ws, idx, metrics, stop))
+            try:
+                while not stop.is_set():
+                    await asyncio.sleep(0.8 + random.uniform(0, 0.4))
+                    if stop.is_set():
+                        break
+                    tid = secrets.token_hex(6)
+                    actual_type = msg_type
+                    if msg_type == "mixed":
+                        roll = random.random()
+                        actual_type = (
+                            "video"
+                            if roll < 0.074
+                            else ("image" if roll < 0.259 else "text")
+                        )
+
+                    if actual_type == "image" and images:
+                        t0 = time.monotonic()
+                        content = await upload_media(
+                            http,
+                            base_url,
+                            token,
+                            random.choice(images),
+                            "image",
+                            ulog,
+                        )
+                        if content:
+                            metrics.upload_latencies.append(time.monotonic() - t0)
+                            metrics.image_upload_latencies.append(time.monotonic() - t0)
+                            metrics.media_uploaded += 1
+                            metrics._send_times[tid] = time.monotonic()
+                            await ws.send(
+                                json.dumps(
+                                    {
+                                        "event": "send_message",
+                                        "room_id": room_id,
+                                        "type": "image",
+                                        "content": content,
+                                        "temp_id": tid,
+                                    }
+                                )
+                            )
+                            metrics.messages_sent += 1
+                        else:
+                            metrics.media_failed += 1
+                    elif actual_type == "video" and videos:
+                        t0 = time.monotonic()
+                        content = await upload_media(
+                            http,
+                            base_url,
+                            token,
+                            random.choice(videos),
+                            "video",
+                            ulog,
+                        )
+                        if content:
+                            metrics.upload_latencies.append(time.monotonic() - t0)
+                            metrics.video_upload_latencies.append(time.monotonic() - t0)
+                            metrics.media_uploaded += 1
+                            metrics._send_times[tid] = time.monotonic()
+                            await ws.send(
+                                json.dumps(
+                                    {
+                                        "event": "send_message",
+                                        "room_id": room_id,
+                                        "type": "video",
+                                        "content": content,
+                                        "temp_id": tid,
+                                    }
+                                )
+                            )
+                            metrics.messages_sent += 1
+                        else:
+                            metrics.media_failed += 1
+                    else:
+                        metrics._send_times[tid] = time.monotonic()
+                        await ws.send(
+                            json.dumps(
+                                {
+                                    "event": "send_message",
+                                    "room_id": room_id,
+                                    "type": "text",
+                                    "content": random.choice(MESSAGES)
+                                    + f" #{secrets.token_hex(3)}",
+                                    "temp_id": tid,
+                                }
+                            )
+                        )
+                        metrics.messages_sent += 1
+                    if moderated:
+                        metrics.moderated_messages += 1
+            finally:
+                recv_task.cancel()
+                try:
+                    await recv_task
+                except asyncio.CancelledError:
+                    pass
+                metrics.connections_active -= 1
+    except Exception as e:
+        metrics.ws_errors += 1
+        ulog.warning("THROUGHPUT_ERR %s", e)
+
+
+async def run_throughput(args):
+    log_path = str(Path("stress_test") / f"throughput_{int(time.time())}.log")
+    setup_logging(log_path)
+    args.moderated = not args.no_moderation
+
+    ssl_ctx = None
+    if args.url.startswith("https://"):
+        ssl_ctx = ssl.create_default_context()
+        if args.insecure:
+            ssl_ctx.check_hostname = False
+            ssl_ctx.verify_mode = ssl.CERT_NONE
+
+    images, videos = _generate_test_media(Path(args.media_dir))
+    print(f"Media: {len(images)} images ({len(videos)} videos)")
+
+    import resource
+
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    needed = 600
+    if soft < needed:
+        try:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (min(needed, hard), hard))
+        except (ValueError, OSError):
+            print(f"WARNING: ulimit {soft} < {needed}")
+
+    max_users = max(s["users"] for s in THROUGHPUT_SCENARIOS)
+    print(f"Creating {max_users} test users...")
+    config = setup_db(args.db, max_users, args.event_id, args.moderated)
+    tokens = config["tokens"]
+    user_ids = config["user_ids"]
+    test_rooms = config["test_rooms"]
+
+    ws_base = args.url.replace("https://", "wss://").replace("http://", "ws://")
+    try:
+        async with websockets.connect(
+            f"{ws_base}/ws/chat/{tokens[0]}",
+            ssl=ssl_ctx,
+            additional_headers={"Cookie": f"chat_session={tokens[0]}"},
+            close_timeout=5,
+        ):
+            pass
+        print("Pre-flight: OK\n")
+    except Exception as e:
+        print(f"Cannot connect: {e}")
+        cleanup_db(args.db, test_rooms, user_ids)
+        return
+
+    http = httpx.AsyncClient(
+        verify=not args.insecure,
+        timeout=120,
+        limits=httpx.Limits(
+            max_connections=max_users + 50, max_keepalive_connections=max_users + 50
+        ),
+    )
+
+    scenario_dur = args.throughput_duration
+    results = []
+
+    try:
+        for scenario in THROUGHPUT_SCENARIOS:
+            name = scenario["name"]
+            n_users = scenario["users"]
+            msg_type = scenario["type"]
+            target = scenario["target_rate"]
+
+            if msg_type == "video" and not videos:
+                print(f"  SKIP {name} (no videos)")
+                continue
+
+            print(f"--- {name}: {n_users} users, {scenario_dur}s ---")
+            metrics = Metrics()
+            stop = asyncio.Event()
+            room_id = test_rooms[0]
+            tlog = logging.getLogger("throughput")
+
+            ramp_delay = min(15.0, scenario_dur * 0.25) / max(n_users, 1)
+            tasks = []
+            for i in range(n_users):
+                tasks.append(
+                    asyncio.create_task(
+                        _throughput_worker(
+                            i,
+                            tokens[i],
+                            room_id,
+                            msg_type,
+                            args.url,
+                            ssl_ctx,
+                            images,
+                            videos,
+                            http,
+                            metrics,
+                            args.moderated,
+                            stop,
+                            tlog,
+                        )
+                    )
+                )
+                if i < n_users - 1:
+                    await asyncio.sleep(ramp_delay)
+
+            metrics.start_time = time.monotonic()
+            await asyncio.sleep(scenario_dur)
+            stop.set()
+            metrics.end_time = time.monotonic()
+
+            done, pending = await asyncio.wait(tasks, timeout=15)
+            for t in pending:
+                t.cancel()
+
+            dur = metrics.end_time - metrics.start_time
+            actual_rate = metrics.messages_sent / dur if dur > 0 else 0
+            passed = actual_rate >= target * 0.8
+
+            ack_p = pct(metrics.ack_latencies, (50, 95, 99))
+            result = {
+                "name": name,
+                "target": target,
+                "actual": actual_rate,
+                "sent": metrics.messages_sent,
+                "failed": metrics.messages_failed,
+                "errors": metrics.ws_errors,
+                "media_fail": metrics.media_failed,
+                "ack_p50": ack_p[50],
+                "ack_p95": ack_p[95],
+                "ack_p99": ack_p[99],
+                "passed": passed,
+            }
+            results.append(result)
+            status = "PASS" if passed else "FAIL"
+            print(
+                f"  {status}: {actual_rate:.1f}/{target} msg/s "
+                f"| sent={metrics.messages_sent} fail={metrics.messages_failed} "
+                f"err={metrics.ws_errors} "
+                f"| ack p50={fmt_ms(ack_p[50])} p95={fmt_ms(ack_p[95])}\n"
+            )
+
+        print("\n" + "=" * 68)
+        print("  THROUGHPUT BENCHMARK RESULTS")
+        print("=" * 68)
+        print(
+            f"  {'Scenario':<20s}{'Target':>8s}{'Actual':>8s}{'Ack p50':>9s}{'Ack p95':>9s}  {'Result':>6s}"
+        )
+        all_pass = True
+        for r in results:
+            status = "PASS" if r["passed"] else "FAIL"
+            if not r["passed"]:
+                all_pass = False
+            print(
+                f"  {r['name']:<20s}{r['target']:>7.0f}/s{r['actual']:>7.1f}/s"
+                f"{fmt_ms(r['ack_p50']):>9s}{fmt_ms(r['ack_p95']):>9s}  {status:>6s}"
+            )
+        print("=" * 68)
+        print(f"  Overall: {'ALL PASS' if all_pass else 'SOME FAILED'}")
+        print("=" * 68)
+
+        report_path = Path("stress_test") / f"throughput_{int(time.time())}.txt"
+        lines = ["THROUGHPUT BENCHMARK", ""]
+        for r in results:
+            lines.append(
+                f"{r['name']}: {'PASS' if r['passed'] else 'FAIL'} "
+                f"{r['actual']:.1f}/{r['target']} msg/s "
+                f"ack p50={fmt_ms(r['ack_p50'])} p95={fmt_ms(r['ack_p95'])}"
+            )
+        report_path.write_text("\n".join(lines))
+        print(f"\nReport:  {report_path}")
+        print(f"Log:     {log_path}")
+
+    finally:
+        stop.set()
+        await http.aclose()
+        print("\nCleaning up...")
+        cleanup_db(args.db, test_rooms, user_ids)
+        print("Done.")
+
+
 def main():
     p = argparse.ArgumentParser(
         description="Chat stress test",
@@ -1755,10 +2073,24 @@ def main():
         action="store_true",
         help="Remove leftover stress test data and exit",
     )
+    p.add_argument(
+        "--throughput",
+        action="store_true",
+        help="Run throughput benchmark (200 text/s, 50 image/s, 20 video/s, combined)",
+    )
+    p.add_argument(
+        "--throughput-duration",
+        type=int,
+        default=30,
+        help="Duration per throughput scenario in seconds (default: 30)",
+    )
     args = p.parse_args()
 
     try:
-        asyncio.run(run(args))
+        if args.throughput:
+            asyncio.run(run_throughput(args))
+        else:
+            asyncio.run(run(args))
     except KeyboardInterrupt:
         print("\nInterrupted.")
 

@@ -30,4 +30,6 @@ server/.env
 # Stress test artifacts
 stress_test/media/
 stress_test/report_*.txt
+stress_test/throughput_*.txt
+stress_test/throughput_*.log
 stress_test/debug_*.log
