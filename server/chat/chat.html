@@ -1003,6 +1003,7 @@ async function submitProfile() {
 
 // --- WebSocket ---
 let _wsConnecting = false;
+let _wsRetries = 0;
 function connectWS() {
   dbg('[WS] connectWS');
   return new Promise((resolve) => {
@@ -1016,11 +1017,21 @@ function connectWS() {
     const done = () => { _wsConnecting = false; resolve(); };
     sock.onopen = () => {
       ws = sock;
+      _wsRetries = 0;
       if (currentRoom) wsSend('join_room', { room_id: currentRoom });
       done();
     };
     sock.onmessage = (e) => { try { handleWSEvent(JSON.parse(e.data)); } catch (err) { dbg('[WS] event handler error:', err); } };
-    sock.onclose = () => { ws = null; _wsConnecting = false; if (currentUser) setTimeout(() => connectWS(), 3000); };
+    sock.onclose = (ev) => {
+      ws = null; _wsConnecting = false;
+      if (ev.code === 4001) { currentUser = null; renderAuth(); return; }
+      if (currentUser) {
+        _wsRetries++;
+        const delay = Math.min(3000 * Math.pow(1.5, _wsRetries - 1), 30000);
+        dbg('[WS] reconnecting in', Math.round(delay) + 'ms', 'attempt', _wsRetries);
+        setTimeout(() => connectWS(), delay);
+      }
+    };
     sock.onerror = () => { done(); };
     setTimeout(done, 3000);
   });
@@ -1133,8 +1144,15 @@ function handleWSEvent(data) {
       break;
     case 'typing':
       if (!typingUsers[data.room_id]) typingUsers[data.room_id] = {};
-      if (data.active) typingUsers[data.room_id][data.user_id] = true;
-      else delete typingUsers[data.room_id][data.user_id];
+      if (data.active) {
+        typingUsers[data.room_id][data.user_id] = true;
+        setTimeout(() => {
+          if (typingUsers[data.room_id]?.[data.user_id]) {
+            delete typingUsers[data.room_id][data.user_id];
+            if (currentRoom === data.room_id) updateTypingIndicator();
+          }
+        }, 5000);
+      } else delete typingUsers[data.room_id][data.user_id];
       if (currentRoom === data.room_id) updateTypingIndicator();
       break;
     case 'presence':
@@ -2145,6 +2163,16 @@ function sendChatMessage(type, content, replyToId) {
   if (replyToId) payload.reply_to_id = replyToId;
   wsSend('send_message', payload);
   dbg('sendChatMessage:', type, 'temp_id=' + tempId);
+  setTimeout(() => {
+    const msgs = messagesByRoom[currentRoom] || [];
+    const still = msgs.find(m => m.id === tempId && m.pending);
+    if (still) {
+      dbg('[CHAT] pending message timed out:', tempId);
+      msgs.splice(msgs.indexOf(still), 1);
+      document.querySelector(`[data-msg-id="${tempId}"]`)?.remove();
+      showToast('Message not sent. Check your connection.');
+    }
+  }, 10000);
   return tempId;
 }
 
