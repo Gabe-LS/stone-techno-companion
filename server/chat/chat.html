@@ -3652,7 +3652,14 @@ window.addEventListener('resize', () => {
     }
   }
 });
-window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeViewer(); });
+window.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const actionSheet = document.getElementById('action-sheet');
+  if (actionSheet) { closeActionSheet(); return; }
+  const modal = document.querySelector('.modal-overlay');
+  if (modal) { modal.remove(); return; }
+  closeViewer();
+});
 document.addEventListener('gesturestart', e => e.preventDefault());
 document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
 document.addEventListener('contextmenu', (e) => { if (!e.target.closest('.msg')) e.preventDefault(); });
