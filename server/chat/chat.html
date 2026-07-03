@@ -3779,6 +3779,19 @@ document.addEventListener('visibilitychange', () => {
 });
 route();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(function() { /* sw not available */ });
+
+// iOS PWA safe-area fallback: env() sometimes resolves to 0px on app reopen
+if (window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches) {
+  const test = document.createElement('div');
+  test.style.paddingBottom = 'env(safe-area-inset-bottom, 0px)';
+  document.body.appendChild(test);
+  const val = parseInt(getComputedStyle(test).paddingBottom) || 0;
+  test.remove();
+  if (val === 0 && screen.height >= 812) {
+    document.documentElement.style.setProperty('--safe-bottom-fallback', '34px');
+    document.querySelector('.input-bar')?.style.setProperty('padding-bottom', 'calc(var(--space-sm) + 34px)');
+  }
+}
 if (window.visualViewport) {
   const vv = window.visualViewport;
   let _kbOpen = false;
