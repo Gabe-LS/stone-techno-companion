@@ -205,7 +205,27 @@ def init_chat_db(db: sqlite3.Connection) -> None:
             user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
             data    BLOB NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS chat_settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+        INSERT OR IGNORE INTO chat_settings (key, value) VALUES ('room_sort', 'auto');
     """)
+    db.commit()
+
+
+def get_setting(db: sqlite3.Connection, key: str, default: str = "") -> str:
+    row = db.execute("SELECT value FROM chat_settings WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def set_setting(db: sqlite3.Connection, key: str, value: str) -> None:
+    db.execute(
+        "INSERT INTO chat_settings (key, value) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, value),
+    )
     db.commit()
 
 

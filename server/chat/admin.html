@@ -137,6 +137,7 @@ select { -webkit-appearance: none; appearance: none; background-image: url("data
   .toolbar input[type="text"] { min-width: 0; width: 100%; }
 }
 </style>
+<script src="/shared.js"></script>
 </head>
 <body>
 <div id="app" style="visibility:hidden"></div>
@@ -144,14 +145,7 @@ select { -webkit-appearance: none; appearance: none; background-image: url("data
   <div class="modal" id="modal"></div>
 </div>
 <script>
-const DEBUG = true;
-const _t0 = performance.now();
-function _ts() { return '+' + ((performance.now() - _t0) | 0) + 'ms'; }
-function dbg(...args) { if (DEBUG) console.log(_ts(), '[admin]', ...args); }
-function verify(label, condition, detail) {
-  if (condition) console.log(_ts(), `[admin] OK: ${label}`, detail || '');
-  else console.warn(_ts(), `[admin] FAIL: ${label}`, detail || '');
-}
+setDbgTag('admin');
 
 const _p = new URLSearchParams(location.search);
 let token = _p.get('admin_token') || sessionStorage.getItem('chat_admin_token') || '';
@@ -172,16 +166,6 @@ async function api(path, opts) {
   if (!res.ok) { dbg('[API] error', res.status, path); throw new Error(res.status); }
   return res.json();
 }
-function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
-function ago(iso) {
-  if (!iso) return '';
-  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 60) return 'just now';
-  if (s < 3600) return Math.floor(s / 60) + 'm ago';
-  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
-  return Math.floor(s / 86400) + 'd ago';
-}
-
 let currentTab = 'reports';
 let expandedUser = null;
 let logOffset = 0;
@@ -340,10 +324,15 @@ const render = {
     dbg('[RENDER] rooms');
     const el = document.getElementById('content');
     try {
-      const rooms = await api('/rooms');
+      const [rooms, settings] = await Promise.all([api('/rooms'), api('/settings')]);
+      const sortMode = settings.room_sort || 'auto';
       window._roomsData = rooms;
       let html = `<div class="toolbar">
         <button class="btn btn-blue" onclick="openRoomModal()">Create room</button>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-sec);cursor:pointer">
+          <div class="switch"><input type="checkbox" id="room-sort-toggle" ${sortMode === 'manual' ? 'checked' : ''} onchange="toggleRoomSort()"><span></span></div>
+          Manual order
+        </label>
       </div>`;
       if (!rooms.length) { el.innerHTML = html + '<div class="empty">No rooms</div>'; return; }
       const typePill = t => t === 'general' ? 'pill-blue' : t === 'stage' ? 'pill-green' : t === 'dm' ? 'pill-amber' : 'pill-gray';
@@ -713,6 +702,14 @@ async function saveRoom(roomId) {
     render.rooms();
   } catch (e) { alert('Failed: ' + e.message); }
 }
+async function toggleRoomSort() {
+  const isManual = document.getElementById('room-sort-toggle')?.checked;
+  dbg('[ACTION] toggleRoomSort', isManual ? 'manual' : 'auto');
+  try {
+    await api('/settings', {method: 'PATCH', body: JSON.stringify({room_sort: isManual ? 'manual' : 'auto'})});
+  } catch (e) { dbg('[ACTION] toggleRoomSort failed', e.message); }
+}
+
 async function setMainRoom(roomId) {
   dbg('[ACTION] setMainRoom', roomId);
   try {

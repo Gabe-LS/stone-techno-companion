@@ -1321,12 +1321,12 @@ async function _toggleRoomMembership(roomId, btn) {
   const isMember = btn.classList.contains('active');
   try {
     await fetch(API + '/rooms/' + roomId + '/join', { method: isMember ? 'DELETE' : 'POST', credentials: 'include' });
-    btn.classList.toggle('active');
-    btn.querySelector('svg').setAttribute('fill', isMember ? 'none' : 'currentColor');
     const room = rooms.find(r => r.id === roomId);
     if (room) room.is_member = !isMember;
     if (isMember && ws && ws.readyState === 1) wsSend('leave_room', { room_id: roomId });
     else if (!isMember && ws && ws.readyState === 1) wsSend('join_room', { room_id: roomId });
+    await loadRooms();
+    renderRoomItems();
   } catch (e) { showToast(e.message); }
 }
 

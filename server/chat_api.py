@@ -71,6 +71,8 @@ from chat_db import (
     delete_user_messages,
     find_user_by_push_endpoint,
     get_reachable_member_counts,
+    get_setting,
+    set_setting,
 )
 from chat_ws import handle_chat_ws, purge_loop
 
@@ -695,12 +697,26 @@ async def list_rooms(request: Request):
                 "online_count": len(manager.get_online_users(r["id"])),
                 "member_count": reachable.get(r["id"], 0),
                 "is_member": r["id"] in member_rooms,
+                "position": r["position"] if "position" in r.keys() else 0,
                 "last_message_at": last_msgs.get(r["id"], ""),
             }
             for r in rooms
         ]
-        result.sort(key=lambda r: r["last_message_at"] or "", reverse=True)
-        result.sort(key=lambda r: r.get("position", 0))
+        sort_mode = get_setting(db, "room_sort", "auto")
+        if sort_mode == "manual":
+            result.sort(key=lambda r: r["last_message_at"] or "", reverse=True)
+            result.sort(key=lambda r: r.get("position", 0))
+        else:
+
+            def _auto_sort_key(r):
+                if r["is_main"]:
+                    return (0, "")
+                if r["is_member"]:
+                    return (1, r["last_message_at"] or "")
+                return (2, r["last_message_at"] or "")
+
+            result.sort(key=lambda r: r["last_message_at"] or "", reverse=True)
+            result.sort(key=lambda r: _auto_sort_key(r)[:1])
         return result
     finally:
         db.close()
@@ -1414,6 +1430,31 @@ async def admin_delete_ban(ban_id: str, request: Request):
     try:
         db.execute("DELETE FROM bans WHERE id = ?", (ban_id,))
         db.commit()
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+@router.get("/admin/settings")
+async def admin_get_settings(request: Request):
+    _require_admin(request)
+    db = _get_db()
+    try:
+        return {"room_sort": get_setting(db, "room_sort", "auto")}
+    finally:
+        db.close()
+
+
+@router.patch("/admin/settings")
+async def admin_update_settings(request: Request):
+    _require_admin(request)
+    body = await request.json()
+    db = _get_db()
+    try:
+        if "room_sort" in body:
+            if body["room_sort"] not in ("auto", "manual"):
+                raise HTTPException(400, "room_sort must be 'auto' or 'manual'")
+            set_setting(db, "room_sort", body["room_sort"])
         return {"ok": True}
     finally:
         db.close()
