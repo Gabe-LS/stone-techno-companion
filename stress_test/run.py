@@ -96,6 +96,14 @@ MESSAGES = [
     "Just discovered a hidden chill-out area",
 ]
 
+# Messages that trigger the word filter (from blocklist.txt)
+BAD_MESSAGES = [
+    "anyone selling 5hit here",
+    "where to get some cr@ck",
+    "this a55hole pushed me",
+    "fck this set is boring",
+]
+
 REACTIONS = ["thumbs_up", "heart", "laugh", "fire", "wow", "clap"]
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic"}
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".webm"}
@@ -163,6 +171,11 @@ class Metrics:
         self.ws_reconnects = 0
         self.connections_active = 0
         self.moderated_messages = 0
+        self.strikes_received = 0
+        self.mutes_received = 0
+        self.bans_received = 0
+        self.messages_moderated_removed = 0
+        self.moderation_events: list[dict] = []
 
         self.cpu_samples: list[float] = []
         self.ram_mb_samples: list[float] = []
@@ -817,6 +830,15 @@ async def _receiver(ws, idx: int, metrics: Metrics, stop: asyncio.Event):
                 )
 
             elif evt == "message_removed":
+                metrics.messages_moderated_removed += 1
+                metrics.moderation_events.append(
+                    {
+                        "type": "removed",
+                        "time": time.monotonic(),
+                        "user_idx": idx,
+                        "reason": data.get("reason", "?"),
+                    }
+                )
                 ulog.info(
                     "MODERATED msg=%s reason=%s",
                     data.get("id", "?")[:8],
@@ -851,14 +873,42 @@ async def _receiver(ws, idx: int, metrics: Metrics, stop: asyncio.Event):
                 )
 
             elif evt == "strike":
+                metrics.strikes_received += 1
+                metrics.moderation_events.append(
+                    {
+                        "type": "strike",
+                        "time": time.monotonic(),
+                        "user_idx": idx,
+                        "count": data.get("count"),
+                        "reason": data.get("reason", "?"),
+                    }
+                )
                 ulog.warning(
                     "STRIKE count=%s reason=%s", data.get("count"), data.get("reason")
                 )
 
             elif evt == "banned":
+                metrics.bans_received += 1
+                metrics.moderation_events.append(
+                    {
+                        "type": "ban",
+                        "time": time.monotonic(),
+                        "user_idx": idx,
+                        "reason": data.get("reason", "?"),
+                    }
+                )
                 ulog.error("BANNED reason=%s", data.get("reason"))
 
             elif evt == "muted":
+                metrics.mutes_received += 1
+                metrics.moderation_events.append(
+                    {
+                        "type": "mute",
+                        "time": time.monotonic(),
+                        "user_idx": idx,
+                        "reason": data.get("reason", "?"),
+                    }
+                )
                 ulog.warning("MUTED reason=%s", data.get("reason"))
 
     except (websockets.ConnectionClosed, asyncio.CancelledError):
@@ -1113,6 +1163,87 @@ async def _pick_action(
     # 71% plain text message
     else:
         await _send_text(ws, room_id, metrics, ulog, moderated)
+
+
+async def simulate_bad_actor(
+    idx: int,
+    token: str,
+    room_id: str,
+    base_url: str,
+    ssl_ctx: ssl.SSLContext | None,
+    metrics: Metrics,
+    duration: float,
+    ramp_delay: float,
+    stop: asyncio.Event,
+):
+    """Deliberately sends blocklisted words to test strike escalation."""
+    ulog = logging.getLogger(f"bad.{idx:03d}")
+    await asyncio.sleep(idx * ramp_delay + 30)
+    if stop.is_set():
+        return
+
+    ws_base = base_url.replace("https://", "wss://").replace("http://", "ws://")
+    ws_url = f"{ws_base}/ws/chat/{token}"
+
+    try:
+        async with websockets.connect(
+            ws_url,
+            ssl=ssl_ctx,
+            additional_headers={"Cookie": f"chat_session={token}"},
+            ping_interval=20,
+            ping_timeout=10,
+            close_timeout=5,
+            max_size=2**20,
+        ) as ws:
+            metrics.connections_active += 1
+            await ws.send(json.dumps({"event": "join_room", "room_id": room_id}))
+
+            recv_task = asyncio.create_task(_receiver(ws, 9000 + idx, metrics, stop))
+
+            try:
+                violation = 0
+                while violation < 5 and not stop.is_set():
+                    await asyncio.sleep(random.uniform(15, 30))
+                    if stop.is_set():
+                        break
+
+                    tid = secrets.token_hex(6)
+                    bad_msg = random.choice(BAD_MESSAGES) + f" #{secrets.token_hex(3)}"
+                    metrics._send_times[tid] = time.monotonic()
+                    await ws.send(
+                        json.dumps(
+                            {
+                                "event": "send_message",
+                                "room_id": room_id,
+                                "type": "text",
+                                "content": bad_msg,
+                                "temp_id": tid,
+                            }
+                        )
+                    )
+                    metrics.messages_sent += 1
+                    violation += 1
+                    ulog.info("BAD_MSG #%d sent: %s", violation, bad_msg[:40])
+
+                    await asyncio.sleep(5)
+
+                ulog.info("Bad actor finished after %d violations", violation)
+                await asyncio.sleep(duration)
+            finally:
+                recv_task.cancel()
+                try:
+                    await recv_task
+                except asyncio.CancelledError:
+                    pass
+                metrics.connections_active -= 1
+
+    except websockets.ConnectionClosed as e:
+        ulog.info("BAD_ACTOR disconnected: %s (expected after ban)", e)
+        metrics.connections_active = max(0, metrics.connections_active - 1)
+    except Exception as e:
+        metrics.ws_errors += 1
+        ulog.error("BAD_ACTOR error: %s", e)
+        metrics.connections_active = max(0, metrics.connections_active - 1)
 
 
 def _pick_dm_target(my_idx: int, all_user_ids: list[str]) -> str | None:
@@ -1524,6 +1655,37 @@ def generate_report(metrics: Metrics, burst: BurstControl, args) -> str:
         lines.append(f"  GPT-5.4-nano:        ${cost:.4f}")
         lines.append(f"  Total estimated:     ${cost:.4f}")
 
+    # Moderation escalation results
+    if metrics.moderation_events:
+        lines.append("")
+        lines.append("--- Moderation Escalation " + "-" * 41)
+        lines.append(f"  Messages removed:     {metrics.messages_moderated_removed:>6}")
+        lines.append(f"  Strikes received:     {metrics.strikes_received:>6}")
+        lines.append(f"  Mutes received:       {metrics.mutes_received:>6}")
+        lines.append(f"  Bans received:        {metrics.bans_received:>6}")
+        lines.append("")
+        lines.append(f"  {'Time':>8s}  {'User':>6s}  {'Event':>8s}  Detail")
+        for ev in metrics.moderation_events:
+            t = ev["time"] - metrics.start_time
+            lines.append(
+                f"  {t:>7.0f}s  #{ev['user_idx']:>5d}  {ev['type']:>8s}  "
+                f"{ev.get('count', '')}"
+                f"{'  ' + ev.get('reason', '') if ev.get('reason') else ''}"
+            )
+
+        expected_strikes = 3
+        expected_mutes = 1
+        expected_bans = 1
+        lines.append("")
+        s_ok = metrics.strikes_received >= expected_strikes
+        m_ok = metrics.mutes_received >= expected_mutes
+        b_ok = metrics.bans_received >= expected_bans
+        lines.append(
+            f"  Escalation check: strikes={'PASS' if s_ok else 'FAIL'}"
+            f" mutes={'PASS' if m_ok else 'FAIL'}"
+            f" bans={'PASS' if b_ok else 'FAIL'}"
+        )
+
     lines.append("=" * 68)
     return "\n".join(lines)
 
@@ -1627,6 +1789,9 @@ async def run(args):
         )
         metrics.start_time = time.monotonic()
 
+        n_bad = 3 if args.moderated and args.users >= 10 else 0
+        n_good = args.users - n_bad
+
         user_tasks = [
             asyncio.create_task(
                 simulate_user(
@@ -1647,8 +1812,27 @@ async def run(args):
                     http,
                 )
             )
-            for i in range(args.users)
+            for i in range(n_good)
         ]
+
+        bad_tasks = [
+            asyncio.create_task(
+                simulate_bad_actor(
+                    j,
+                    tokens[n_good + j],
+                    all_rooms[0],
+                    args.url,
+                    ssl_ctx,
+                    metrics,
+                    args.duration,
+                    ramp_delay,
+                    stop,
+                )
+            )
+            for j in range(n_bad)
+        ]
+        if n_bad:
+            print(f"  + {n_bad} bad actors testing moderation escalation")
 
         pw_task = None
         if getattr(args, "playwright", False):
@@ -1664,7 +1848,7 @@ async def run(args):
             )
 
         done, pending = await asyncio.wait(
-            user_tasks,
+            user_tasks + bad_tasks,
             timeout=args.duration + args.ramp + 60,
         )
         for t in pending:
