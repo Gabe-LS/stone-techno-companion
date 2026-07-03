@@ -2889,18 +2889,15 @@ function closeActionSheet() {
   if (sheet) { sheet.classList.remove('open'); setTimeout(() => sheet.remove(), 200); }
 }
 
-function _doBlock(userId, name, report) {
+function _doBlock(userId, name, report, msgId) {
   wsSend('block_user', { target_user_id: userId });
   blockedUserIds.add(userId);
-  if (report) {
-    const lastMsg = Object.values(messagesByRoom).flat().filter(m => m.user_id === userId).pop();
-    if (lastMsg) {
-      wsSend('report_message', { message_id: lastMsg.id, reason: 'Blocked and reported by user' });
-    }
+  if (report && msgId) {
+    wsSend('report_message', { message_id: msgId, reason: 'Blocked and reported by user' });
   }
   renderMessages();
   renderMemberItems();
-  showToast(escapeHtml(name) + ' blocked');
+  showToast(escapeHtml(name) + ' blocked' + (report ? ' and reported' : ''));
 }
 
 function blockUserConfirm(userId, name) {
@@ -2912,8 +2909,7 @@ function blockUserConfirm(userId, name) {
   sheet.innerHTML = `<div class="action-sheet" onclick="event.stopPropagation()">
     <div class="action-sheet-title">Block ${escapeHtml(name)}?</div>
     <p class="action-sheet-desc">You will no longer see their messages</p>
-    <button class="action-sheet-btn action-sheet-danger" onclick="closeActionSheet();_doBlock('${userId}','${jss(name)}',false)">Block</button>
-    <button class="action-sheet-btn action-sheet-danger" onclick="closeActionSheet();_doBlock('${userId}','${jss(name)}',true)">Block & Report</button>
+    <button class="action-sheet-btn action-sheet-danger" onclick="closeActionSheet();_doBlock('${userId}','${jss(name)}')">Block</button>
     <button class="action-sheet-btn action-sheet-cancel" onclick="closeActionSheet()">Cancel</button>
   </div>`;
   sheet.addEventListener('click', closeActionSheet);
