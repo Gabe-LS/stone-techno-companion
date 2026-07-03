@@ -1136,6 +1136,11 @@ function handleWSEvent(data) {
       }
       updateSidebarCount(data.room_id);
       if (data.room_id === currentRoom) { updateHeaderCount(); renderMemberList(); }
+      renderRoomItems();
+      break;
+    case 'rooms_changed':
+      dbg('[ROOM] rooms_changed, reloading');
+      loadRooms().then(() => { renderRoomList(); if (currentRoom) updateHeaderCount(); });
       break;
     case 'message_rejected': showToast(data.reason); break;
     case 'strike': showToast(`Warning (${data.count}/3): ${data.reason}`); break;

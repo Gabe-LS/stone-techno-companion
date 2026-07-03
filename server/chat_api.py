@@ -1801,6 +1801,9 @@ async def admin_create_room(request: Request):
             ttl_minutes=body.get("ttl_minutes", 60),
             position=body.get("position", 0),
         )
+        from chat_ws import manager
+
+        asyncio.create_task(manager.broadcast_to_all({"event": "rooms_changed"}))
         return room
     finally:
         db.close()
@@ -1816,6 +1819,9 @@ async def admin_update_room(room_id: str, request: Request):
         if not room:
             raise HTTPException(404, "Room not found")
         update_room(db, room_id, **body)
+        from chat_ws import manager
+
+        asyncio.create_task(manager.broadcast_to_all({"event": "rooms_changed"}))
         return {"ok": True}
     finally:
         db.close()
@@ -1834,6 +1840,9 @@ async def admin_set_main_room(room_id: str, request: Request):
         )
         db.execute("UPDATE rooms SET is_main = 1 WHERE id = ?", (room_id,))
         db.commit()
+        from chat_ws import manager
+
+        asyncio.create_task(manager.broadcast_to_all({"event": "rooms_changed"}))
         return {"ok": True}
     finally:
         db.close()
@@ -1851,6 +1860,9 @@ async def admin_reorder_rooms(request: Request):
         for i, room_id in enumerate(order):
             db.execute("UPDATE rooms SET position = ? WHERE id = ?", (i, room_id))
         db.commit()
+        from chat_ws import manager
+
+        asyncio.create_task(manager.broadcast_to_all({"event": "rooms_changed"}))
         return {"ok": True}
     finally:
         db.close()
@@ -1869,6 +1881,9 @@ async def admin_delete_room(room_id: str, request: Request):
         if room["type"] in ("dm", "meetup"):
             raise HTTPException(400, "DM and meetup rooms are managed automatically")
         delete_room(db, room_id)
+        from chat_ws import manager
+
+        asyncio.create_task(manager.broadcast_to_all({"event": "rooms_changed"}))
         return {"ok": True}
     finally:
         db.close()

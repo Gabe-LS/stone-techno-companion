@@ -524,6 +524,15 @@ class ConnectionManager:
             except Exception:
                 pass
 
+    async def broadcast_to_all(self, event: dict) -> None:
+        payload = json.dumps(event)
+        for conns in list(self.user_conns.values()):
+            for ws in list(conns.values()):
+                try:
+                    await ws.send_text(payload)
+                except Exception:
+                    pass
+
     def get_online_users(self, room_id: str) -> list[dict]:
         room = self.rooms.get(room_id)
         if not room:
