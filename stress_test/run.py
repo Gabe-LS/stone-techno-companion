@@ -141,15 +141,24 @@ class Metrics:
         self.ack_latencies = array("d")
         self.broadcast_latencies = array("d")
         self.upload_latencies = array("d")
+        self.image_upload_latencies = array("d")
+        self.video_upload_latencies = array("d")
         self.connect_latencies = array("d")
+        self.history_latencies = array("d")
 
         self.messages_sent = 0
         self.messages_received = 0
         self.messages_failed = 0
+        self.messages_deleted = 0
+        self.replies_sent = 0
         self.media_uploaded = 0
         self.media_failed = 0
         self.reactions_sent = 0
+        self.meetups_created = 0
+        self.meetups_joined = 0
+        self.locations_sent = 0
         self.dms_opened = 0
+        self.mark_reads = 0
         self.ws_errors = 0
         self.ws_reconnects = 0
         self.connections_active = 0
@@ -158,6 +167,7 @@ class Metrics:
         self.cpu_samples: list[float] = []
         self.ram_mb_samples: list[float] = []
         self.db_size_mb_samples: list[float] = []
+        self.uploads_size_mb_samples: list[float] = []
         self.net_sent_bytes: list[int] = []
         self.net_recv_bytes: list[int] = []
         self.send_rate_samples: list[float] = []
@@ -169,7 +179,11 @@ class Metrics:
 
         self._send_times: dict[str, float] = {}
         self._broadcast_lookup: dict[str, float] = {}
+        self._history_waits: dict[str, float] = {}
         self.recent_msg_ids: list[str] = []
+        self._sent_msg_ids: set[str] = set()
+        self._received_msg_ids: set[str] = set()
+        self.meetup_ids: list[str] = []
 
 
 # ---------------------------------------------------------------------------
@@ -401,12 +415,76 @@ def _generate_test_media(
         if f.suffix.lower() in IMAGE_EXTS and f not in images:
             images.append(f)
 
+    # Generate test videos matching browser output spec:
+    # MP4, H.264 (AVC) 4Mbps, AAC 128kbps, ≤1080p, ≤60s
     videos: list[Path] = []
+    video_specs = [
+        (1920, 1080, 10, "landscape_10s"),
+        (1080, 1920, 8, "portrait_8s"),
+        (1280, 720, 15, "720p_15s"),
+    ]
+    for vw, vh, dur, label in video_specs:
+        p = media_dir / f"test_{label}.mp4"
+        if not p.exists():
+            print(f"  generating {p.name} ...", end=" ", flush=True)
+            _generate_test_video(p, vw, vh, dur)
+            if p.exists():
+                print(f"{p.stat().st_size / 1024:.0f}KB")
+            else:
+                print("SKIPPED (ffmpeg not available)")
+        if p.exists():
+            videos.append(p)
+
     for f in media_dir.iterdir():
-        if f.suffix.lower() in VIDEO_EXTS:
+        if f.suffix.lower() in VIDEO_EXTS and f not in videos:
             videos.append(f)
 
     return images, videos
+
+
+def _generate_test_video(path: Path, w: int, h: int, duration: int):
+    """Generate a valid MP4 matching browser Mediabunny output:
+    H.264 4Mbps, AAC 128kbps, 30fps."""
+    import subprocess
+
+    try:
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                f"testsrc2=size={w}x{h}:rate=30:duration={duration}",
+                "-f",
+                "lavfi",
+                "-i",
+                f"sine=frequency=440:duration={duration}",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-b:v",
+                "4M",
+                "-maxrate",
+                "4M",
+                "-bufsize",
+                "8M",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-movflags",
+                "+faststart",
+                str(path),
+            ],
+            capture_output=True,
+            timeout=60,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
 
 
 async def upload_media(
@@ -497,6 +575,7 @@ async def simulate_user(
                 ulog.info("CONNECT %s", fmt_ms(lat))
 
                 for rid in my_rooms:
+                    metrics._history_waits[rid] = time.monotonic()
                     await ws.send(
                         json.dumps(
                             {
@@ -653,11 +732,14 @@ async def _receiver(ws, idx: int, metrics: Metrics, stop: asyncio.Event):
                     metrics.ack_latencies.append(lat)
                     metrics.ack_timeline.append((time.monotonic(), lat))
                     metrics._broadcast_lookup[mid] = metrics._send_times.pop(tid)
+                    metrics._sent_msg_ids.add(mid)
                     ulog.debug("ACK temp=%s msg=%s %s", tid[:8], mid[:8], fmt_ms(lat))
 
             elif evt == "message":
                 metrics.messages_received += 1
                 mid = data.get("id")
+                if mid:
+                    metrics._received_msg_ids.add(mid)
                 if mid and mid in metrics._broadcast_lookup:
                     if random.random() < 0.02:
                         lat = time.monotonic() - metrics._broadcast_lookup[mid]
@@ -669,6 +751,18 @@ async def _receiver(ws, idx: int, metrics: Metrics, stop: asyncio.Event):
                         metrics.recent_msg_ids[random.randint(0, 2999)] = mid
                     else:
                         metrics.recent_msg_ids.append(mid)
+
+            elif evt == "room_history":
+                rid = data.get("room_id", "")
+                if rid in metrics._history_waits:
+                    lat = time.monotonic() - metrics._history_waits.pop(rid)
+                    metrics.history_latencies.append(lat)
+                    ulog.debug(
+                        "HISTORY room=%s %s msgs=%d",
+                        rid[:12],
+                        fmt_ms(lat),
+                        len(data.get("messages", [])),
+                    )
 
             elif evt == "message_rejected":
                 metrics.messages_failed += 1
@@ -683,6 +777,33 @@ async def _receiver(ws, idx: int, metrics: Metrics, stop: asyncio.Event):
                     "MODERATED msg=%s reason=%s",
                     data.get("id", "?")[:8],
                     data.get("reason", "?"),
+                )
+
+            elif evt == "meetup_created":
+                mid = data.get("meetup", {}).get("id")
+                if mid:
+                    metrics.meetup_ids.append(mid)
+                ulog.debug("MEETUP_CREATED id=%s", mid)
+
+            elif evt == "presence":
+                ulog.debug(
+                    "PRESENCE user=%s online=%s room=%s",
+                    data.get("user_id", "?")[:8],
+                    data.get("online"),
+                    data.get("room_id", "?")[:12],
+                )
+
+            elif evt == "reaction_updated":
+                ulog.debug("REACTION_UPDATED msg=%s", data.get("message_id", "?")[:8])
+
+            elif evt == "badge_counts":
+                ulog.debug("BADGE_COUNTS rooms=%d", len(data.get("counts", [])))
+
+            elif evt == "badge_update":
+                ulog.debug(
+                    "BADGE_UPDATE room=%s count=%s",
+                    data.get("room_id", "?")[:12],
+                    data.get("count"),
                 )
 
             elif evt == "strike":
@@ -709,7 +830,12 @@ async def _send_text(
     burst_tag: str = "",
 ):
     tid = secrets.token_hex(6)
-    content = random.choice(MESSAGES)
+    # 5% of text messages are long (near 1K char limit) to stress DB + broadcast
+    if random.random() < 0.05:
+        base = random.choice(MESSAGES)
+        content = (base + " ") * (950 // (len(base) + 1))
+    else:
+        content = random.choice(MESSAGES)
     metrics._send_times[tid] = time.monotonic()
     await ws.send(
         json.dumps(
@@ -745,7 +871,9 @@ async def _send_image(
     t0 = time.monotonic()
     content = await upload_media(http, base_url, token, img, "image", ulog)
     if content:
-        metrics.upload_latencies.append(time.monotonic() - t0)
+        lat = time.monotonic() - t0
+        metrics.upload_latencies.append(lat)
+        metrics.image_upload_latencies.append(lat)
         metrics.media_uploaded += 1
         tid = secrets.token_hex(6)
         metrics._send_times[tid] = time.monotonic()
@@ -774,12 +902,15 @@ async def _pick_action(
 ):
     roll = random.random()
 
+    # 2% video upload
     if roll < 0.02 and videos:
         vid = random.choice(videos)
         t0 = time.monotonic()
         content = await upload_media(http, base_url, token, vid, "video", ulog)
         if content:
-            metrics.upload_latencies.append(time.monotonic() - t0)
+            lat = time.monotonic() - t0
+            metrics.upload_latencies.append(lat)
+            metrics.video_upload_latencies.append(lat)
             metrics.media_uploaded += 1
             tid = secrets.token_hex(6)
             metrics._send_times[tid] = time.monotonic()
@@ -801,11 +932,13 @@ async def _pick_action(
         else:
             metrics.media_failed += 1
 
+    # 8% image upload
     elif roll < 0.10 and images:
         await _send_image(
             ws, room_id, token, base_url, metrics, images, http, ulog, moderated
         )
 
+    # 5% reaction
     elif roll < 0.15 and metrics.recent_msg_ids:
         target = random.choice(metrics.recent_msg_ids)
         emoji = random.choice(REACTIONS)
@@ -821,6 +954,118 @@ async def _pick_action(
         metrics.reactions_sent += 1
         ulog.debug("REACT msg=%s emoji=%s", target[:8], emoji)
 
+    # 5% reply to recent message
+    elif roll < 0.20 and metrics.recent_msg_ids:
+        reply_to = random.choice(metrics.recent_msg_ids)
+        tid = secrets.token_hex(6)
+        metrics._send_times[tid] = time.monotonic()
+        await ws.send(
+            json.dumps(
+                {
+                    "event": "send_message",
+                    "room_id": room_id,
+                    "type": "text",
+                    "content": random.choice(MESSAGES),
+                    "temp_id": tid,
+                    "reply_to_id": reply_to,
+                }
+            )
+        )
+        metrics.messages_sent += 1
+        metrics.replies_sent += 1
+        if moderated:
+            metrics.moderated_messages += 1
+        ulog.info(
+            "REPLY room=%s temp=%s reply_to=%s", room_id[:12], tid[:8], reply_to[:8]
+        )
+
+    # 2% location share
+    elif roll < 0.22:
+        tid = secrets.token_hex(6)
+        lat_v = 51.48 + random.uniform(-0.02, 0.02)
+        lng_v = 7.22 + random.uniform(-0.02, 0.02)
+        metrics._send_times[tid] = time.monotonic()
+        await ws.send(
+            json.dumps(
+                {
+                    "event": "send_message",
+                    "room_id": room_id,
+                    "type": "location",
+                    "content": json.dumps({"lat": lat_v, "lng": lng_v}),
+                    "temp_id": tid,
+                }
+            )
+        )
+        metrics.messages_sent += 1
+        metrics.locations_sent += 1
+        ulog.info("SEND location room=%s temp=%s", room_id[:12], tid[:8])
+
+    # 1% meetup creation
+    elif roll < 0.23:
+        await ws.send(
+            json.dumps(
+                {
+                    "event": "create_meetup",
+                    "title": random.choice(
+                        [
+                            "Meet at main stage",
+                            "Water station group",
+                            "After-party crew",
+                            "Lost and found meetup",
+                            "Sunrise set gathering",
+                        ]
+                    ),
+                    "meetup_time": "2026-07-12T22:00:00+02:00",
+                    "label": "Main entrance",
+                    "lat": 51.48 + random.uniform(-0.01, 0.01),
+                    "lng": 7.22 + random.uniform(-0.01, 0.01),
+                }
+            )
+        )
+        metrics.meetups_created += 1
+        ulog.info("CREATE_MEETUP room=%s", room_id[:12])
+
+    # 1% join existing meetup
+    elif roll < 0.24 and metrics.meetup_ids:
+        mid = random.choice(metrics.meetup_ids)
+        await ws.send(
+            json.dumps(
+                {
+                    "event": "join_meetup",
+                    "meetup_id": mid,
+                }
+            )
+        )
+        metrics.meetups_joined += 1
+        ulog.debug("JOIN_MEETUP id=%s", mid[:8])
+
+    # 2% delete own recent message
+    elif roll < 0.26 and metrics.recent_msg_ids:
+        target = random.choice(metrics.recent_msg_ids)
+        await ws.send(
+            json.dumps(
+                {
+                    "event": "delete_message",
+                    "message_id": target,
+                }
+            )
+        )
+        metrics.messages_deleted += 1
+        ulog.debug("DELETE msg=%s", target[:8])
+
+    # 3% mark room as read
+    elif roll < 0.29:
+        await ws.send(
+            json.dumps(
+                {
+                    "event": "mark_read",
+                    "room_id": room_id,
+                }
+            )
+        )
+        metrics.mark_reads += 1
+
+    # 71% plain text message
     else:
         await _send_text(ws, room_id, metrics, ulog, moderated)
 
@@ -977,6 +1222,13 @@ async def collect_system_metrics(metrics: Metrics, db_path: str, stop: asyncio.E
                     sz += wal.stat().st_size
                 metrics.db_size_mb_samples.append(sz / 1024 / 1024)
 
+            uploads_dir = p.parent.parent / "chat" / "uploads"
+            if uploads_dir.is_dir():
+                total = sum(
+                    f.stat().st_size for f in uploads_dir.iterdir() if f.is_file()
+                )
+                metrics.uploads_size_mb_samples.append(total / 1024 / 1024)
+
             now = time.monotonic()
             stale = [k for k, v in metrics._broadcast_lookup.items() if now - v > 60]
             for k in stale:
@@ -1061,10 +1313,16 @@ def generate_report(metrics: Metrics, burst: BurstControl, args) -> str:
         f"  Messages sent:      {metrics.messages_sent:>10,}",
         f"  Messages received:  {metrics.messages_received:>10,}",
         f"  Messages failed:    {metrics.messages_failed:>10,}",
+        f"  Replies sent:       {metrics.replies_sent:>10,}",
+        f"  Messages deleted:   {metrics.messages_deleted:>10,}",
         f"  Media uploaded:     {metrics.media_uploaded:>10,}",
         f"  Media failed:       {metrics.media_failed:>10,}",
         f"  Reactions sent:     {metrics.reactions_sent:>10,}",
+        f"  Locations sent:     {metrics.locations_sent:>10,}",
+        f"  Meetups created:    {metrics.meetups_created:>10,}",
+        f"  Meetups joined:     {metrics.meetups_joined:>10,}",
         f"  DMs opened:         {metrics.dms_opened:>10,}",
+        f"  Mark reads:         {metrics.mark_reads:>10,}",
         f"  WS errors:          {metrics.ws_errors:>10}",
         f"  WS reconnects:      {metrics.ws_reconnects:>10}",
     ]
@@ -1089,7 +1347,10 @@ def generate_report(metrics: Metrics, burst: BurstControl, args) -> str:
     for name, data in [
         ("Ack", metrics.ack_latencies),
         ("Broadcast", metrics.broadcast_latencies),
-        ("Upload", metrics.upload_latencies),
+        ("Room history", metrics.history_latencies),
+        ("Upload (all)", metrics.upload_latencies),
+        ("  Image", metrics.image_upload_latencies),
+        ("  Video", metrics.video_upload_latencies),
         ("Connect", metrics.connect_latencies),
     ]:
         if data:
@@ -1164,9 +1425,33 @@ def generate_report(metrics: Metrics, burst: BurstControl, args) -> str:
                 f"end={metrics.db_size_mb_samples[-1]:.2f}MB  "
                 f"delta={growth:+.2f}MB"
             )
+        if metrics.uploads_size_mb_samples:
+            u_growth = (
+                metrics.uploads_size_mb_samples[-1] - metrics.uploads_size_mb_samples[0]
+            )
+            lines.append(
+                f"  uploads/:      start={metrics.uploads_size_mb_samples[0]:.2f}MB  "
+                f"end={metrics.uploads_size_mb_samples[-1]:.2f}MB  "
+                f"delta={u_growth:+.2f}MB"
+            )
         if metrics.net_sent_bytes:
             lines.append(f"  Net sent:      {fmt_bytes(metrics.net_sent_bytes[-1])}")
             lines.append(f"  Net recv:      {fmt_bytes(metrics.net_recv_bytes[-1])}")
+
+    # Message delivery verification
+    sent = len(metrics._sent_msg_ids)
+    received = len(metrics._received_msg_ids & metrics._sent_msg_ids)
+    if sent > 0:
+        lines.append("")
+        lines.append("--- Delivery Verification " + "-" * 41)
+        lines.append(f"  Unique messages sent:      {sent:>8,}")
+        lines.append(f"  Seen by other users:       {received:>8,}")
+        lost = sent - received
+        lines.append(f"  Not seen (possible loss):  {lost:>8,}")
+        if lost > 0:
+            lines.append(f"  Delivery rate:             {received / sent * 100:>7.1f}%")
+        else:
+            lines.append("  Delivery rate:                100.0%")
 
     # Cost estimation
     if args.moderated and metrics.moderated_messages > 0:
@@ -1197,6 +1482,21 @@ async def run(args):
     log_path = str(Path("stress_test") / f"debug_{int(time.time())}.log")
     setup_logging(log_path)
     args.moderated = not args.no_moderation
+
+    import resource
+
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    needed = args.users * 2 + 100
+    if soft < needed:
+        try:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (min(needed, hard), hard))
+            new_soft, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+            print(f"Raised file descriptor limit: {soft} -> {new_soft}")
+        except (ValueError, OSError):
+            print(
+                f"WARNING: file descriptor limit is {soft}, need ~{needed} "
+                f"for {args.users} users. Run: ulimit -n {needed}"
+            )
 
     log.info(
         "Starting stress test: users=%d duration=%d url=%s moderated=%s",

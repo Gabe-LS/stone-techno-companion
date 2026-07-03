@@ -1157,16 +1157,21 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
     def _process_image():
         import pyvips
 
+        t_start = time.monotonic()
         img = pyvips.Image.new_from_buffer(data, "")
+        t_decode = time.monotonic()
         w, h = img.width, img.height
         if w * h > 40_000_000:
             raise ValueError("Image too large")
         max_side = max(w, h)
+        resized = False
         if max_side > 1500:
             scale = 1500 / max_side
             img = img.resize(scale, kernel=pyvips.enums.Kernel.LANCZOS3)
             w, h = img.width, img.height
+            resized = True
         img.webpsave(str(out_path), Q=80)
+        t_save = time.monotonic()
         mod_path = upload_dir / f"{token}_mod.webp"
         if max(w, h) > 880:
             mod_scale = 800 / max(w, h)
@@ -1174,6 +1179,21 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
             mod.webpsave(str(mod_path), Q=60)
         else:
             img.webpsave(str(mod_path), Q=60)
+        t_mod = time.monotonic()
+        out_size = out_path.stat().st_size
+        logger.info(
+            "[UPLOAD] image %dx%d %dKB->%dKB resized=%s "
+            "decode=%.0fms save=%.0fms mod=%.0fms total=%.0fms",
+            w,
+            h,
+            len(data) // 1024,
+            out_size // 1024,
+            resized,
+            (t_decode - t_start) * 1000,
+            (t_save - t_decode) * 1000,
+            (t_mod - t_save) * 1000,
+            (t_mod - t_start) * 1000,
+        )
         return w, h
 
     try:
@@ -1213,10 +1233,12 @@ async def upload_video(request: Request, file: UploadFile = File(...)):
     filename = f"{token}.mp4"
     out_path = upload_dir / filename
 
+    t_start = time.monotonic()
     tmp_fd, tmp_name = tempfile.mkstemp(suffix=".mp4")
     try:
         os.write(tmp_fd, data)
         os.close(tmp_fd)
+        t_write = time.monotonic()
 
         probe = await asyncio.to_thread(
             subprocess.run,
@@ -1234,6 +1256,7 @@ async def upload_video(request: Request, file: UploadFile = File(...)):
             text=True,
             timeout=10,
         )
+        t_probe = time.monotonic()
         info = json.loads(probe.stdout)
         duration = float(info["format"].get("duration", 0))
         if duration > 65:
@@ -1246,6 +1269,8 @@ async def upload_video(request: Request, file: UploadFile = File(...)):
             raise HTTPException(400, "No video stream found")
         width = int(video_stream["width"])
         height = int(video_stream["height"])
+        codec = video_stream.get("codec_name", "?")
+        bitrate_kbps = int(video_stream.get("bit_rate", 0)) // 1000
 
         import shutil
 
@@ -1262,6 +1287,7 @@ async def upload_video(request: Request, file: UploadFile = File(...)):
             except OSError:
                 pass
 
+    t_frames_start = time.monotonic()
     mod_frames = 0
     for i, frac in enumerate([0.25, 0.5, 0.75]):
         frame_path = upload_dir / f"{token}_mod{i}.webp"
@@ -1291,10 +1317,27 @@ async def upload_video(request: Request, file: UploadFile = File(...)):
                 mod_frames += 1
         except Exception:
             pass
+    t_frames_end = time.monotonic()
 
     if mod_frames == 0:
         out_path.unlink(missing_ok=True)
         raise HTTPException(400, "Could not process video for moderation")
+
+    logger.info(
+        "[UPLOAD] video %dx%d %s %dkbps %.1fs %dKB "
+        "write=%.0fms probe=%.0fms frames=%.0fms(%d) total=%.0fms",
+        width,
+        height,
+        codec,
+        bitrate_kbps,
+        duration,
+        len(data) // 1024,
+        (t_write - t_start) * 1000,
+        (t_probe - t_write) * 1000,
+        (t_frames_end - t_frames_start) * 1000,
+        mod_frames,
+        (t_frames_end - t_start) * 1000,
+    )
 
     return {
         "url": f"/chat/uploads/{filename}",
