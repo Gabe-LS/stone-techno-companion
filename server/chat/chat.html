@@ -1147,7 +1147,16 @@ function handleWSEvent(data) {
       dbg('[ROOM] rooms_changed, reloading');
       _debouncedRoomRefresh();
       break;
-    case 'message_rejected': showToast(data.reason); break;
+    case 'message_rejected':
+      showToast(data.reason);
+      if (data.temp_id) {
+        const msgs = messagesByRoom[currentRoom] || [];
+        const idx = msgs.findIndex(m => m.temp_id === data.temp_id || m.id === data.temp_id);
+        if (idx !== -1) msgs.splice(idx, 1);
+        const el = document.querySelector(`[data-msg-id="${data.temp_id}"]`);
+        if (el) el.remove();
+      }
+      break;
     case 'strike': showToast(`Warning (${data.count}/3): ${data.reason}`); break;
     case 'banned': showToast('You have been banned: ' + data.reason); currentUser = null; renderAuth(); break;
     case 'dm_opened':
@@ -2336,10 +2345,12 @@ function uploadImage() {
     try {
       const resized = await resizeImage(file, 1500);
       const form = new FormData(); form.append('file', resized);
-      const result = await fetch(API + '/upload/image', { method: 'POST', body: form, credentials: 'include' }).then(r => r.json());
-      verify('uploadImage', result.url, 'image uploaded: ' + result.url);
+      const resp = await fetch(API + '/upload/image', { method: 'POST', body: form, credentials: 'include' });
+      if (!resp.ok) { showToast('Upload failed'); return; }
+      const result = await resp.json();
+      if (!result.url) { showToast('Upload failed'); return; }
       sendChatMessage('image', JSON.stringify(result));
-    } catch (e) { verify('uploadImage', false, e.message); showToast('Upload failed'); }
+    } catch (e) { showToast('Upload failed'); }
   };
   input.click();
 }
@@ -2819,6 +2830,7 @@ function _doBlock(userId, name, report) {
     }
   }
   renderMessages();
+  renderMemberItems();
   showToast(escapeHtml(name) + ' blocked');
 }
 
@@ -3467,6 +3479,8 @@ async function _unblockUser(userId, btn) {
     blockedUserIds.delete(userId);
     if (btn) btn.closest('div').remove();
     renderMessages();
+    renderMemberItems();
+    showToast('User unblocked');
   } catch (e) { showToast(e.message); }
 }
 
