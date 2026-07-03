@@ -79,6 +79,27 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat/api")
 DEFAULT_EVENT_ID = os.environ.get("CHAT_EVENT_ID", "stone-techno-2026")
 ADMIN_TOKEN = os.environ.get("CHAT_ADMIN_TOKEN", "")
+_SITE_SHORT = ""
+
+
+def _load_site_short() -> None:
+    global _SITE_SHORT
+    lineup_db = Path(__file__).resolve().parent.parent / "lineup.db"
+    if not lineup_db.exists():
+        return
+    try:
+        db = sqlite3.connect(str(lineup_db))
+        db.row_factory = sqlite3.Row
+        row = db.execute(
+            "SELECT short_name FROM events WHERE id = ?", (DEFAULT_EVENT_ID,)
+        ).fetchone()
+        if row and row["short_name"]:
+            _SITE_SHORT = row["short_name"]
+        db.close()
+    except Exception:
+        pass
+
+
 _ADMIN_EMAIL_HASHES: set[str] = set()
 
 
@@ -202,7 +223,10 @@ def _authenticate(
 @router.get("/config")
 async def get_config():
     google_id = os.environ.get("GOOGLE_CLIENT_ID", "")
-    return {"google_client_id": google_id if google_id else None}
+    return {
+        "google_client_id": google_id if google_id else None,
+        "site_short": _SITE_SHORT or None,
+    }
 
 
 @router.post("/auth/google")
@@ -1748,6 +1772,7 @@ def mount_chat(app):
 
     _load_disposable_domains()
     _load_admin_emails()
+    _load_site_short()
 
     db = _get_db()
     seed_event_room(db, DEFAULT_EVENT_ID, "Stone Techno 2026")

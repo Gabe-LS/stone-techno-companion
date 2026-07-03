@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Chat</title>
+<title>Stone Techno 2026 Companion</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>if ('scrollRestoration' in history) history.scrollRestoration = 'manual';</script>
 <style>
@@ -389,6 +390,7 @@ let isMobile = window.innerWidth < 768;
 let _toastTimer = null;
 let _googleClientId = null;
 let _googleInitialized = false;
+let _siteShort = null;
 
 const REACTION_EMOJIS = {'👍':'thumbs_up','❤️':'heart','😂':'laugh','🔥':'fire','😮':'wow','👏':'clap'};
 const REACTION_KEYS = Object.entries(REACTION_EMOJIS);
@@ -477,6 +479,8 @@ async function renderAuth() {
     try {
       const cfg = await api('/config');
       _googleClientId = cfg.google_client_id;
+      _siteShort = cfg.site_short;
+      if (_siteShort) document.title = 'Chat · ' + _siteShort;
       dbg('[AUTH] google client id loaded:', _googleClientId ? 'yes' : 'no');
     } catch (e) { dbg('[AUTH] config fetch failed:', e.message); }
   }
@@ -1358,7 +1362,8 @@ function updateTabBadges() {
 let _hiddenUnread = 0;
 function _updateTitleBadge() {
   const total = Object.values(unreadByRoom).reduce((s, c) => s + c, 0) + _hiddenUnread;
-  document.title = total > 0 ? `(${total}) Chat` : 'Chat';
+  const _titleBase = _siteShort ? 'Chat · ' + _siteShort : 'Chat';
+  document.title = total > 0 ? `(${total}) ${_titleBase}` : _titleBase;
 }
 
 async function loadMeetups() {
@@ -1519,7 +1524,7 @@ function renderChatView(roomName) {
   if (isMobile) {
     document.getElementById('app').innerHTML = `
       <div class="header">
-        <a href="/" style="display:flex;align-items:center;justify-content:center;width:48px;height:48px;color:#fff;text-decoration:none;-webkit-tap-highlight-color:transparent;position:absolute;left:4px;top:0"><svg width="24" height="24" viewBox="-1.7 -1.7 27.4 27.4" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12C2 8.22876 2 6.34315 3.17157 5.17157C4.34315 4 6.22876 4 10 4H14C17.7712 4 19.6569 4 20.8284 5.17157C22 6.34315 22 8.22876 22 12V14C22 17.7712 22 19.6569 20.8284 20.8284C19.6569 22 17.7712 22 14 22H10C6.22876 22 4.34315 22 3.17157 20.8284C2 19.6569 2 17.7712 2 14V12Z"/><path d="M7 4V2.5" stroke-linecap="round"/><path d="M17 4V2.5" stroke-linecap="round"/><path d="M2.5 9H21.5" stroke-linecap="round"/><circle cx="17" cy="13" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="13" r="1" fill="currentColor" stroke="none"/><circle cx="7" cy="13" r="1" fill="currentColor" stroke="none"/><circle cx="17" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="7" cy="17" r="1" fill="currentColor" stroke="none"/></svg></a>
+        <a href="/line-up" style="display:flex;align-items:center;justify-content:center;width:48px;height:48px;color:#fff;text-decoration:none;-webkit-tap-highlight-color:transparent;position:absolute;left:4px;top:0"><svg width="24" height="24" viewBox="-1.7 -1.7 27.4 27.4" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12C2 8.22876 2 6.34315 3.17157 5.17157C4.34315 4 6.22876 4 10 4H14C17.7712 4 19.6569 4 20.8284 5.17157C22 6.34315 22 8.22876 22 12V14C22 17.7712 22 19.6569 20.8284 20.8284C19.6569 22 17.7712 22 14 22H10C6.22876 22 4.34315 22 3.17157 20.8284C2 19.6569 2 17.7712 2 14V12Z"/><path d="M7 4V2.5" stroke-linecap="round"/><path d="M17 4V2.5" stroke-linecap="round"/><path d="M2.5 9H21.5" stroke-linecap="round"/><circle cx="17" cy="13" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="13" r="1" fill="currentColor" stroke="none"/><circle cx="7" cy="13" r="1" fill="currentColor" stroke="none"/><circle cx="17" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="7" cy="17" r="1" fill="currentColor" stroke="none"/></svg></a>
         <div class="header-info">
           <span class="title">${esc(roomName)}</span>
           <span class="online">${onlineCount} online</span>
@@ -3366,6 +3371,15 @@ async function route() {
   if (_routing) { dbg('route: skip (already routing)'); return; }
   _routing = true;
   try {
+  if (!_siteShort) {
+    try {
+      const cfg = await api('/config');
+      _googleClientId = cfg.google_client_id;
+      _siteShort = cfg.site_short;
+      if (_siteShort) document.title = 'Chat · ' + _siteShort;
+      dbg('[CONFIG] loaded, site_short:', _siteShort);
+    } catch (e) { dbg('[CONFIG] fetch failed:', e.message); }
+  }
   dbg('route:', location.href);
   const path = location.pathname;
   const pathRoom = path.match(/\/chat\/r\/(.+)/)?.[1] || null;

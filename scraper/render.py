@@ -189,6 +189,7 @@ def render_output_html(
     stage_colors: dict[str, str] | None = None,
     output_dir: str | None = None,
     videos: dict[str, list[dict]] | None = None,
+    site_short: str = "ST26",
 ) -> str:
     def esc(text: str | None) -> str:
         return html.escape(text or "")
@@ -201,7 +202,7 @@ def render_output_html(
     parts.append(
         '  <meta name="viewport" content="width=device-width, initial-scale=1.0">'
     )
-    parts.append(f"  <title>{esc(title)}</title>")
+    parts.append(f"  <title>Line-up &middot; {esc(site_short)}</title>")
     description = "Your companion for Stone Techno 2026. Browse the lineup, explore the timetable, plan your schedule, and get notified before your sets start."
     parts.append(f'  <meta name="description" content="{esc(description)}">')
     parts.append(f'  <meta property="og:title" content="{esc(title)}">')
@@ -622,6 +623,10 @@ def render_output_html(
         parts.append(
             '      <button type="button" onmousedown="this.blur()" onclick="switchView(\'timetable\', this)" id="btn-timetable" class="view-btn">Timetable</button>'
         )
+    parts.append(
+        '      <button type="button" onmousedown="this.blur()" onclick="window.open(\'/chat\',\'_self\')">Chat</button>'
+    )
+    if has_timetable:
         parts.append('      <span class="cmd-sep"></span>')
     parts.append(
         '      <button type="button" onmousedown="this.blur()" onclick="toggleFilter(this)" id="btn-filter">Show My Picks</button>'
@@ -681,7 +686,7 @@ def render_output_html(
     )
 
     parts.append("  <main>")
-    parts.append(f"  <h1>{esc(title)}</h1>")
+    parts.append('  <h1 id="page-title">Line-up</h1>')
 
     # Share modal
     parts.append(
@@ -1472,13 +1477,16 @@ def render_output_html(
     qr_js = (ICONS_DIR.parent / "qrcode.min.js").read_text(encoding="utf-8")
     parts.append(f"  <script>{qr_js}</script>")
     parts.append("  <script>")
+    parts.append(f"    var siteShort = {_json.dumps(site_short)};")
     if has_timetable:
         parts.append("""
     // Immediate view restore before anything renders
     (function() {
-      var vp = new URLSearchParams(location.search).get('view');
-      if (vp) history.replaceState(null, '', location.pathname);
+      var pathView = location.pathname === '/timetable' ? 'timetable' : location.pathname === '/line-up' ? 'list' : null;
+      var vp = pathView || new URLSearchParams(location.search).get('view');
       var v = vp || localStorage.getItem('stc_view');
+      history.replaceState(null, '', v === 'timetable' ? '/timetable' : '/line-up');
+      document.title = (v === 'timetable' ? 'Timetable' : 'Line-up') + ' · ' + siteShort;
       if (v === 'timetable') {
         var lv = document.getElementById('list-view');
         var tv = document.getElementById('timetable-view');
@@ -2208,6 +2216,8 @@ def render_output_html(
       _viewScrollPos[currentView] = window.scrollY;
       currentView = view;
       localStorage.setItem('stc_view', view);
+      history.replaceState(null, '', view === 'timetable' ? '/timetable' : '/line-up');
+      document.title = (view === 'timetable' ? 'Timetable' : 'Line-up') + ' · ' + siteShort;
       const listView = document.getElementById('list-view');
       const ttView = document.getElementById('timetable-view');
       const btnList = document.getElementById('btn-list');

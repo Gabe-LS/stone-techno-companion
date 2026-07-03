@@ -157,9 +157,7 @@ def main() -> None:
                     apply_overrides(db, OVERRIDES_PATH, event_id)
 
                     if args.refresh_followers:
-                        db.execute(
-                            "UPDATE artist_links SET follower_count = NULL"
-                        )
+                        db.execute("UPDATE artist_links SET follower_count = NULL")
                         db.commit()
 
                     if not args.no_followers:
@@ -198,6 +196,11 @@ def main() -> None:
         if event and event["edition"]:
             event_title = f"{event['name']} {event['edition']}"
         page_title = f"{event_title} Companion"
+        site_short = (
+            event["short_name"]
+            if event and "short_name" in event.keys() and event["short_name"]
+            else event_title
+        )
 
         output_html = render_output_html(
             page_title,
@@ -208,6 +211,7 @@ def main() -> None:
             stage_curators=stage_curators,
             stage_colors=stage_colors,
             output_dir=str(output_dir),
+            site_short=site_short,
             videos=all_videos,
         )
 

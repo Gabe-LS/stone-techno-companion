@@ -291,7 +291,11 @@ async def _push_notification_scheduler() -> None:
             due_slots: list[tuple[str, dict]] = []
             for slot_id, slot in timetable["slots"].items():
                 start_dt = datetime.fromisoformat(slot["start"])
-                start = start_dt.replace(tzinfo=tz) if start_dt.tzinfo is None else start_dt.astimezone(tz)
+                start = (
+                    start_dt.replace(tzinfo=tz)
+                    if start_dt.tzinfo is None
+                    else start_dt.astimezone(tz)
+                )
                 if window_start <= start <= window_end:
                     due_slots.append((slot_id, slot))
 
@@ -811,12 +815,19 @@ def generate_ics(slot_id: str):
     end = slot["end"]
 
     def _ics_esc(s: str) -> str:
-        return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\r\n", "\\n").replace("\r", "\\n").replace("\n", "\\n")
+        return (
+            s.replace("\\", "\\\\")
+            .replace(";", "\\;")
+            .replace(",", "\\,")
+            .replace("\r\n", "\\n")
+            .replace("\r", "\\n")
+            .replace("\n", "\\n")
+        )
 
     def to_ics_dt(iso: str) -> str:
         clean = iso.replace("-", "").replace(":", "")
         # Strip timezone offset — TZID parameter specifies the timezone
-        clean = re.sub(r'[+-]\d{4}$', '', clean).rstrip('Z')
+        clean = re.sub(r"[+-]\d{4}$", "", clean).rstrip("Z")
         t_idx = clean.find("T")
         if t_idx >= 0 and len(clean) - t_idx - 1 >= 6:
             return clean
@@ -942,8 +953,10 @@ except Exception:
     logging.getLogger(__name__).warning("Chat module not loaded", exc_info=True)
 
 
+@app.get("/line-up")
+@app.get("/timetable")
 @app.get("/{path:path}")
-async def serve_index(path: str):
+async def serve_index(path: str = ""):
     file_path = STATIC_DIR / "index.html"
     if file_path.exists():
         return FileResponse(file_path)

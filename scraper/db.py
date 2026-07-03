@@ -24,6 +24,7 @@ def init_db(db: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS events (
             id         TEXT PRIMARY KEY,
             name       TEXT NOT NULL,
+            short_name TEXT,
             edition    TEXT,
             source_url TEXT,
             website    TEXT,
@@ -111,6 +112,11 @@ def init_db(db: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_artist_sets_artist ON artist_sets(artist_id);
     """)
     db.commit()
+
+    event_cols = {r[1] for r in db.execute("PRAGMA table_info(events)").fetchall()}
+    if "short_name" not in event_cols:
+        db.execute("ALTER TABLE events ADD COLUMN short_name TEXT")
+        db.commit()
 
 
 PLATFORM_POSITIONS = {
