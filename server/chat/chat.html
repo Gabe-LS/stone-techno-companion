@@ -346,6 +346,18 @@ const REACTION_KEYS = Object.entries(REACTION_EMOJIS);
 
 setDbgTag('chat');
 
+async function _bitmapToBlob(bmp, w, h) {
+  if (typeof OffscreenCanvas !== 'undefined') {
+    var oc = new OffscreenCanvas(w, h);
+    oc.getContext('bitmaprenderer').transferFromImageBitmap(bmp);
+    return oc.convertToBlob({ type: 'image/webp', quality: 0.8 });
+  }
+  var c = document.createElement('canvas'); c.width = w; c.height = h;
+  c.getContext('2d').drawImage(bmp, 0, 0);
+  bmp.close();
+  return new Promise(function(resolve) { c.toBlob(resolve, 'image/webp', 0.8); });
+}
+
 // --- Avatar ---
 const USER_COLORS = [
   { vivid: '#B91C1C', pastel: '#FEE2E2' },
@@ -777,9 +789,7 @@ async function initAvatarEditor(file) {
     natW = Math.round(origW * scale);
     natH = Math.round(origH * scale);
     const resized = await createImageBitmap(file, { resizeWidth: natW, resizeHeight: natH, resizeQuality: 'high' });
-    const canvas = new OffscreenCanvas(natW, natH);
-    canvas.getContext('bitmaprenderer').transferFromImageBitmap(resized);
-    const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.8 });
+    const blob = await _bitmapToBlob(resized, natW, natH);
     previewFile = new File([blob], 'preview.webp', { type: 'image/webp' });
   }
 
@@ -871,9 +881,7 @@ async function updateAvatarPreview() {
   const cropSize = 128 / s.scale;
   try {
     const bmp = await createImageBitmap(s.previewFile, cropX, cropY, cropSize, cropSize, { resizeWidth: 128, resizeHeight: 128, resizeQuality: 'high' });
-    const canvas = new OffscreenCanvas(128, 128);
-    canvas.getContext('bitmaprenderer').transferFromImageBitmap(bmp);
-    const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.8 });
+    const blob = await _bitmapToBlob(bmp, 128, 128);
     if (_previewAvatarUrl) URL.revokeObjectURL(_previewAvatarUrl);
     _previewAvatarUrl = URL.createObjectURL(blob);
     updateProfilePreview();
@@ -889,9 +897,7 @@ async function submitAvatarCrop() {
   const cropSize = (128 / s.scale) * s.previewScale;
 
   const bmp = await createImageBitmap(s.file, cropX, cropY, cropSize, cropSize, { resizeWidth: 128, resizeHeight: 128, resizeQuality: 'high' });
-  const canvas = new OffscreenCanvas(128, 128);
-  canvas.getContext('bitmaprenderer').transferFromImageBitmap(bmp);
-  const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.8 });
+  const blob = await _bitmapToBlob(bmp, 128, 128);
 
   const form = new FormData();
   form.append('file', new File([blob], 'avatar.webp', { type: 'image/webp' }));
@@ -2090,9 +2096,7 @@ async function resizeImage(file, maxSide) {
   const h = Math.round(bmp.height * scale);
   bmp.close();
   const resized = await createImageBitmap(file, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' });
-  const canvas = new OffscreenCanvas(w, h);
-  canvas.getContext('bitmaprenderer').transferFromImageBitmap(resized);
-  const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.8 });
+  const blob = await _bitmapToBlob(resized, w, h);
   return new File([blob], file.name.replace(/\.[^.]+$/, '.webp'), { type: 'image/webp' });
 }
 
@@ -2359,6 +2363,10 @@ async function processVideo(file) {
 }
 
 function uploadVideo() {
+  if (!('VideoEncoder' in window)) {
+    showToast('Video processing is not supported in this browser. Please use Chrome.');
+    return;
+  }
   const input = document.createElement('input');
   input.type = 'file'; input.accept = 'video/*';
   input.onchange = async () => {
@@ -2859,9 +2867,7 @@ async function initEditAvatarEditor(file) {
     natW = Math.round(origW * scale);
     natH = Math.round(origH * scale);
     const resized = await createImageBitmap(file, { resizeWidth: natW, resizeHeight: natH, resizeQuality: 'high' });
-    const canvas = new OffscreenCanvas(natW, natH);
-    canvas.getContext('bitmaprenderer').transferFromImageBitmap(resized);
-    const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.8 });
+    const blob = await _bitmapToBlob(resized, natW, natH);
     previewFile = new File([blob], 'preview.webp', { type: 'image/webp' });
   }
 
@@ -2942,9 +2948,7 @@ async function updateEditAvatarPreview() {
   const cropSize = s.size / s.scale;
   try {
     const bmp = await createImageBitmap(s.previewFile, cropX, cropY, cropSize, cropSize, { resizeWidth: 128, resizeHeight: 128, resizeQuality: 'high' });
-    const canvas = new OffscreenCanvas(128, 128);
-    canvas.getContext('bitmaprenderer').transferFromImageBitmap(bmp);
-    const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.8 });
+    const blob = await _bitmapToBlob(bmp, 128, 128);
     if (_editAvatarUrl) URL.revokeObjectURL(_editAvatarUrl);
     _editAvatarUrl = URL.createObjectURL(blob);
     updateEditPreview();
@@ -2968,9 +2972,7 @@ async function saveProfile() {
       const cropY = (-s.y / s.scale) * s.previewScale;
       const cropSize = (s.size / s.scale) * s.previewScale;
       const bmp = await createImageBitmap(s.file, cropX, cropY, cropSize, cropSize, { resizeWidth: 128, resizeHeight: 128, resizeQuality: 'high' });
-      const canvas = new OffscreenCanvas(128, 128);
-      canvas.getContext('bitmaprenderer').transferFromImageBitmap(bmp);
-      const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.8 });
+      const blob = await _bitmapToBlob(bmp, 128, 128);
       const form = new FormData();
       form.append('file', new File([blob], 'avatar.webp', { type: 'image/webp' }));
       const resp = await fetch(API + '/upload/avatar', { method: 'POST', body: form, credentials: 'include' });
