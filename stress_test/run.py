@@ -1487,7 +1487,9 @@ async def progress_reporter(metrics: Metrics, total: int, stop: asyncio.Event):
 # ---------------------------------------------------------------------------
 
 
-def generate_report(metrics: Metrics, burst: BurstControl, args) -> str:
+def generate_report(
+    metrics: Metrics, burst: BurstControl, args, pw_result: dict | None = None
+) -> str:
     dur = metrics.end_time - metrics.start_time
     m, s = divmod(int(dur), 60)
 
@@ -1635,15 +1637,15 @@ def generate_report(metrics: Metrics, burst: BurstControl, args) -> str:
     received = len(metrics._received_msg_ids & metrics._sent_msg_ids)
     if sent > 0:
         lines.append("")
-        lines.append("--- Delivery Verification " + "-" * 41)
-        lines.append(f"  Unique messages sent:      {sent:>8,}")
-        lines.append(f"  Seen by other users:       {received:>8,}")
+        lines.append("--- Delivery Verification (2% sample) " + "-" * 28)
+        lines.append(f"  Unique messages acked:     {sent:>8,}")
+        lines.append(f"  Seen by >= 1 other user:   {received:>8,}")
         lost = sent - received
-        lines.append(f"  Not seen (possible loss):  {lost:>8,}")
-        if lost > 0:
-            lines.append(f"  Delivery rate:             {received / sent * 100:>7.1f}%")
-        else:
-            lines.append("  Delivery rate:                100.0%")
+        lines.append(f"  Not sampled/seen:          {lost:>8,}")
+        pct_seen = received / sent * 100
+        lines.append(f"  Sample hit rate:           {pct_seen:>7.1f}%")
+        if pct_seen < 50:
+            lines.append("  (Low rate is expected — only 2% of broadcasts are sampled)")
 
     # Cost estimation
     if args.moderated and metrics.moderated_messages > 0:
@@ -1685,6 +1687,45 @@ def generate_report(metrics: Metrics, burst: BurstControl, args) -> str:
             f" mutes={'PASS' if m_ok else 'FAIL'}"
             f" bans={'PASS' if b_ok else 'FAIL'}"
         )
+
+    # Playwright browser verification
+    if pw_result:
+        lines.append("")
+        lines.append("--- Browser Verification (Playwright) " + "-" * 28)
+        lines.append(f"  Messages seen in DOM:  {pw_result['messages_seen']:>6}")
+        lines.append(
+            f"  Rooms loaded:          {'PASS' if pw_result['rooms_loaded'] else 'FAIL':>6}"
+        )
+        lines.append(
+            f"  Room switch:           {'PASS' if pw_result['room_switch_ok'] else 'FAIL':>6}"
+        )
+        lines.append(f"  Errors:                {len(pw_result['errors']):>6}")
+
+    # Overall verdict
+    lines.append("")
+    lines.append("--- Verdict " + "-" * 55)
+    checks = []
+    checks.append(("Connections", metrics.ws_errors == 0))
+    checks.append(("Messages", metrics.messages_failed == 0))
+    checks.append(
+        (
+            "Ack p50 < 100ms",
+            len(metrics.ack_latencies) == 0
+            or sorted(metrics.ack_latencies)[len(metrics.ack_latencies) // 2] < 0.1,
+        )
+    )
+    if pw_result:
+        checks.append(("Playwright rooms", pw_result["rooms_loaded"]))
+        checks.append(("Playwright switch", pw_result["room_switch_ok"]))
+        checks.append(("Playwright msgs", pw_result["messages_seen"] > 0))
+    if metrics.moderation_events:
+        checks.append(("Strikes triggered", metrics.strikes_received >= 3))
+        checks.append(("Mutes triggered", metrics.mutes_received >= 1))
+    all_pass = all(ok for _, ok in checks)
+    for name, ok in checks:
+        lines.append(f"  {name:<25s} {'PASS' if ok else 'FAIL'}")
+    lines.append(f"  {'':25s} -----")
+    lines.append(f"  {'OVERALL':<25s} {'ALL PASS' if all_pass else 'SOME FAILED'}")
 
     lines.append("=" * 68)
     return "\n".join(lines)
@@ -1859,16 +1900,10 @@ async def run(args):
         metrics.end_time = time.monotonic()
         stop.set()
 
+        pw_result = None
         if pw_task:
             try:
                 pw_result = await asyncio.wait_for(pw_task, timeout=15)
-                if pw_result:
-                    print(
-                        f"\n  Playwright: msgs_seen={pw_result['messages_seen']} "
-                        f"rooms={'OK' if pw_result['rooms_loaded'] else 'FAIL'} "
-                        f"switch={'OK' if pw_result['room_switch_ok'] else 'FAIL'} "
-                        f"errors={len(pw_result['errors'])}"
-                    )
             except (asyncio.TimeoutError, asyncio.CancelledError):
                 pass
 
@@ -1879,7 +1914,7 @@ async def run(args):
             except asyncio.CancelledError:
                 pass
 
-        report = generate_report(metrics, BurstControl(), args)
+        report = generate_report(metrics, BurstControl(), args, pw_result)
         print(report)
 
         report_dir = Path("stress_test")
