@@ -44,7 +44,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .header .header-info .online { display: block; line-height: 1.2; }
 .header .header-avatar { width: 30px; height: 30px; border-radius: 50%; overflow: hidden; cursor: pointer; flex-shrink: 0; border: 1.5px solid rgba(255,255,255,0.5); }
 .header .header-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.icon-user { vertical-align: -3px; }
+.icon-user { vertical-align: -3.5px; }
 .header-count { display: none; }
 .content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; overflow-anchor: none; scrollbar-width: none; }
 .content::-webkit-scrollbar { display: none; }
@@ -56,14 +56,16 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 
 /* --- Room list --- */
 .room-list { list-style: none; margin: 0; padding: 0; }
-.room-item { display: flex; align-items: center; gap: var(--space-md); padding: 0 var(--space-lg); height: var(--header-h); border-bottom: 1px solid var(--color-surface); cursor: pointer; box-sizing: border-box; }
-.room-item:active { background: var(--color-surface); }
+.room-item { display: flex; align-items: center; gap: var(--space-md); padding: 0 var(--space-lg); height: var(--header-h); border-bottom: 1px solid var(--color-surface); cursor: pointer; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+.room-item:active:not(:has(:active)) { background: var(--color-surface); }
 .room-info { flex: 1; min-width: 0; }
 .room-name { font-weight: 600; font-size: var(--font-sm); line-height: 1.5; }
 .room-meta { text-align: right; flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .room-count { font-size: var(--font-xs); color: var(--gray-400); line-height: 1.2; }
-.room-bell { width: 32px; height: 32px; padding: 0; border: none; border-radius: 50%; background: none; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--gray-400); flex-shrink: 0; }
-.room-bell.active { color: var(--color-accent); }
+.room-desc { display: none; }
+.room-member-icon { display: none; }
+.room-bell { width: 32px; height: 32px; padding: 0; border: none; border-radius: 50%; background: none; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--gray-400); flex-shrink: 0; margin-left: calc(-1 * var(--space-lg)); -webkit-tap-highlight-color: transparent; }
+.room-bell.active { color: var(--color-text); }
 @media (hover: hover) { .room-bell:hover { background: var(--color-surface); } }
 
 /* --- Avatar --- */
@@ -330,9 +332,12 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
   .menu-items .room-item { padding: var(--space-sm) var(--space-lg) var(--space-sm) var(--space-xl); border-bottom-color: var(--gray-700); }
   .menu-items .room-item.active { background: var(--gray-700); }
   .menu-items .room-item .room-name { color: #fff; }
-  .menu-items .room-item .room-count { color: var(--gray-400); }
+  .menu-items .room-item .room-count { display: none; }
+  .menu-items .room-item .room-desc { display: block; font-size: var(--font-xs); color: var(--gray-400); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .menu-items .room-member-icon { display: flex; align-items: center; gap: var(--space-xs); font-size: var(--font-xs); color: #fff; flex-shrink: 0; }
+  .menu-items .room-bell.active { color: #fff; }
   .menu-member { display: flex; align-items: center; gap: var(--space-sm); padding: 0 var(--space-xl); height: 40px; cursor: pointer; background: var(--gray-800); }
-  .menu-member:active { background: var(--gray-700); }
+  .menu-member:active:not(:has(:active)) { background: var(--gray-700); }
   .menu-member-self { background: var(--gray-700); }
   .menu-member .avatar-sm { width: 26px; height: 26px; font-size: 11px; }
   .menu-member-name { font-size: var(--font-sm); color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
@@ -361,7 +366,7 @@ let memberTab = storageGet('memberTab', 'online');
 let unreadByRoom = {};
 let _lastReadByRoom = {};
 let roomTypeLookup = {};
-const USER_ICON = '<svg class="icon-user" width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="6" r="4" stroke="currentColor" stroke-width="2"/><path d="M20 17.5C20 19.9853 20 22 12 22C4 22 4 19.9853 4 17.5C4 15.0147 7.58172 13 12 13C16.4183 13 20 15.0147 20 17.5Z" stroke="currentColor" stroke-width="2"/></svg>';
+const USER_ICON = '<svg class="icon-user" width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="6" r="4" stroke="currentColor" stroke-width="2"/><path d="M20 17.5C20 19.9853 20 22 12 22C4 22 4 19.9853 4 17.5C4 15.0147 7.58172 13 12 13C16.4183 13 20 15.0147 20 17.5Z" stroke="currentColor" stroke-width="2"/></svg>';
 const ICON_BACK = '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2.75C6.89137 2.75 2.75 6.89137 2.75 12C2.75 17.1086 6.89137 21.25 12 21.25C17.1086 21.25 21.25 17.1086 21.25 12C21.25 6.89137 17.1086 2.75 12 2.75ZM1.25 12C1.25 6.06294 6.06294 1.25 12 1.25C17.9371 1.25 22.75 6.06294 22.75 12C22.75 17.9371 17.9371 22.75 12 22.75C6.06294 22.75 1.25 17.9371 1.25 12ZM11.5303 8.46967C11.8232 8.76256 11.8232 9.23744 11.5303 9.53033L9.81066 11.25H16C16.4142 11.25 16.75 11.5858 16.75 12C16.75 12.4142 16.4142 12.75 16 12.75H9.81066L11.5303 14.4697C11.8232 14.7626 11.8232 15.2374 11.5303 15.5303C11.2374 15.8232 10.7626 15.8232 10.4697 15.5303L7.46967 12.5303C7.17678 12.2374 7.17678 11.7626 7.46967 11.4697L10.4697 8.46967C10.7626 8.17678 11.2374 8.17678 11.5303 8.46967Z"/></svg>';
 let replyTo = null;
 let _pendingDmTarget = null;
@@ -1247,10 +1252,15 @@ function _renderRoomItemsHtml() {
     const unread = unreadByRoom[r.id] || 0;
     const badgeHtml = unread > 0 ? `<span class="unread-badge">${unread > 99 ? '99+' : unread}</span>` : '';
     const isMember = r.is_member !== false;
-    const bellHtml = r.is_main ? '' : `<button type="button" class="room-bell${isMember ? ' active' : ''}" onclick="event.stopPropagation();_toggleRoomMembership('${r.id}',this)" aria-label="${isMember ? 'Mute room' : 'Get notified'}"><svg width="16" height="16" viewBox="0 0 24 24" fill="${isMember ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>`;
+    const bellHtml = r.is_main
+      ? `<button type="button" class="room-bell active" onclick="event.stopPropagation()" aria-label="Notifications on"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>`
+      : `<button type="button" class="room-bell${isMember ? ' active' : ''}" onclick="event.stopPropagation();_toggleRoomMembership('${r.id}',this)" aria-label="${isMember ? 'Mute room' : 'Get notified'}"><svg width="16" height="16" viewBox="0 0 24 24" fill="${isMember ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>`;
+    const mc = r.member_count || 0;
+    const desc = r.description || '';
     return `<li class="room-item${currentRoom === r.id ? ' active' : ''}" data-room-id="${r.id}" onclick="closeChatMenu();openRoom('${r.id}','${jss(r.name)}','${r.type}')">
-      <div class="room-info"><div class="room-name">${esc(r.name)}</div><div class="room-count">${r.member_count || 0} ${(r.member_count || 0) === 1 ? 'member' : 'members'}</div></div>
-      <div class="room-meta">${badgeHtml}</div>
+      <div class="room-info"><div class="room-name">${esc(r.name)}</div><div class="room-count">${mc} ${mc === 1 ? 'member' : 'members'}</div>${desc ? `<div class="room-desc">${esc(desc)}</div>` : ''}</div>
+      <span class="room-member-icon" onclick="event.stopPropagation()">${mc} ${USER_ICON}</span>
+      <div class="room-meta" onclick="event.stopPropagation()">${badgeHtml}</div>
       ${bellHtml}
     </li>`;
   }).join('');
@@ -1278,6 +1288,12 @@ function updateSidebarCount(roomId) {
       const members = room ? (room.member_count || 0) : 0;
       countEl.textContent = members + (members === 1 ? ' member' : ' members');
     }
+  }
+  const iconEl = item.querySelector('.room-member-icon');
+  if (iconEl) {
+    const room = rooms.find(r => r.id === roomId);
+    const members = room ? (room.member_count || 0) : 0;
+    iconEl.innerHTML = members + ' ' + USER_ICON;
   }
 }
 
