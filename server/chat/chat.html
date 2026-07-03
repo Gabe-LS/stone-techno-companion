@@ -2853,8 +2853,28 @@ function showMsgMenu(msgId, isOwn) {
   if (canUnsend) {
     buttons += '<button class="action-sheet-btn action-sheet-danger" onclick="msgMenuConfirmUnsend(\'' + msgId + '\')">Delete for everyone</button>';
   }
+  if (!isOwn && m) {
+    buttons += '<button class="action-sheet-btn action-sheet-danger" onclick="closeActionSheet();_reportMessage(\'' + msgId + '\',\'' + (m.user_id || '') + '\',\'' + jss(m.display_name || '') + '\')">Report</button>';
+  }
   buttons += '<button class="action-sheet-btn action-sheet-cancel" onclick="closeActionSheet()">Cancel</button>';
   sheet.innerHTML = '<div class="action-sheet" onclick="event.stopPropagation()">' + buttons + '</div>';
+  sheet.addEventListener('click', closeActionSheet);
+  document.body.appendChild(sheet);
+  requestAnimationFrame(() => sheet.classList.add('open'));
+}
+
+function _reportMessage(msgId, userId, name) {
+  dbg('[MENU] reportMessage', msgId);
+  const sheet = document.createElement('div');
+  sheet.id = 'action-sheet';
+  sheet.className = 'action-sheet-overlay';
+  sheet.innerHTML = `<div class="action-sheet" onclick="event.stopPropagation()">
+    <div class="action-sheet-title">Report this message?</div>
+    <p style="color:var(--color-muted);font-size:var(--font-xs);margin:0 16px 8px;text-align:center">This will be reviewed by an admin</p>
+    <button class="action-sheet-btn action-sheet-danger" onclick="closeActionSheet();wsSend('report_message',{message_id:'${msgId}',reason:'Reported by user'});showToast('Report submitted')">Report</button>
+    <button class="action-sheet-btn action-sheet-danger" onclick="closeActionSheet();wsSend('report_message',{message_id:'${msgId}',reason:'Reported and blocked by user'});_doBlock('${userId}','${jss(name)}',false);showToast('Report submitted')">Report & Block</button>
+    <button class="action-sheet-btn action-sheet-cancel" onclick="closeActionSheet()">Cancel</button>
+  </div>`;
   sheet.addEventListener('click', closeActionSheet);
   document.body.appendChild(sheet);
   requestAnimationFrame(() => sheet.classList.add('open'));
