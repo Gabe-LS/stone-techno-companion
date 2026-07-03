@@ -780,12 +780,18 @@ async def _moderate_and_broadcast(
         connected_uids = set(mgr.user_conns.keys())
         all_targets = _get_room_notification_targets(db, room_id, user_id)
         now = time.monotonic()
-        push_targets = []
-        for uid in all_targets:
-            if uid not in connected_uids:
-                push_targets.append(uid)
-            elif now - mgr._last_ws_activity.get(uid, 0) > 30:
-                push_targets.append(uid)
+        push_targets = [
+            uid
+            for uid in all_targets
+            if uid not in connected_uids or now - mgr._last_ws_activity.get(uid, 0) > 30
+        ]
+        logger.info(
+            "[PUSH] targets=%d all=%d connected=%d sender=%s",
+            len(push_targets),
+            len(all_targets),
+            len(connected_uids),
+            user_id[:8],
+        )
         room_type = meta.get("type", "general")
         room_name = meta.get("name", "")
         for uid in push_targets:
@@ -925,7 +931,16 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
             event = data.get("event")
             if not event:
                 continue
-            manager._last_ws_activity[user_id] = time.monotonic()
+            if event in (
+                "send_message",
+                "typing",
+                "add_reaction",
+                "remove_reaction",
+                "create_meetup",
+                "open_dm",
+                "delete_message",
+            ):
+                manager._last_ws_activity[user_id] = time.monotonic()
 
             if event == "join_room":
                 room_id = data.get("room_id")
