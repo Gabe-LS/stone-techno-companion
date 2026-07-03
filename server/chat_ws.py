@@ -988,7 +988,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 if msg_type not in SENDABLE_MSG_TYPES:
                     continue
 
-                max_content = msg_char_limit + 100 if msg_type == "text" else 2000
+                max_content = msg_char_limit + 20 if msg_type == "text" else 2000
                 if len(content) > max_content:
                     await manager.send_to_user(
                         user_id,
