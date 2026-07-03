@@ -1533,7 +1533,6 @@ def render_output_html(
     function saveLocal() {
       storageSet('stc_picks', JSON.stringify([...localPicks]));
       storageSet('stc_schedule', JSON.stringify([...localSchedule]));
-      updateUI();
     }
 
     function updateUI() {
