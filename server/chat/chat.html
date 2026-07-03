@@ -2911,6 +2911,7 @@ function _doBlock(userId, name, report, msgId) {
   }
   renderMessages();
   renderMemberItems();
+  _populateMenuSections();
   showToast(escapeHtml(name) + ' blocked' + (report ? ' and reported' : ''));
 }
 
@@ -3577,6 +3578,7 @@ async function _unblockUser(userId, btn) {
     }
     renderMessages();
     renderMemberItems();
+    _populateMenuSections();
     showToast('User unblocked');
   } catch (e) { showToast(e.message); }
 }
