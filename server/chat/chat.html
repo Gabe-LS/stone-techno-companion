@@ -325,7 +325,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
   .input-wrap textarea { padding: var(--space-sm) 44px var(--space-sm) var(--space-lg); }
   .nav-icon { display: flex; }
   .hamburger { display: flex; }
-  .header-count { display: flex; align-items: center; gap: var(--space-xs); font-size: var(--font-xs); color: #fff; position: absolute; right: var(--header-h); top: 0; height: 100%; }
+  .header-count { display: flex; align-items: center; gap: var(--space-xs); font-size: var(--font-xs); color: #fff; position: absolute; right: var(--header-h); top: env(safe-area-inset-top, 0px); height: var(--header-h); }
   .header .header-info { padding-right: calc(var(--header-h) + 36px); }
   .react-btn { opacity: 1; width: 24px; height: 24px; }
   .react-btn svg { width: 16px; height: 16px; }

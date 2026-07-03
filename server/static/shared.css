@@ -97,7 +97,7 @@ body {
   height: var(--header-h);
   position: absolute;
   right: 0;
-  top: 0;
+  top: env(safe-area-inset-top, 0px);
   -webkit-tap-highlight-color: transparent;
   padding: 0;
   cursor: pointer;
@@ -120,7 +120,7 @@ body {
   height: var(--header-h);
   position: absolute;
   left: 0;
-  top: 0;
+  top: env(safe-area-inset-top, 0px);
   -webkit-tap-highlight-color: transparent;
   cursor: pointer;
 }
