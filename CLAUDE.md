@@ -322,7 +322,7 @@ avatars            — user_id (PK), data (BLOB, WebP 128x128)
 user_providers     — user_id, provider, provider_id, created_at (multi-provider auth: same user via Google + email)
 bans               — id, user_id, provider, provider_id, device_fingerprint, reason, created_at (survives user deletion)
 rooms              — id, event_id, type, name, description, is_main, is_moderated, is_read_only, auto_join, allows_media, ttl_minutes, position, created_at
-chat_settings      — key, value (app-level config: room_sort, msg_char_limit)
+chat_settings      — key, value (app-level config: room_sort, msg_char_limit, dm_ttl_minutes, room_ttl_minutes, meetup_ttl_minutes)
 room_memberships   — user_id + room_id (PK), joined_at, last_read_at (tracks joined rooms + unread)
 messages           — id, room_id, user_id, type, content, link_preview, reply_to_id, expires_at, created_at
 message_reactions  — message_id + user_id + emoji (PK), created_at, CASCADE on message delete
@@ -371,7 +371,7 @@ Layers 2 and 3 run in parallel via `asyncio.gather`. Word filter blocks before A
 
 Rooms have configurable properties set via the admin page:
 - `description` — what the room is for
-- `ttl_minutes` — per-room message TTL (NULL = permanent, 30/60/360/1440 minutes)
+- `ttl_minutes` — per-room message TTL, defaults from `chat_settings`: DMs 24h (`dm_ttl_minutes: 1440`), rooms 6h (`room_ttl_minutes: 360`), meetups 1h after meetup time (`meetup_ttl_minutes: 60`). Meetup expiry destroys messages + room + meetup record. DM rooms persist after messages expire (conversation thread stays).
 - `is_moderated` — toggles word filter + AI moderation for the room
 - `is_read_only` — only admins can post
 - `auto_join` — new users automatically become members on WS connect (always on for main room)
@@ -415,7 +415,9 @@ Main room auto-opens on login. Path-based routing (`/chat`, `/chat/r/{id}`, `/ch
 - **Message permalinks**: `/chat/msg/{id}` resolves to room, opens it, scrolls to and highlights message. Graceful fallback for deleted messages.
 - **Upload security** (OWASP File Upload Cheat Sheet): all images re-processed through pyvips (strips metadata/payloads). Videos validated in temp file before moving to served directory. Uploads served via secure endpoint with filename allowlist (`[a-f0-9]{32}.(webp|mp4)`), `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'`. No directory listing. Moderation intermediate files (`_mod*.webp`) not served. Upload rate limit: 10/min per user. Moderation files deleted after use; startup sweeps `chat/tmp/`.
 - **Unread badges**: red pill badges on room items and tab headers. `room_memberships` table tracks joined rooms + `last_read_at`. Server sends `badge_counts` on connect and `badge_update` on new messages for offline members. `mark_read` clears on room open. Duplicate message detection (2-min window, 5+ chars).
-- **User menu**: action sheet (Send Message, Block User with inline confirmation, Cancel). Centered modal on desktop.
+- **User menu**: action sheet (Send Message, Block, Cancel). Block hides all messages from that user client-side (filtered in renderMessages + appendMessage). Blocked users dimmed in member list (40% opacity, sorted to bottom). Unblock via user menu or Settings → Blocked Users list. Blocked user never knows they're blocked.
+- **Message context menu**: right-click (desktop) or long-press (mobile) → Reply, Report, Cancel. Report submits message snapshot to admin. Report & Block also blocks the user immediately.
+- **Reports**: stored with human-readable snapshot (`[timestamp] Name: text`), survive message TTL. Admin actions: ban, strike, or dismiss.
 - **Optimistic messaging**: messages appear instantly with pending state, confirmed on ack, removed if moderation rejects
 - **Scroll**: messages pushed to bottom via flex justify-content, app hidden until routing completes, ResizeObserver locks scroll for 1.5s after render
 - **Desktop**: sidebar + chat panel side-by-side (768px breakpoint)
