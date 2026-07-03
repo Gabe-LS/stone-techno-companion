@@ -5,52 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Stone Techno 2026 Companion</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="/shared.css">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>if ('scrollRestoration' in history) history.scrollRestoration = 'manual';</script>
 <style>
 :root {
-  /* Gray scale — WCAG AA/AAA compliant on white */
-  --gray-900: #111827;  /* primary text — 18.1:1 AAA */
-  --gray-700: #374151;  /* secondary text — 9.0:1 AAA */
-  --gray-500: #6B7280;  /* muted/tertiary — 4.6:1 AA */
-  --gray-400: #9CA3AF;  /* disabled — decorative only */
-  --gray-200: #E5E7EB;  /* borders */
-  --gray-100: #F3F4F6;  /* surface/hover */
-  --gray-50:  #F9FAFB;  /* alt surface */
-
-  /* Semantic aliases */
-  --color-text: var(--gray-900);
-  --color-text-secondary: var(--gray-700);
-  --color-muted: var(--gray-500);
-  --color-disabled: var(--gray-400);
-  --color-border: var(--gray-200);
-  --color-surface: var(--gray-100);
-  --color-surface-hover: var(--gray-200);
-  --color-bg: #fff;
-  --color-accent: #B91C1C;
-  --color-success: #047857;
-
-  /* Font scale — base 15px */
+  /* Chat font scale — base 15px */
   --font-xl: 20px;
   --font-lg: 17px;
   --font-base: 15px;
   --font-sm: 13px;
   --font-xs: 11px;
   --font-xxs: 10px;
-
-  /* Spacing scale — 4px base */
-  --space-xs: 4px;
-  --space-sm: 8px;
-  --space-md: 12px;
-  --space-lg: 16px;
-  --space-xl: 24px;
-  --space-2xl: 32px;
-
-  /* Border radius */
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 16px;
-  --radius-pill: 999px;
 
   /* 12 user colors: vivid (name) + pastel (bubble) */
   --user-1: #B91C1C; --user-1-bg: #FEE2E2;
@@ -66,18 +32,12 @@
   --user-11: #A21CAF; --user-11-bg: #FAE8FF;
   --user-12: #BE185D; --user-12-bg: #FCE7F3;
   --user-self: #64748B; --user-self-bg: #E2E8F0;
-
-  /* Shadow */
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
-  --shadow-md: 0 2px 8px rgba(0,0,0,0.12);
-  --shadow-lg: 0 4px 16px rgba(0,0,0,0.16);
 }
-*, *::before, *::after { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: var(--color-text); background: var(--color-bg); font-size: var(--font-base); line-height: 1.5; overscroll-behavior: none; touch-action: pan-x pan-y; -webkit-tap-highlight-color: transparent; }
+html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-behavior: none; touch-action: pan-x pan-y; -webkit-tap-highlight-color: transparent; }
 
 /* --- Layout --- */
 .app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
-.header { display: flex; align-items: center; height: 48px; background: #111; color: #fff; padding: 0 var(--space-lg); flex-shrink: 0; z-index: 50; position: relative; }
+.header { display: flex; align-items: center; height: var(--header-h); background: #111; color: #fff; padding: 0 var(--space-lg); flex-shrink: 0; z-index: var(--z-header); position: relative; }
 .header .back { background: none; border: none; color: #fff; font-size: var(--font-xl); cursor: default; padding: var(--space-sm); margin-right: var(--space-sm); line-height: 1; }
 .header .title { flex: 1; font-weight: 600; font-size: var(--font-base); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .header .subtitle { font-size: var(--font-xs); color: var(--gray-400); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -206,12 +166,12 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .msg-bubble::after { content: ''; position: absolute; top: 0; bottom: 0; width: 88px; }
 .msg-other-bubble::after { right: -88px; }
 .msg-mine-bubble::after { left: -88px; }
-.reaction-picker { display: flex; gap: 2px; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius-pill); padding: var(--space-xs) 6px; box-shadow: var(--shadow-md); position: fixed; z-index: 300; white-space: nowrap; }
+.reaction-picker { display: flex; gap: 2px; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius-pill); padding: var(--space-xs) 6px; box-shadow: var(--shadow-md); position: fixed; z-index: var(--z-toast); white-space: nowrap; }
 .reaction-picker button { background: none; border: none; font-size: var(--font-xl); padding: var(--space-xs) 6px; cursor: default; border-radius: 50%; }
 @media (hover: hover) { .reaction-picker button:hover { background: var(--color-surface); } }
 
 /* --- Action sheet (mobile bottom drawer / desktop centered modal) --- */
-.action-sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.action-sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: var(--z-popup); display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .action-sheet-overlay.open { opacity: 1; }
 .action-sheet { background: var(--color-bg); width: 90%; max-width: 360px; border-radius: var(--radius-lg); padding: var(--space-sm) 0; transform: scale(0.95); opacity: 0; transition: transform 0.2s, opacity 0.2s; -webkit-user-select: none; user-select: none; }
 .action-sheet-overlay.open .action-sheet { transform: scale(1); opacity: 1; }
@@ -222,7 +182,7 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .action-sheet-cancel { color: var(--color-muted); border-top: 1px solid var(--color-border); margin-top: var(--space-xs); }
 
 /* --- Image/video viewer --- */
-.image-viewer { position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 300; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; }
+.image-viewer { position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: var(--z-toast); display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; }
 .image-viewer.open { opacity: 1; }
 .image-viewer img { max-width: 90%; max-height: 90%; object-fit: contain; border-radius: var(--radius-sm); }
 .viewer-close { position: absolute; top: var(--space-md); right: var(--space-md); width: 32px; height: 32px; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.5)); opacity: 0.8; }
@@ -239,7 +199,7 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .trim-duration { text-align: center; font-size: var(--font-sm); font-weight: 600; }
 
 /* --- Modal --- */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: var(--z-popup); display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; }
 .modal-overlay.open { opacity: 1; }
 .modal { background: var(--color-bg); width: calc(100% - var(--space-2xl)); max-width: 400px; border-radius: var(--radius-lg); overflow: visible; transform: scale(0.95); transition: transform 0.2s; }
 .modal-overlay.open .modal { transform: scale(1); }
@@ -308,11 +268,9 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .tab-dot.active { display: inline-block; }
 
 /* --- Hamburger menu (mobile) --- */
-.chat-hamburger { display: none; background: none; border: none; color: #fff; width: 48px; height: 48px; align-items: center; justify-content: center; position: absolute; right: 4px; top: 0; }
 .hamburger-dot { display: none; width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent); position: absolute; top: 10px; right: 8px; }
 .hamburger-dot.active { display: block; }
 .chat-menu { display: none; }
-.chat-menu-overlay { display: none; }
 
 /* --- Empty state --- */
 .empty { text-align: center; padding: var(--space-2xl) var(--space-xl); color: var(--color-muted); font-size: var(--font-sm); }
@@ -321,7 +279,7 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .typing-indicator { padding: var(--space-xs) var(--space-lg); font-size: var(--font-xs); color: var(--color-muted); font-style: italic; min-height: 20px; }
 
 /* --- Toast --- */
-.toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: var(--gray-900); color: #fff; padding: var(--space-md) var(--space-xl); border-radius: var(--radius-pill); font-size: var(--font-sm); z-index: 300; opacity: 0; transition: opacity 0.2s; pointer-events: none; max-width: min(360px, 90vw); text-align: center; text-wrap: balance; }
+.toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: var(--gray-900); color: #fff; padding: var(--space-md) var(--space-xl); border-radius: var(--radius-pill); font-size: var(--font-sm); z-index: var(--z-toast); opacity: 0; transition: opacity 0.2s; pointer-events: none; max-width: min(360px, 90vw); text-align: center; text-wrap: balance; }
 .toast.show { opacity: 1; }
 
 /* --- Desktop --- */
@@ -338,13 +296,14 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
   .sidebar.visible { display: flex; flex-direction: column; height: 100%; }
   .main-panel { display: none; }
   .main-panel.visible { display: flex; flex-direction: column; height: 100%; }
-  .chat-hamburger { display: flex; }
+  .nav-icon { display: flex; }
+  .hamburger { display: flex; }
   .react-btn { opacity: 1; width: 24px; height: 24px; }
   .react-btn svg { width: 16px; height: 16px; }
-  .chat-menu { position: fixed; top: 48px; left: 0; right: 0; bottom: 0; z-index: 49; background: #111; flex-direction: column; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
+  .chat-menu { position: fixed; top: var(--header-h); left: 0; right: 0; bottom: 0; z-index: var(--z-menu); background: #111; flex-direction: column; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
   .chat-menu::-webkit-scrollbar { display: none; }
   .chat-menu.open { display: flex; }
-  .menu-section { background: none; color: #ccc; border: none; border-top: 1px solid var(--gray-700); padding: 14px 16px; font-size: 15px; text-align: left; font-family: inherit; display: flex; align-items: center; gap: 8px; width: 100%; font-weight: 600; }
+  .menu-section { background: none; color: #ccc; border: none; border-top: 1px solid var(--gray-700); padding: 14px var(--space-lg); font-size: 15px; text-align: left; font-family: inherit; display: flex; align-items: center; gap: var(--space-sm); width: 100%; font-weight: 600; }
   .menu-section .menu-arrow { margin-left: auto; width: 16px; height: 16px; flex-shrink: 0; }
   .menu-section .arrow-down { display: none; }
   .menu-section .arrow-right { display: block; }
@@ -357,7 +316,6 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
   .menu-items .room-item { padding: var(--space-sm) var(--space-lg) var(--space-sm) 24px; border-bottom-color: var(--gray-700); }
   .menu-items .room-item .room-name { color: #fff; }
   .menu-items .room-item .room-count { color: var(--gray-400); }
-  .chat-menu-overlay.open { display: block; position: fixed; top: 48px; left: 0; right: 0; bottom: 0; z-index: 47; background: rgba(0,0,0,0.3); }
 }
 @media (max-width: 767px) and (max-height: 600px) { .profile-preview { display: none; } }
 </style>
@@ -1236,7 +1194,7 @@ function renderRoomList() {
     app.innerHTML = `
       <div class="header">
         <span class="title">Chats</span>
-        <button class="chat-hamburger" onclick="toggleChatMenu()">${ICON_HAMBURGER}<span class="hamburger-dot"></span></button>
+        <button class="hamburger" onclick="toggleChatMenu()">${ICON_HAMBURGER}<span class="hamburger-dot"></span></button>
       </div>
       <div class="content" style="display:flex;align-items:center;justify-content:center">
         <div class="empty">Tap the menu to pick a room</div>
@@ -1524,12 +1482,12 @@ function renderChatView(roomName) {
   if (isMobile) {
     document.getElementById('app').innerHTML = `
       <div class="header">
-        <a href="/line-up" style="display:flex;align-items:center;justify-content:center;width:48px;height:48px;color:#fff;text-decoration:none;-webkit-tap-highlight-color:transparent;position:absolute;left:4px;top:0"><svg width="24" height="24" viewBox="-1.7 -1.7 27.4 27.4" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12C2 8.22876 2 6.34315 3.17157 5.17157C4.34315 4 6.22876 4 10 4H14C17.7712 4 19.6569 4 20.8284 5.17157C22 6.34315 22 8.22876 22 12V14C22 17.7712 22 19.6569 20.8284 20.8284C19.6569 22 17.7712 22 14 22H10C6.22876 22 4.34315 22 3.17157 20.8284C2 19.6569 2 17.7712 2 14V12Z"/><path d="M7 4V2.5" stroke-linecap="round"/><path d="M17 4V2.5" stroke-linecap="round"/><path d="M2.5 9H21.5" stroke-linecap="round"/><circle cx="17" cy="13" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="13" r="1" fill="currentColor" stroke="none"/><circle cx="7" cy="13" r="1" fill="currentColor" stroke="none"/><circle cx="17" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="7" cy="17" r="1" fill="currentColor" stroke="none"/></svg></a>
+        <a href="/line-up" class="nav-icon" aria-label="Line-up"><svg width="24" height="24" viewBox="-1.7 -1.7 27.4 27.4" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12C2 8.22876 2 6.34315 3.17157 5.17157C4.34315 4 6.22876 4 10 4H14C17.7712 4 19.6569 4 20.8284 5.17157C22 6.34315 22 8.22876 22 12V14C22 17.7712 22 19.6569 20.8284 20.8284C19.6569 22 17.7712 22 14 22H10C6.22876 22 4.34315 22 3.17157 20.8284C2 19.6569 2 17.7712 2 14V12Z"/><path d="M7 4V2.5" stroke-linecap="round"/><path d="M17 4V2.5" stroke-linecap="round"/><path d="M2.5 9H21.5" stroke-linecap="round"/><circle cx="17" cy="13" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="13" r="1" fill="currentColor" stroke="none"/><circle cx="7" cy="13" r="1" fill="currentColor" stroke="none"/><circle cx="17" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="7" cy="17" r="1" fill="currentColor" stroke="none"/></svg></a>
         <div class="header-info">
           <span class="title">${esc(roomName)}</span>
           <span class="online">${onlineCount} online</span>
         </div>
-        <button class="chat-hamburger" onclick="toggleChatMenu()">${ICON_HAMBURGER}<span class="hamburger-dot"></span></button>
+        <button class="hamburger" onclick="toggleChatMenu()">${ICON_HAMBURGER}<span class="hamburger-dot"></span></button>
       </div>
       <div class="content" id="msg-scroll">
         <div class="messages" id="messages"></div>
@@ -2027,13 +1985,13 @@ function _renderChatMenuHtml() {
       <button class="menu-section" onclick="closeChatMenu();openNotificationsModal()">Notifications</button>
       <button class="menu-section" onclick="closeChatMenu();confirmLogout()">Log out</button>
     </div>
-    <div class="chat-menu-overlay" id="chat-menu-overlay" onclick="closeChatMenu()"></div>`;
+    <div class="menu-overlay" id="menu-overlay" onclick="closeChatMenu()"></div>`;
 }
 
 function toggleChatMenu() {
   dbg('[MENU] toggleChatMenu');
   const menu = document.getElementById('chat-menu');
-  const overlay = document.getElementById('chat-menu-overlay');
+  const overlay = document.getElementById('menu-overlay');
   if (!menu) return;
   const opening = !menu.classList.contains('open');
   menu.classList.toggle('open');
@@ -2044,7 +2002,7 @@ function toggleChatMenu() {
 function closeChatMenu() {
   dbg('[MENU] closeChatMenu');
   document.getElementById('chat-menu')?.classList.remove('open');
-  document.getElementById('chat-menu-overlay')?.classList.remove('open');
+  document.getElementById('menu-overlay')?.classList.remove('open');
 }
 
 async function toggleMenuSection(section) {
