@@ -117,7 +117,9 @@ Key design decisions:
 | `server/chat/chat.html` | Chat frontend — single HTML file with inline CSS/JS. WhatsApp-style bubbles, reactions, replies, action menus. |
 | `server/chat/admin.html` | Admin dashboard — dark-themed SPA with tabs: Rooms, Users, Reports, Banned, Logs. Room management (create/edit/delete/reorder), user moderation (strike/mute/ban/clear), moderation log. |
 | `server/chat/blocklist.txt` | Word filter blocklist (drug terms, slurs). Editable without deploy. |
-| `server/static/sw.js` | Service worker — handles push events and notification click navigation |
+| `server/static/shared.css` | Unified design tokens and shared CSS components (loaded by all pages) |
+| `server/static/shared.js` | Shared JS utilities: escapeHtml, dbg, showToast, storageGet/Set, icon constants (loaded by all pages) |
+| `server/static/sw.js` | Service worker — push ack (delivered/clicked/dismissed), notification click, pushsubscriptionchange auto-resubscribe |
 | `server/static/manifest.json` | PWA manifest — enables Add to Home Screen and push on iOS |
 | `tests/test_chat_db.py` | 45 tests — users, sessions, bans, rooms, messages, meetups, DMs, blocks, reports, strikes |
 | `tests/test_chat_moderation.py` | 39 tests — word filter, strike system (expiry, reset, mute cycling), AI moderation pipeline |
@@ -193,7 +195,9 @@ Toggled via the command bar. Appears automatically when artists have `start_time
 
 - **Colors**: CSS variables in `:root` — `--color-text`, `--color-bg`, `--color-surface`, `--color-surface-hover`, `--color-muted`, `--color-muted-icon`, `--color-accent`, `--color-schedule`, `--color-border`
 - **Floor colors**: from `locations.color` in DB (RGB channels). CSS generated at build time — cards `rgba(R,G,B, 0.88)`, pills `rgb(R,G,B)`. Unknown floors fall back to gray.
-- **Font scale**: `--font-2xl` (2em) → `--font-xs` (0.75em/12px min). No text below 12px.
+- **Font scale**: `--font-2xl` (2rem) → `--font-xs` (0.75rem/12px min). All `rem`-based to prevent compounding in nested elements. No text below 12px.
+- **Shared CSS**: `server/static/shared.css` — unified design tokens (colors, spacing, radius, shadows, z-index, font scale, header height), shared components (hamburger, nav-icon, menu-overlay, toast), utilities (truncate, sr-only). Both pages link it via `<link rel="stylesheet" href="/shared.css">`.
+- **Shared JS**: `server/static/shared.js` — shared utilities (escapeHtml/esc, dbg/verify, showToast, fmtTime, ago, storageGet/storageSet/storageRemove, urlBase64ToUint8Array, icon constants). Loaded synchronously before inline scripts.
 - **Shared tokens**: `--shadow-modal`, `--radius-card`, `--radius-modal`, `--transition-fast`, `--fade-gradient`
 - **Hover**: all guarded with `@media (hover: hover)` — no sticky hover on touch
 - **Contrast**: all text/icon colors pass WCAG 2.1 AA
@@ -212,9 +216,15 @@ Clicking artist name/photo opens modal with photo, name, biography (markdown →
 - PWA meta tags: `apple-mobile-web-app-capable`, `theme-color`, `apple-mobile-web-app-title`
 - Social links rendered as a loop from `artist_links` — adding a platform requires only a new SVG icon + a mapping entry in `PLATFORM_ICONS`
 
+## Page Load Flash Prevention
+
+All pages use `body{opacity:0}` in an inline `<style>` in `<head>` (first element) to prevent content from flashing before JS initialization completes. JS sets `document.body.style.opacity='1'` after all init work is done (sticky tops calculated, views switched, data loaded).
+
+The lineup/timetable page has an additional mechanism: a `<script>` in `<head>` (before body) sets `document.documentElement.className='view-list'` or `'view-timetable'` based on the URL/localStorage. CSS rules keyed to these classes control which view, buttons, and menu items are visible — so the correct view state is applied before any body content is parsed. The `switchView()` function updates this class when switching views at runtime.
+
 ## Working on the HTML/CSS/JS
 
-All frontend code lives in `scraper/render.py` as Python string concatenation. No separate HTML/CSS/JS files.
+All frontend code lives in `scraper/render.py` as Python string concatenation. Shared CSS lives in `server/static/shared.css`. Shared JS utilities live in `server/static/shared.js`.
 
 ```bash
 python stone_techno_companion.py --render-only --no-photos
@@ -294,7 +304,8 @@ email_tokens       — token, email, provider_id, fingerprint, expires_at (DB-ba
 avatars            — user_id (PK), data (BLOB, WebP 128x128)
 user_providers     — user_id, provider, provider_id, created_at (multi-provider auth: same user via Google + email)
 bans               — id, user_id, provider, provider_id, device_fingerprint, reason, created_at (survives user deletion)
-rooms              — id, event_id, type, name, description, is_main, is_moderated, is_read_only, allows_media, ttl_minutes, position, created_at
+rooms              — id, event_id, type, name, description, is_main, is_moderated, is_read_only, auto_join, allows_media, ttl_minutes, position, created_at
+chat_settings      — key, value (app-level config: room_sort mode)
 room_memberships   — user_id + room_id (PK), joined_at, last_read_at (tracks joined rooms + unread)
 messages           — id, room_id, user_id, type, content, link_preview, reply_to_id, expires_at, created_at
 message_reactions  — message_id + user_id + emoji (PK), created_at, CASCADE on message delete
@@ -333,7 +344,9 @@ Every message passes through three layers before broadcast:
 
 Layers 2 and 3 run in parallel via `asyncio.gather`. Word filter blocks before AI calls (saves API round-trips).
 
-**Optimistic delivery**: message saved to DB immediately, `message_acked` sent to sender, moderation runs in `asyncio.create_task`. If passes: broadcast to others. If fails: delete from DB, send `message_removed` + strike to sender.
+**Optimistic delivery**: message saved to DB immediately, `message_acked` sent to sender, moderation runs in `asyncio.create_task`. If passes: broadcast to others. If fails: delete from DB, send `message_removed` + strike to sender. Mute/ban also deletes all user's active messages and broadcasts removal.
+
+**Moderation logging**: OpenAI scores logged via `logger.info` — top 5 categories above 0.1 threshold, FLAGGED line with threshold comparison. `logging.basicConfig(level=INFO)` configured at startup.
 
 **Strike system**: 4-step escalation with expiring strikes (4h TTL, reset on new violation). 1st = warning, 2nd = warning, 3rd = 30-min mute, 4th = permanent ban. Lifetime mute counter: 3 total mutes across the event = permanent ban (prevents cycling). Same escalation for all content types including drugs. Bans stored by provider_id + device fingerprint. `secure_delete=ON` zeros deleted data on disk.
 
@@ -344,6 +357,7 @@ Rooms have configurable properties set via the admin page:
 - `ttl_minutes` — per-room message TTL (NULL = permanent, 30/60/360/1440 minutes)
 - `is_moderated` — toggles word filter + AI moderation for the room
 - `is_read_only` — only admins can post
+- `auto_join` — new users automatically become members on WS connect (always on for main room)
 - `allows_media` — disable image/video uploads
 - `position` — custom sort order (drag-to-reorder in admin)
 
@@ -362,7 +376,7 @@ Mute/delete user → all their messages deleted from DB + `messages_expired` bro
 
 ### Admin Page
 
-Dark-themed SPA at `/chat/api/admin`. Auth via chat session cookie (matching `CHAT_ADMIN_EMAILS`) or `X-Admin-Token` header. Tabs: Rooms (create/edit/delete/reorder/set main), Users (search, strike/mute/ban/unban/delete, view history), Reports (ban/strike/dismiss), Banned (unban), Logs (moderation timeline). Stats footer with auto-refresh.
+Dark-themed SPA at `/chat/admin` (shortcut) or `/chat/api/admin`. Auth via chat session cookie (matching `CHAT_ADMIN_EMAILS`) or `X-Admin-Token` header. Tabs: Rooms (create/edit/delete/reorder/set main/auto-join, manual/auto sort toggle), Users (search, strike/mute/ban/unban/delete, view history, status/warnings columns), Reports (ban/strike/dismiss), Banned (unban), Logs (moderation timeline with search). Stats footer with auto-refresh. Room sort modes: Auto (main first, bell-on by activity, bell-off by activity) or Manual (by position, drag-to-reorder).
 
 ### Chat UI
 
@@ -370,7 +384,7 @@ Main room auto-opens on login. Path-based routing (`/chat`, `/chat/r/{id}`, `/ch
 
 - **Design system**: CSS custom properties for grays (7 levels, WCAG AA/AAA), fonts (xxs-xl), spacing (4px scale), radius (sm-pill), shadows (sm-lg). 12 user color pairs + self color.
 - **Bubble style**: user-colored pastels (assigned at registration), dark text, time bottom-right
-- **Header**: room name + online count, user avatar (opens settings menu: Profile, Notifications, Log out)
+- **Header**: room name + member count (reachable users), user avatar (opens settings menu: Profile, Notifications, Log out). Desktop header includes calendar icon linking to lineup.
 - **Replies**: double-click on desktop, swipe toward center on mobile. Quote shown inside bubble.
 - **Reactions**: hover-based on desktop (200ms dismiss), long-press on mobile. 6-emoji picker. Button outside bubble with 88px hover zone.
 - **Input bar**: + button (meetup, location, photo, video) on left, emoji picker icon inside input, send button on right. All SVG icons.
@@ -386,7 +400,7 @@ Main room auto-opens on login. Path-based routing (`/chat`, `/chat/r/{id}`, `/ch
 - **Optimistic messaging**: messages appear instantly with pending state, confirmed on ack, removed if moderation rejects
 - **Scroll**: messages pushed to bottom via flex justify-content, app hidden until routing completes, ResizeObserver locks scroll for 1.5s after render
 - **Desktop**: sidebar + chat panel side-by-side (768px breakpoint)
-- **URL structure**: `/line-up` (lineup), `/timetable` (timetable), `/chat` (main chat), `/chat/r/{id}` (room), `/chat/d/{user}` (DM), `/chat/m/{id}` (meetup), `/chat/v/{token}` (verify email), `/chat/msg/{id}` (message permalink). API under `/chat/api/` with flat routes (`/me`, `/login`, `/verify`, `/profile`, `/logout`, `/rooms`, etc.). Admin at `/chat/api/admin`.
+- **URL structure**: `/line-up` (lineup), `/timetable` (timetable), `/chat` (main chat), `/chat/r/{id}` (room), `/chat/d/{user}` (DM), `/chat/m/{id}` (meetup), `/chat/v/{token}` (verify email), `/chat/msg/{id}` (message permalink), `/chat/admin` (admin). API under `/chat/api/`. `/` redirects to `/line-up` or `/timetable` based on saved preference.
 - **Page titles**: `Line-up · ST26`, `Timetable · ST26`, `Chat · ST26` — short name from `events.short_name` in lineup DB, loaded at server startup
 - **Mobile navigation**: chat icon (dialog bubbles) on lineup/timetable header left, calendar icon on chat header left. Both `position: absolute; left: 4px`, matching hamburger at `right: 4px`. SVG viewBox scaled to match hamburger visual weight.
 - **Toast**: word-based duration (1.5s + 300ms/word, min 4s), balanced text, max 360px
