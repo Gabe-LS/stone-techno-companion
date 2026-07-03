@@ -383,6 +383,11 @@ def render_output_html(
     .view-label { display: none; }
     .cmd-dropdown { display: none; }
 
+    /* --- Filter visibility via CSS :has() --- */
+    .filter-active section.date-section:not(:has(.artist-item.hearted)) { display: none; }
+    .filter-active ul.artist-list:not(:has(.artist-item.hearted)) { display: none; }
+    .filter-active h4.location-heading:has(+ ul.artist-list:not(:has(.artist-item.hearted))) { display: none; }
+
     /* ===== MEDIA QUERIES ===== */
     @media (max-width: 480px) {
       body { padding: 0 var(--space-md); }
@@ -1577,22 +1582,6 @@ def render_output_html(
     }
 
     function updateGroupVisibility() {
-      document.querySelectorAll('ul.artist-list').forEach(ul => {
-        const hasVisible = filterActive
-          ? ul.querySelector('.artist-item.hearted') !== null
-          : true;
-        ul.style.display = hasVisible ? '' : 'none';
-        const prev = ul.previousElementSibling;
-        if (prev && (prev.matches('h3') || prev.matches('h4'))) {
-          prev.style.display = hasVisible ? '' : 'none';
-        }
-      });
-      document.querySelectorAll('section.date-section').forEach(sec => {
-        const hasVisible = filterActive
-          ? sec.querySelector('.artist-item.hearted') !== null
-          : true;
-        sec.style.display = hasVisible ? '' : 'none';
-      });
       document.querySelectorAll('h3.period-heading').forEach(h3 => {
         if (!filterActive) { h3.style.display = ''; return; }
         let el = h3.nextElementSibling;
