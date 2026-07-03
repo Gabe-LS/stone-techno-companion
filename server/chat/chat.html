@@ -442,6 +442,11 @@ function avatarHtml(name, colorIndex, small, avatarUrl) {
 async function api(path, opts) {
   const res = await fetch(API + path, { credentials: 'include', ...opts });
   if (!res.ok) {
+    if ((res.status === 401 || res.status === 403) && path !== '/me' && path !== '/config') {
+      currentUser = null;
+      renderAuth();
+      throw new Error('Session expired');
+    }
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || res.statusText);
   }
@@ -1145,7 +1150,24 @@ function handleWSEvent(data) {
       break;
     case 'rooms_changed':
       dbg('[ROOM] rooms_changed, reloading');
-      _debouncedRoomRefresh();
+      loadRooms().then(() => {
+        renderRoomItems();
+        if (currentRoom) {
+          const still = rooms.find(r => r.id === currentRoom);
+          if (!still) {
+            const main = rooms.find(r => r.is_main) || rooms[0];
+            if (main) openRoom(main.id, main.name, main.type);
+            else { currentRoom = null; renderRoomList(); }
+          } else {
+            if (still.name !== currentRoomName) {
+              currentRoomName = still.name;
+              const hdr = document.querySelector('.header .title');
+              if (hdr) hdr.textContent = still.name;
+            }
+            updateHeaderCount();
+          }
+        }
+      });
       break;
     case 'message_rejected':
       showToast(data.reason);
@@ -1194,6 +1216,23 @@ function handleWSEvent(data) {
       break;
     }
     case 'report_confirmed': showToast('Report submitted'); break;
+    case 'meetup_updated': {
+      const mBtn = document.querySelector(`[data-meetup-id="${data.meetup_id}"] .meetup-join-btn`);
+      if (mBtn && data.attendees) {
+        const count = data.attendees.length;
+        const going = data.attendees.some(a => a.id === currentUser?.id);
+        mBtn.textContent = going ? 'Joined' : 'Join';
+        mBtn.classList.toggle('active', going);
+        const countEl = document.querySelector(`[data-meetup-id="${data.meetup_id}"] .meetup-going`);
+        if (countEl) countEl.textContent = count + ' going';
+      }
+      break;
+    }
+    case 'meetup_expired': {
+      const mEl = document.querySelector(`[data-meetup-id="${data.meetup?.id || data.meetup_id}"]`);
+      if (mEl) { mEl.style.opacity = '0.5'; mEl.querySelector('.meetup-join-btn')?.remove(); }
+      break;
+    }
     case 'reaction_updated': {
       const msgs3 = messagesByRoom[currentRoom] || [];
       const target = msgs3.find(m => m.id === data.message_id);
