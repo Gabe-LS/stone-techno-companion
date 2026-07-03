@@ -9,7 +9,6 @@ cd "$(dirname "$0")"
 LAN_IP=$(ifconfig en0 | grep 'inet ' | awk '{print $2}')
 PORT=64728
 PROXY_PORT=8082
-PROXY_SCRIPT="/Users/gabrielelosurdo/Documents/Developer/Scripts/Personal/proxy_for_iphone/festival_sniffer.py"
 ENV_FILE="server/.env"
 
 if [ "${1:-}" = "--stop" ]; then
@@ -75,17 +74,13 @@ fi
 echo "[4/4] Starting mitmproxy on :$PROXY_PORT..."
 kill $(lsof -ti :$PROXY_PORT 2>/dev/null) 2>/dev/null || true
 sleep 1
-if [ -f "$PROXY_SCRIPT" ]; then
-    nohup mitmdump -s "$PROXY_SCRIPT" -p $PROXY_PORT --set block_global=false \
-        > /dev/null 2>&1 &
-    sleep 2
-    if lsof -i :$PROXY_PORT | grep -q LISTEN; then
-        echo "  Proxy running"
-    else
-        echo "  WARNING: Proxy failed to start (push still works without it)"
-    fi
+nohup mitmdump -p $PROXY_PORT --set block_global=false -q \
+    > /dev/null 2>&1 &
+sleep 2
+if lsof -i :$PROXY_PORT | grep -q LISTEN; then
+    echo "  Proxy running"
 else
-    echo "  SKIP: proxy script not found at $PROXY_SCRIPT"
+    echo "  WARNING: Proxy failed to start (push still works without it)"
 fi
 
 echo ""
