@@ -95,7 +95,7 @@ body {
   width: var(--header-h);
   height: var(--header-h);
   position: absolute;
-  right: 4px;
+  right: 0;
   top: 0;
   -webkit-tap-highlight-color: transparent;
   padding: 0;
@@ -118,7 +118,7 @@ body {
   width: var(--header-h);
   height: var(--header-h);
   position: absolute;
-  left: 4px;
+  left: 0;
   top: 0;
   -webkit-tap-highlight-color: transparent;
   cursor: pointer;
@@ -181,4 +181,8 @@ body {
   white-space: nowrap;
   border-width: 0;
 }
+
+/* ===== MOBILE ===== */
+@media (max-width: 767px) {
+  :root { --header-h: 54px; }
 }

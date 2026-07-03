@@ -14,6 +14,9 @@ __pycache__/
 # Database (regenerable cache)
 lineup.db
 
+# Server runtime data (databases, VAPID keys)
+server/data/
+
 # Generated output
 output/
 
@@ -23,3 +26,8 @@ server/.env
 
 # Local TLS certs (mkcert)
 *.pem
+
+# Stress test artifacts
+stress_test/media/
+stress_test/report_*.txt
+stress_test/debug_*.log

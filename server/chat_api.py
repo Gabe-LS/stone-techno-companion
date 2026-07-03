@@ -82,6 +82,19 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat/api")
 DEFAULT_EVENT_ID = os.environ.get("CHAT_EVENT_ID", "stone-techno-2026")
 ADMIN_TOKEN = os.environ.get("CHAT_ADMIN_TOKEN", "")
+
+_upload_rate: dict[str, list[float]] = {}
+
+
+def _check_upload_rate(user_id: str, max_uploads: int = 10, window: int = 60):
+    now = time.monotonic()
+    bucket = _upload_rate.setdefault(user_id, [])
+    bucket[:] = [t for t in bucket if now - t < window]
+    if len(bucket) >= max_uploads:
+        raise HTTPException(429, "Upload rate limit exceeded")
+    bucket.append(now)
+
+
 _SITE_SHORT = ""
 
 
@@ -1113,6 +1126,8 @@ async def get_avatar(user_id: str):
             headers={
                 "Cache-Control": "no-cache",
                 "ETag": hashlib.md5(row["data"]).hexdigest(),
+                "X-Content-Type-Options": "nosniff",
+                "Content-Security-Policy": "default-src 'none'",
             },
         )
     finally:
@@ -1123,6 +1138,7 @@ async def get_avatar(user_id: str):
 async def upload_image(request: Request, file: UploadFile = File(...)):
     user, db = _get_user_from_cookie(request)
     db.close()
+    _check_upload_rate(user["id"])
 
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(400, "Only image files allowed")
@@ -1178,6 +1194,7 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
 async def upload_video(request: Request, file: UploadFile = File(...)):
     user, db = _get_user_from_cookie(request)
     db.close()
+    _check_upload_rate(user["id"])
 
     if not file.content_type or not file.content_type.startswith("video/"):
         raise HTTPException(400, "Only video files allowed")
@@ -1189,14 +1206,18 @@ async def upload_video(request: Request, file: UploadFile = File(...)):
     upload_dir = Path(__file__).resolve().parent / "chat" / "uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
 
+    import subprocess
+    import tempfile
+
     token = secrets.token_hex(16)
     filename = f"{token}.mp4"
     out_path = upload_dir / filename
-    out_path.write_bytes(data)
 
-    import subprocess
-
+    tmp_fd, tmp_name = tempfile.mkstemp(suffix=".mp4")
     try:
+        os.write(tmp_fd, data)
+        os.close(tmp_fd)
+
         probe = await asyncio.to_thread(
             subprocess.run,
             [
@@ -1207,7 +1228,7 @@ async def upload_video(request: Request, file: UploadFile = File(...)):
                 "json",
                 "-show_format",
                 "-show_streams",
-                str(out_path),
+                tmp_name,
             ],
             capture_output=True,
             text=True,
@@ -1216,19 +1237,30 @@ async def upload_video(request: Request, file: UploadFile = File(...)):
         info = json.loads(probe.stdout)
         duration = float(info["format"].get("duration", 0))
         if duration > 65:
-            out_path.unlink(missing_ok=True)
             raise HTTPException(400, "Video must be 60 seconds or less")
 
         video_stream = next(
             (s for s in info["streams"] if s["codec_type"] == "video"), None
         )
-        width = int(video_stream["width"]) if video_stream else 0
-        height = int(video_stream["height"]) if video_stream else 0
+        if not video_stream:
+            raise HTTPException(400, "No video stream found")
+        width = int(video_stream["width"])
+        height = int(video_stream["height"])
+
+        import shutil
+
+        shutil.move(tmp_name, str(out_path))
+        tmp_name = None
     except HTTPException:
         raise
     except Exception:
-        out_path.unlink(missing_ok=True)
         raise HTTPException(400, "Could not process video file")
+    finally:
+        if tmp_name:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
 
     mod_frames = 0
     for i, frac in enumerate([0.25, 0.5, 0.75]):
@@ -1782,8 +1814,6 @@ CHAT_DIR = Path(__file__).resolve().parent / "chat"
 
 
 def mount_chat(app):
-    from fastapi.staticfiles import StaticFiles
-
     app.include_router(router)
 
     @app.websocket("/ws/chat/{token}")
@@ -1814,9 +1844,27 @@ def mount_chat(app):
 
     uploads_dir = CHAT_DIR / "uploads"
     uploads_dir.mkdir(parents=True, exist_ok=True)
-    app.mount(
-        "/chat/uploads", StaticFiles(directory=str(uploads_dir)), name="chat-uploads"
-    )
+    _upload_filename_re = __import__("re").compile(r"^[a-f0-9]{32}\.(webp|mp4)$")
+
+    @app.get("/chat/uploads/{filename}")
+    async def serve_upload(filename: str):
+        if not _upload_filename_re.match(filename):
+            raise HTTPException(404)
+        path = uploads_dir / filename
+        if not path.is_file():
+            raise HTTPException(404)
+        from starlette.responses import FileResponse
+
+        media = "image/webp" if filename.endswith(".webp") else "video/mp4"
+        return FileResponse(
+            path,
+            media_type=media,
+            headers={
+                "X-Content-Type-Options": "nosniff",
+                "Content-Security-Policy": "default-src 'none'",
+                "Cache-Control": "public, max-age=31536000, immutable",
+            },
+        )
 
     _load_disposable_domains()
     _load_admin_emails()

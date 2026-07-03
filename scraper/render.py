@@ -289,6 +289,7 @@ def render_output_html(
     .cmd-bar { position: sticky; top: 0; z-index: var(--z-header); background: var(--gray-900); color: #fff; display: flex; align-items: stretch; justify-content: space-between; height: 28px; font-size: var(--font-xs); padding: 0 var(--space-lg); }
     .cmd-group { display: flex; align-items: stretch; }
     .cmd-bar button { background: none; color: #aaa; border: none; padding: 0 var(--space-lg); font-size: var(--font-xs); white-space: nowrap; text-align: center; transition: color var(--transition-fast); letter-spacing: 0.03em; text-transform: uppercase; cursor: pointer; }
+    .cmd-bar .hamburger { color: #fff; }
     .cmd-bar button:focus:not(:focus-visible) { outline: none; }
     .cmd-bar button:focus-visible { outline: 1px solid #fff; outline-offset: -2px; }
     .cmd-bar button.active { color: #fff; }

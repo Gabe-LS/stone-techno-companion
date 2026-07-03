@@ -52,6 +52,7 @@ from chat_db import (
     leave_room_membership,
     mark_room_read,
     get_user_memberships,
+    get_room_members,
     get_unread_counts,
     get_push_subscriptions,
     delete_push_subscription_by_endpoint,
@@ -361,6 +362,7 @@ class ChatRoom:
         self.connections: dict[str, WebSocket] = {}
         self.conn_users: dict[str, str] = {}
         self.user_names: dict[str, str] = {}
+        self.user_info: dict[str, dict] = {}
 
     async def broadcast(self, event: dict, exclude_conn: str | None = None) -> None:
         payload = json.dumps(event)
@@ -377,6 +379,7 @@ class ChatRoom:
             self.connections.pop(cid, None)
             if uid and not any(u == uid for u in self.conn_users.values()):
                 self.user_names.pop(uid, None)
+                self.user_info.pop(uid, None)
 
 
 class ConnectionManager:
@@ -433,6 +436,7 @@ class ConnectionManager:
                 room = self.rooms.get(room_id)
                 if room and not any(u == user_id for u in room.conn_users.values()):
                     room.user_names.pop(user_id, None)
+                    room.user_info.pop(user_id, None)
             return user_id, rooms
         return user_id, set()
 
@@ -442,6 +446,10 @@ class ConnectionManager:
         user_id: str,
         conn_id: str,
         display_name: str,
+        username: str = "",
+        color_index: int = 0,
+        avatar_url: str = "",
+        country: str = "",
     ) -> None:
         room = self._get_room(room_id)
         ws = self.user_conns.get(user_id, {}).get(conn_id)
@@ -451,6 +459,13 @@ class ConnectionManager:
         room.connections[conn_id] = ws
         room.conn_users[conn_id] = user_id
         room.user_names[user_id] = display_name
+        room.user_info[user_id] = {
+            "display_name": display_name,
+            "username": username,
+            "color_index": color_index,
+            "avatar_url": avatar_url,
+            "country": country,
+        }
         self.user_rooms.setdefault(user_id, set()).add(room_id)
         if not already_in_room:
             await room.broadcast(
@@ -458,6 +473,11 @@ class ConnectionManager:
                     "event": "presence",
                     "room_id": room_id,
                     "user_id": user_id,
+                    "display_name": display_name,
+                    "username": username,
+                    "color_index": color_index,
+                    "avatar_url": avatar_url,
+                    "country": country,
                     "online": True,
                 },
                 exclude_conn=conn_id,
@@ -471,6 +491,7 @@ class ConnectionManager:
         room.connections.pop(conn_id, None)
         if user_id and not any(u == user_id for u in room.conn_users.values()):
             room.user_names.pop(user_id, None)
+            room.user_info.pop(user_id, None)
             await room.broadcast(
                 {
                     "event": "presence",
@@ -507,7 +528,7 @@ class ConnectionManager:
         if not room:
             return []
         return [
-            {"user_id": uid, "display_name": name}
+            {"user_id": uid, **room.user_info.get(uid, {"display_name": name})}
             for uid, name in room.user_names.items()
         ]
 
@@ -778,6 +799,21 @@ async def _moderate_and_broadcast(
         )
     finally:
         db.close()
+        if msg_type in ("image", "video"):
+            try:
+                rel_url = json.loads(content).get("url", "")
+                stem = rel_url.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+                if stem:
+                    for suffix in (
+                        "_mod.webp",
+                        "_mod0.webp",
+                        "_mod1.webp",
+                        "_mod2.webp",
+                    ):
+                        p = _UPLOADS_DIR / f"{stem}{suffix}"
+                        p.unlink(missing_ok=True)
+            except Exception:
+                pass
 
 
 ALLOWED_REACTIONS = {"thumbs_up", "heart", "laugh", "fire", "wow", "clap"}
@@ -800,6 +836,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
     username = user["username"] if "username" in ukeys else ""
     color_index = user["color_index"] if "color_index" in ukeys else 0
     avatar_url = user["avatar_url"] if "avatar_url" in ukeys else ""
+    country = user["country"] if "country" in ukeys else ""
     await manager.connect(ws, user_id, conn_id)
     update_last_seen(db, user_id)
 
@@ -882,7 +919,16 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                             (room_id, user_id),
                         ).fetchone():
                             continue
-                    await manager.join_room(room_id, user_id, conn_id, display_name)
+                    await manager.join_room(
+                        room_id,
+                        user_id,
+                        conn_id,
+                        display_name,
+                        username,
+                        color_index,
+                        avatar_url,
+                        country,
+                    )
                     is_member = db.execute(
                         "SELECT 1 FROM room_memberships WHERE user_id = ? AND room_id = ?",
                         (user_id, room_id),
@@ -896,6 +942,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     messages = get_room_messages(db, room_id, limit=50)
                     msg_ids = [m["id"] for m in messages]
                     reactions_map = get_reactions_for_messages(db, msg_ids)
+                    members = get_room_members(db, room_id)
                     await manager.send_to_user(
                         user_id,
                         {
@@ -906,6 +953,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                                 for m in reversed(messages)
                             ],
                             "online": manager.get_online_users(room_id),
+                            "members": members,
                         },
                     )
 

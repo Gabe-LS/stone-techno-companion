@@ -606,6 +606,27 @@ def get_user_memberships(db: sqlite3.Connection, user_id: str) -> list[sqlite3.R
     ).fetchall()
 
 
+def get_room_members(db: sqlite3.Connection, room_id: str) -> list[dict]:
+    rows = db.execute(
+        "SELECT u.id AS user_id, u.display_name, u.username, "
+        "u.color_index, u.avatar_url, u.country "
+        "FROM room_memberships rm JOIN users u ON u.id = rm.user_id "
+        "WHERE rm.room_id = ? ORDER BY u.display_name",
+        (room_id,),
+    ).fetchall()
+    return [
+        {
+            "user_id": r["user_id"],
+            "display_name": r["display_name"] or "",
+            "username": r["username"] or "",
+            "color_index": r["color_index"] or 0,
+            "avatar_url": r["avatar_url"] or "",
+            "country": r["country"] or "",
+        }
+        for r in rows
+    ]
+
+
 def get_unread_counts(db: sqlite3.Connection, user_id: str) -> dict:
     now = _now()
     rows = db.execute(
