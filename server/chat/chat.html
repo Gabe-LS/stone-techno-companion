@@ -919,7 +919,7 @@ async function initAvatarEditor(file) {
   };
   const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.removeEventListener('touchmove', onMove); document.removeEventListener('touchend', onUp); setTimeout(() => { _avatarDragged = false; }, 10); };
   edit.onmousedown = (e) => { e.preventDefault(); _avatarDragged = false; startX = e.clientX; startY = e.clientY; origX = _avatarState.x; origY = _avatarState.y; document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp); };
-  edit.ontouchstart = (e) => { e.preventDefault(); _avatarDragged = false; startX = e.touches[0].clientX; startY = e.touches[0].clientY; origX = _avatarState.x; origY = _avatarState.y; document.addEventListener('touchmove', onMove, { passive: false }); document.addEventListener('touchend', onUp); };
+  edit.ontouchstart = (e) => { e.preventDefault(); _avatarDragged = false; startX = e.touches[0].clientX; startY = e.touches[0].clientY; origX = _avatarState.x; origY = _avatarState.y; document.addEventListener('touchmove', onMove, { passive: false }); document.addEventListener('touchend', function onTouchUp() { document.removeEventListener('touchmove', onMove); document.removeEventListener('touchend', onTouchUp); if (!_avatarDragged) uploadAvatar(); setTimeout(() => { _avatarDragged = false; }, 10); }); };
 }
 
 function clampAvatarX(x) { const s = _avatarState; return Math.min(0, Math.max(x, 128 - s.natW * s.scale)); }
@@ -3266,7 +3266,7 @@ async function initEditAvatarEditor(file) {
   const onMove = (e) => { e.preventDefault(); dragged = true; const cx = e.touches ? e.touches[0].clientX : e.clientX; const cy = e.touches ? e.touches[0].clientY : e.clientY; _editAvatarState.x = editClampX(origX + (cx - startX)); _editAvatarState.y = editClampY(origY + (cy - startY)); updateEditAvatarView(); };
   const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.removeEventListener('touchmove', onMove); document.removeEventListener('touchend', onUp); setTimeout(() => { dragged = false; }, 10); };
   edit.onmousedown = (e) => { e.preventDefault(); dragged = false; startX = e.clientX; startY = e.clientY; origX = _editAvatarState.x; origY = _editAvatarState.y; document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp); };
-  edit.ontouchstart = (e) => { e.preventDefault(); dragged = false; startX = e.touches[0].clientX; startY = e.touches[0].clientY; origX = _editAvatarState.x; origY = _editAvatarState.y; document.addEventListener('touchmove', onMove, { passive: false }); document.addEventListener('touchend', onUp); };
+  edit.ontouchstart = (e) => { e.preventDefault(); dragged = false; startX = e.touches[0].clientX; startY = e.touches[0].clientY; origX = _editAvatarState.x; origY = _editAvatarState.y; document.addEventListener('touchmove', onMove, { passive: false }); document.addEventListener('touchend', function onTouchUp() { document.removeEventListener('touchmove', onMove); document.removeEventListener('touchend', onTouchUp); if (!dragged) editProfileAvatar(); setTimeout(() => { dragged = false; }, 10); }); };
 }
 
 function editClampX(x) { const s = _editAvatarState; return Math.min(0, Math.max(x, s.size - s.natW * s.scale)); }
