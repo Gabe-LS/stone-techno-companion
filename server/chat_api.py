@@ -1050,6 +1050,29 @@ async def create_dm(request: Request):
 # --- Users ---
 
 
+@router.get("/blocks")
+async def get_blocks(request: Request):
+    user, db = _get_user_from_cookie(request)
+    try:
+        rows = db.execute(
+            "SELECT b.blocked_id, u.display_name, u.username, u.avatar_url "
+            "FROM blocks b JOIN users u ON u.id = b.blocked_id "
+            "WHERE b.blocker_id = ?",
+            (user["id"],),
+        ).fetchall()
+        return [
+            {
+                "user_id": r["blocked_id"],
+                "display_name": r["display_name"] or "",
+                "username": r["username"] or "",
+                "avatar_url": r["avatar_url"] or "",
+            }
+            for r in rows
+        ]
+    finally:
+        db.close()
+
+
 @router.post("/users/{user_id}/block")
 async def block_user_endpoint(user_id: str, request: Request):
     user, db = _get_user_from_cookie(request)

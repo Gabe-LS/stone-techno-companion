@@ -370,6 +370,7 @@ let messagesByRoom = {};
 let typingUsers = {};
 let onlineByRoom = {};
 let membersByRoom = {};
+let blockedUserIds = new Set();
 let memberTab = storageGet('memberTab', 'online');
 let unreadByRoom = {};
 let _lastReadByRoom = {};
@@ -984,6 +985,7 @@ async function submitProfile() {
     currentUser.country = country;
     currentUser.avatar_url = _profileAvatarUrl;
     await connectWS();
+    await loadBlockedUsers();
     await loadRooms();
     if (rooms.length === 1) {
       openRoom(rooms[0].id, rooms[0].name, rooms[0].type);
@@ -1221,6 +1223,14 @@ function _debouncedRoomRefresh() {
       if (currentRoom) updateHeaderCount();
     });
   }, 500);
+}
+
+async function loadBlockedUsers() {
+  try {
+    const list = await api('/blocks');
+    blockedUserIds = new Set(list.map(u => u.user_id));
+    dbg('[BLOCK] loaded', blockedUserIds.size, 'blocked users');
+  } catch { blockedUserIds = new Set(); }
 }
 
 async function loadRooms() {
@@ -1679,13 +1689,14 @@ function renderMessages() {
   dbg('[CHAT] renderMessages');
   const el = document.getElementById('messages');
   if (!el) { verify('renderMessages', false, '#messages not found'); return; }
-  const msgs = messagesByRoom[currentRoom] || [];
+  const msgs = (messagesByRoom[currentRoom] || []).filter(m => !blockedUserIds.has(m.user_id));
   el.innerHTML = msgs.map(m => renderMessage(m)).join('');
   const rendered = el.querySelectorAll('.msg').length;
   verify('renderMessages', rendered === msgs.length, rendered + '/' + msgs.length + ' messages rendered');
 }
 
 function appendMessage(m) {
+  if (blockedUserIds.has(m.user_id)) return;
   dbg('[CHAT] appendMessage', m.type, m.id);
   const el = document.getElementById('messages');
   if (!el) return;
@@ -2793,6 +2804,19 @@ function closeActionSheet() {
   if (sheet) { sheet.classList.remove('open'); setTimeout(() => sheet.remove(), 200); }
 }
 
+function _doBlock(userId, name, report) {
+  wsSend('block_user', { target_user_id: userId });
+  blockedUserIds.add(userId);
+  if (report) {
+    const lastMsg = Object.values(messagesByRoom).flat().filter(m => m.user_id === userId).pop();
+    if (lastMsg) {
+      wsSend('report_message', { message_id: lastMsg.id, reason: 'Blocked and reported by user' });
+    }
+  }
+  renderMessages();
+  showToast(escapeHtml(name) + ' blocked');
+}
+
 function blockUserConfirm(userId, name) {
   dbg('[MENU] blockUserConfirm', userId, name);
   document.getElementById('action-sheet')?.remove();
@@ -2801,7 +2825,9 @@ function blockUserConfirm(userId, name) {
   sheet.className = 'action-sheet-overlay';
   sheet.innerHTML = `<div class="action-sheet" onclick="event.stopPropagation()">
     <div class="action-sheet-title">Block ${escapeHtml(name)}?</div>
-    <button class="action-sheet-btn action-sheet-danger" onclick="closeActionSheet();wsSend('block_user',{target_user_id:'${userId}'});showToast('${jss(name)} blocked')">Block</button>
+    <p style="color:var(--color-muted);font-size:var(--font-xs);margin:0 16px 8px;text-align:center">You will no longer see their messages</p>
+    <button class="action-sheet-btn action-sheet-danger" onclick="closeActionSheet();_doBlock('${userId}','${jss(name)}',false)">Block</button>
+    <button class="action-sheet-btn action-sheet-danger" onclick="closeActionSheet();_doBlock('${userId}','${jss(name)}',true)">Block & Report</button>
     <button class="action-sheet-btn action-sheet-cancel" onclick="closeActionSheet()">Cancel</button>
   </div>`;
   sheet.addEventListener('click', closeActionSheet);
@@ -2855,6 +2881,7 @@ function showSettingsMenu() {
     <div class="action-sheet-title">${escapeHtml(currentUser?.display_name || currentUser?.username || '')}</div>
     <button class="action-sheet-btn" onclick="closeActionSheet();openProfileModal()">Profile</button>
     <button class="action-sheet-btn" onclick="closeActionSheet();openNotificationsModal()">Notifications</button>
+    <button class="action-sheet-btn" onclick="closeActionSheet();openBlockedUsersModal()">Blocked Users${blockedUserIds.size ? ' (' + blockedUserIds.size + ')' : ''}</button>
     <button class="action-sheet-btn action-sheet-danger" onclick="closeActionSheet();confirmLogout()">Log out</button>
     <button class="action-sheet-btn action-sheet-cancel" onclick="closeActionSheet()">Cancel</button>
   </div>`;
@@ -3382,6 +3409,43 @@ async function _disableAllNotifications() {
   closeNotificationsModal();
 }
 
+async function openBlockedUsersModal() {
+  dbg('[BLOCK] openBlockedUsersModal');
+  let list = [];
+  try { list = await api('/blocks'); } catch {}
+  document.getElementById('blocked-modal')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'blocked-modal';
+  overlay.className = 'modal-overlay';
+  const items = list.length
+    ? list.map(u => `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--color-border)">
+        <div class="avatar-sm" style="background:var(--user-${(u.color_index || 0) % 12}-bg);width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:var(--font-xs);font-weight:700;color:var(--color-text);flex-shrink:0">${u.avatar_url ? `<img src="${esc(u.avatar_url)}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">` : (u.display_name || u.username || '?')[0].toUpperCase()}</div>
+        <span style="flex:1;font-size:var(--font-sm)">${esc(u.display_name || u.username)}</span>
+        <button style="background:none;border:1px solid var(--color-border);border-radius:var(--radius-md);padding:4px 12px;font-size:var(--font-xs);cursor:pointer;color:var(--color-text);font-family:inherit" onclick="_unblockUser('${u.user_id}',this)">Unblock</button>
+      </div>`).join('')
+    : '<p style="color:var(--color-muted);text-align:center;font-size:var(--font-sm)">No blocked users</p>';
+  overlay.innerHTML = `<div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title">Blocked Users</span>
+      <button class="modal-close" onclick="document.getElementById('blocked-modal').remove()">&times;</button>
+    </div>
+    <div class="modal-body">${items}</div>
+  </div>`;
+  overlay.addEventListener('click', () => overlay.remove());
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('open'));
+}
+
+async function _unblockUser(userId, btn) {
+  try {
+    await api('/users/' + userId + '/block', { method: 'DELETE' });
+    blockedUserIds.delete(userId);
+    btn.closest('div').remove();
+    renderMessages();
+    showToast('User unblocked');
+  } catch (e) { showToast(e.message); }
+}
+
 function confirmLogout() {
   dbg('[AUTH] confirmLogout');
   closeActionSheet();
@@ -3511,6 +3575,7 @@ async function route() {
   if (!currentUser.username || !currentUser.country || !currentUser.avatar_url) { renderProfilePrompt(); return; }
   await _checkPushStatus();
   if (!ws || ws.readyState !== 1) await connectWS();
+  await loadBlockedUsers();
   await loadRooms();
 
   if (pathMsg) {
