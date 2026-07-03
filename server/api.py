@@ -944,6 +944,14 @@ async def serve_bios():
     raise HTTPException(404, "Not found")
 
 
+@app.get("/shared.css")
+async def serve_shared_css():
+    file_path = STATIC_DIR / "shared.css"
+    if file_path.exists():
+        return FileResponse(file_path, media_type="text/css")
+    raise HTTPException(404, "Not found")
+
+
 _chat_purge_coro = None
 try:
     from chat_api import mount_chat
