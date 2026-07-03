@@ -16,10 +16,29 @@
    ```bash
    python stone_techno_companion.py --render-only --no-photos
    ```
+9. **Read ALL source files before making any changes.** The codebase has changed significantly since Phase 1. Do NOT assume the Phase 1 report accurately describes the current code. Read these files in full:
+   - `server/static/shared.js` — current shared utilities
+   - `server/static/shared.css` — current shared CSS (font scale is now `rem`, not `em`)
+   - `server/chat/chat.html` — full chat JS (find the `<script>` block, read it entirely)
+   - `server/chat/admin.html` — admin JS
+   - `server/static/sw.js` — service worker
+   - `scraper/render.py` — lineup JS (search for `<script>` blocks, read all JS sections)
+   - `output/lineup.html` — generated output to see actual rendered JS and HTML
 
 ## Context
 
-Phase 1 created `shared.js`, removed dead code, fixed security issues, optimized DOM access, and fixed silent error swallowing. It identified 7 specific items as future work. This phase addresses them plus SVG deduplication.
+Phase 1 was completed in a previous session. It created `shared.js`, removed dead code, fixed security issues, optimized DOM access, and fixed silent error swallowing. It identified 7 specific items as future work. This phase addresses them plus SVG deduplication.
+
+**Important: the codebase has changed significantly since Phase 1.** Do NOT rely on line numbers from the Phase 1 report — they are stale. Read the actual files. Key changes since Phase 1:
+- Font scale changed from `em` to `rem` in `shared.css`
+- `logging.basicConfig(level=logging.INFO)` already added to `chat_api.py` — do not add it again
+- `chat_settings` table added for app-level config (room sort mode)
+- `mark_room_read` changed from INSERT ON CONFLICT to UPDATE only
+- Moderation logging added (OpenAI scores logged via `logger.info`)
+- Bell toggle now re-fetches and re-renders room list
+- Room sort: auto mode (main first, bell-on by activity, bell-off by activity) and manual mode (by position)
+
+Read the actual files, not the Phase 1 report, for current state.
 
 ## What to do
 
@@ -38,6 +57,10 @@ Both pages paste full SVG markup inline every time an icon is used. The chat pag
 **Naming convention:** `ICON_CALENDAR`, `ICON_CHAT`, `ICON_HAMBURGER`, `ICON_BACK`, `ICON_USER`, etc. UPPER_SNAKE for constants.
 
 **SVG sizing:** Icons should use the same `width`/`height` in the constant. If different sizes are needed in different contexts, the constant uses the default size and CSS overrides it (e.g., `.header-cal svg { width: 20px; height: 20px; }`).
+
+**SVG viewBox scaling:** Some icons (calendar, chat) use `viewBox="-1.7 -1.7 27.4 27.4"` instead of `viewBox="0 0 24 24"` — this adds visual padding to match the hamburger icon's apparent size. Preserve these viewBox values exactly when creating constants.
+
+**Existing icon constants** in `chat.html`: `ICON_HAMBURGER`, `ICON_BACK`, `USER_ICON`. The lineup page has the hamburger SVG inline in Python. The calendar SVG appears in both the mobile nav icon and would appear in a desktop header link — deduplicate into one constant.
 
 ### 2. Event Delegation
 
@@ -65,6 +88,8 @@ document.getElementById('list-view').addEventListener('click', function(e) {
   if (card) openBio(card);
 });
 ```
+
+**Both pages have inline handlers.** The lineup has 239 `onclick="openBio(this)"` on artist cards. The chat has inline handlers on room items, message bubbles, reaction buttons, action menus, and more. Audit both pages — focus on repeated elements where delegation saves the most.
 
 **Important:** Test that keyboard navigation, screen readers, and touch interactions still work after the change.
 
@@ -134,7 +159,7 @@ Phase 1 noted that three of four hiding cases in `updateGroupVisibility` can bec
 
 **Approach:**
 
-1. Check browser support for `:has()` — Safari 15.4+, Chrome 105+, Firefox 121+. This is within the 95% target.
+1. Check browser support for `:has()` — Safari 15.4+, Chrome 105+, Firefox 121+ (Dec 2023). Verify this meets the 95% target on caniuse.com before proceeding. If Firefox 121+ is below 95%, skip this task.
 2. Identify the JS `updateGroupVisibility` function and what it does
 3. Replace the JS hiding logic with CSS `:has()` rules where possible
 4. Keep the JS for the one case that CSS can't handle (if any)

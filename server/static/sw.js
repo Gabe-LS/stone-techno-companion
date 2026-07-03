@@ -60,6 +60,7 @@ self.addEventListener('notificationclose', function (event) {
 });
 
 self.addEventListener('pushsubscriptionchange', function (event) {
+  if (!event.oldSubscription) return;
   event.waitUntil(
     self.registration.pushManager.subscribe(event.oldSubscription.options).then(function (sub) {
       return fetch('/chat/api/push/subscribe', {

@@ -952,6 +952,14 @@ async def serve_shared_css():
     raise HTTPException(404, "Not found")
 
 
+@app.get("/shared.js")
+async def serve_shared_js():
+    file_path = STATIC_DIR / "shared.js"
+    if file_path.exists():
+        return FileResponse(file_path, media_type="application/javascript")
+    raise HTTPException(404, "Not found")
+
+
 _chat_purge_coro = None
 try:
     from chat_api import mount_chat

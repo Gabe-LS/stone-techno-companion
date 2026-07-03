@@ -261,7 +261,7 @@ def render_output_html(
     /* --- Command bar --- */
     .cmd-bar { position: sticky; top: 0; z-index: var(--z-header); background: var(--gray-900); color: #fff; display: flex; align-items: stretch; justify-content: space-between; height: 28px; font-size: var(--font-xs); padding: 0 var(--space-lg); }
     .cmd-group { display: flex; align-items: stretch; }
-    .cmd-bar button { background: none; color: #aaa; border: none; padding: 0 var(--space-lg); font-size: var(--font-base); white-space: nowrap; text-align: center; transition: color var(--transition-fast); letter-spacing: 0.03em; }
+    .cmd-bar button { background: none; color: #aaa; border: none; padding: 0 var(--space-lg); font-size: var(--font-xs); white-space: nowrap; text-align: center; transition: color var(--transition-fast); letter-spacing: 0.03em; text-transform: uppercase; }
     .cmd-bar button:focus:not(:focus-visible) { outline: none; }
     .cmd-bar button:focus-visible { outline: 1px solid #fff; outline-offset: -2px; }
     .cmd-bar button.active { color: #fff; }
@@ -440,12 +440,12 @@ def render_output_html(
     .tt-block { border-radius: 6px; margin: 5px 3px var(--space-xs); padding: var(--space-sm) 10px; font-size: var(--font-sm); position: relative; display: flex; flex-direction: row; align-items: flex-start; border: 1px solid var(--color-border); transition: opacity var(--transition-fast); min-height: 0; }
     .tt-text { width: 0; flex-grow: 1; display: flex; flex-direction: column; }
     .tt-block .tt-time-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; }
-    .tt-block .tt-time { font-size: var(--font-sm); color: var(--color-muted); white-space: nowrap; line-height: 1; }
+    .tt-block .tt-time { font-size: var(--font-xs); color: var(--color-muted); white-space: nowrap; line-height: 1; }
     .tt-artist-row { display: flex; align-items: center; gap: var(--space-sm); margin-top: 6px; min-width: 0; }
     .tt-photo-wrap { position: relative; flex-shrink: 0; width: 34px; height: 34px; }
     .tt-photo { width: 34px; height: 34px; border-radius: var(--radius-sm); object-fit: cover; display: block; }
     .tt-photo-placeholder { width: 34px; height: 34px; border-radius: var(--radius-sm); background: var(--color-surface-hover); }
-    .tt-block .tt-name { font-weight: 700; font-size: var(--font-base); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; min-width: 0; flex: 1; }
+    .tt-block .tt-name { font-weight: 700; font-size: var(--font-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; min-width: 0; flex: 1; }
 
     /* Per-artist heart */
     .tt-photo-heart { position: absolute; bottom: -5px; right: -5px; background: rgba(255,255,255,0.85); border: none; padding: 2px; line-height: 0; border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; z-index: 1; }
@@ -583,14 +583,7 @@ def render_output_html(
     parts.append("  </svg>")
     parts.append('  <nav class="cmd-bar" id="cmd-bar" aria-label="Main navigation">')
     parts.append(
-        '    <a href="/chat" class="nav-icon" aria-label="Chat">'
-        '<svg width="24" height="24" viewBox="-1.7 -1.7 27.4 27.4" fill="none" stroke="currentColor" stroke-width="1.5">'
-        '<path d="M10 22C14.4183 22 18 18.4183 18 14C18 9.58172 14.4183 6 10 6C5.58172 6 2 9.58172 2 14C2 15.2355 2.28 16.4056 2.78 17.4502C2.95 17.8093 3.01 18.2161 2.91 18.6006L2.58 19.8267C2.32 20.793 3.21 21.677 4.17 21.4185L5.4 21.0904C5.78 20.9876 6.19 21.0479 6.55 21.2198C7.59 21.7199 8.76 22 10 22Z"/>'
-        '<path d="M18 14.5C18.07 14.47 18.13 14.45 18.2 14.42C18.56 14.25 18.97 14.19 19.35 14.29L19.83 14.42C20.79 14.68 21.68 13.79 21.42 12.83L21.29 12.35C21.19 11.97 21.25 11.56 21.42 11.2C21.79 10.38 22 9.46 22 8.5C22 4.91 19.09 2 15.5 2C12.8 2 10.48 3.65 9.5 5.99"/>'
-        '<circle cx="6.5" cy="14" r="0.75" fill="currentColor" stroke="none"/>'
-        '<circle cx="10" cy="14" r="0.75" fill="currentColor" stroke="none"/>'
-        '<circle cx="13.5" cy="14" r="0.75" fill="currentColor" stroke="none"/>'
-        "</svg></a>"
+        '    <a href="/chat" class="nav-icon chat-nav-icon" aria-label="Chat"></a>'
     )
     parts.append('    <span class="view-label" id="view-label">Line-up</span>')
     parts.append('    <div class="cmd-group">')
@@ -629,7 +622,7 @@ def render_output_html(
     )
     parts.append("    </div>")
     parts.append(
-        '    <button type="button" class="hamburger" onclick="toggleMenu()" aria-label="Menu"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M20.75 7C20.75 7.41421 20.4142 7.75 20 7.75L4 7.75C3.58579 7.75 3.25 7.41421 3.25 7C3.25 6.58579 3.58579 6.25 4 6.25L20 6.25C20.4142 6.25 20.75 6.58579 20.75 7Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M20.75 12C20.75 12.4142 20.4142 12.75 20 12.75L4 12.75C3.58579 12.75 3.25 12.4142 3.25 12C3.25 11.5858 3.58579 11.25 4 11.25L20 11.25C20.4142 11.25 20.75 11.5858 20.75 12Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M20.75 17C20.75 17.4142 20.4142 17.75 20 17.75L4 17.75C3.58579 17.75 3.25 17.4142 3.25 17C3.25 16.5858 3.58579 16.25 4 16.25L20 16.25C20.4142 16.25 20.75 16.5858 20.75 17Z"/></svg></button>'
+        '    <button type="button" class="hamburger" onclick="toggleMenu()" aria-label="Menu"></button>'
     )
     parts.append("  </nav>")
 
@@ -1457,6 +1450,8 @@ def render_output_html(
     parts.append(f"  <script>{qr_js}</script>")
     parts.append("  <script>")
     parts.append("    setDbgTag('lineup');")
+    parts.append("    document.querySelector('.hamburger').innerHTML = ICON_HAMBURGER;")
+    parts.append("    document.querySelector('.chat-nav-icon').innerHTML = ICON_CHAT;")
     parts.append(f"    var siteShort = {_json.dumps(site_short)};")
     if has_timetable:
         parts.append("""
