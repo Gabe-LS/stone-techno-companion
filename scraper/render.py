@@ -167,14 +167,14 @@ def _render_markdown(text: str) -> str:
     result = _re.sub(
         r"<(script|iframe|object|embed|form)[^>]*/?>", "", result, flags=_re.IGNORECASE
     )
-    result = _re.sub(r"""\bon\w+\s*=\s*["'][^"']*["']""", "", result, flags=_re.IGNORECASE)
+    result = _re.sub(
+        r"""\bon\w+\s*=\s*["'][^"']*["']""", "", result, flags=_re.IGNORECASE
+    )
     result = _re.sub(r"\bon\w+\s*=\s*\S+", "", result, flags=_re.IGNORECASE)
     result = _re.sub(
         r"""href\s*=\s*["']javascript:[^"']*["']""", "", result, flags=_re.IGNORECASE
     )
-    result = _re.sub(
-        r"""href\s*=\s*javascript:\S*""", "", result, flags=_re.IGNORECASE
-    )
+    result = _re.sub(r"""href\s*=\s*javascript:\S*""", "", result, flags=_re.IGNORECASE)
     return result.strip()
 
 
@@ -277,7 +277,7 @@ def render_output_html(
     .cmd-bar button:focus-visible { outline: 1px solid #fff; outline-offset: -2px; }
     .cmd-bar button.active { color: #fff; }
     .cmd-sep { width: 1px; background: #444; margin: 6px 16px; }
-    @media (hover: hover) { .cmd-bar button:hover { color: #fff; } }
+    @media (hover: hover) { .cmd-bar button:not(.hamburger):hover { color: #fff; } }
 
     /* --- Sticky headings --- */
     h1 { margin-bottom: 32px; font-size: var(--font-2xl); position: sticky; top: 28px; background: var(--color-bg); z-index: 30; padding: 12px 0 8px; border-bottom: 2px solid #222; }
@@ -390,19 +390,20 @@ def render_output_html(
     .pin-wrap .pin span.filled { color: var(--color-text); }
     .pin-real { position: absolute; inset: 0; opacity: 0; font-size: 16px; width: 100%; height: 100%; border: none; padding: 0; margin: 0; -webkit-tap-highlight-color: transparent; }
 
-    /* --- Hamburger menu (hidden on desktop) --- */
+    /* --- Hamburger menu & nav icons (hidden on desktop) --- */
     .hamburger { display: none; }
     .view-label { display: none; }
     .cmd-dropdown { display: none; }
     .menu-overlay { display: none; }
+    .nav-chat-icon { display: none; }
 
     /* --- Mobile (480px) --- */
     @media (max-width: 480px) {
       body { padding: 0 12px; }
-      h1 { font-size: var(--font-xl); padding: 8px 0 6px; top: 48px; }
-      .date-section > h2 { font-size: var(--font-xl); padding: 6px 0; top: 100px; }
-      h3.period-heading { font-size: var(--font-base); padding: 6px 0 4px; top: 148px; margin: 16px 0 8px; }
-      h4.location-heading { top: 176px; }
+      h1 { font-size: var(--font-xl); padding: 8px 0 6px; }
+      .date-section > h2 { font-size: var(--font-lg); padding: 6px 0; }
+      h3.period-heading { font-size: var(--font-base); padding: 6px 0 4px; margin: 16px 0 8px; }
+      h4.location-heading { }
       li.artist-item { gap: 10px; padding: 10px; align-items: flex-start; flex-wrap: wrap; }
       .artist-also { margin-left: calc(-72px - 10px); width: calc(100% + 72px + 10px); margin-top: 10px; display: block; }
       .artist-photo { width: 72px; height: 72px; border-radius: 4px; margin-top: 2px; }
@@ -513,16 +514,19 @@ def render_output_html(
       .cmd-bar .cmd-group { display: none; }
       .cmd-bar .cmd-group-right { display: none !important; }
       .cmd-sep { display: none; }
-      .cmd-bar .view-label { color: #fff; font-size: 16px; font-weight: 600; letter-spacing: 0.02em; display: flex; align-items: center; height: 100%; }
+      .cmd-bar .view-label { color: #fff; font-size: 16px; font-weight: 600; letter-spacing: 0.02em; display: flex; align-items: center; height: 100%; padding-left: 40px; }
 
-      .hamburger { display: flex; align-items: center; justify-content: center; background: none; color: #fff; border: none; cursor: pointer; width: 48px; height: 48px; position: absolute; right: 4px; top: 0; -webkit-tap-highlight-color: transparent; }
+      .nav-chat-icon { display: flex; align-items: center; justify-content: center; color: #fff; text-decoration: none; width: 48px; height: 48px; position: absolute; left: 4px; top: 0; -webkit-tap-highlight-color: transparent; }
+      .nav-chat-icon svg { width: 24px; height: 24px; }
+      .cmd-bar .hamburger { display: flex; align-items: center; justify-content: center; background: none; color: #fff; border: none; width: 48px; height: 48px; position: absolute; right: 4px; top: 0; -webkit-tap-highlight-color: transparent; padding: 0; }
+      .cmd-bar .hamburger:hover { opacity: 1; background: none; color: #fff; }
       .hamburger svg { width: 24px; height: 24px; min-width: 24px; min-height: 24px; }
 
       .cmd-dropdown { position: fixed; top: 48px; left: 0; right: 0; z-index: 49; background: #111; flex-direction: column; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
       .cmd-dropdown.open { display: flex; }
-      .cmd-dropdown button { background: none; color: #aaa; border: none; border-top: 1px solid #222; cursor: pointer; padding: 16px; font-size: 16px; font-family: inherit; text-align: left; -webkit-tap-highlight-color: transparent; }
+      .cmd-dropdown button { background: none; color: #fff; border: none; border-bottom: 1px solid #374151; cursor: pointer; padding: 10px 16px 10px 24px; font-size: 13px; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; text-align: left; line-height: 1.5; -webkit-tap-highlight-color: transparent; }
       .cmd-dropdown button:active { background: #222; }
-      .cmd-dropdown button.active { color: #fff; font-weight: 600; }
+      .cmd-dropdown button.active { font-weight: 600; }
 
       .menu-overlay.open { display: block; position: fixed; top: 48px; left: 0; right: 0; bottom: 0; z-index: 47; background: rgba(0,0,0,0.3); }
 
@@ -599,6 +603,16 @@ def render_output_html(
     parts.append(f"    {_svg_to_symbol(SVG_RA, 'i-ra')}")
     parts.append("  </svg>")
     parts.append('  <nav class="cmd-bar" id="cmd-bar" aria-label="Main navigation">')
+    parts.append(
+        '    <a href="/chat" class="nav-chat-icon" aria-label="Chat">'
+        '<svg width="24" height="24" viewBox="-1.7 -1.7 27.4 27.4" fill="none" stroke="currentColor" stroke-width="1.5">'
+        '<path d="M10 22C14.4183 22 18 18.4183 18 14C18 9.58172 14.4183 6 10 6C5.58172 6 2 9.58172 2 14C2 15.2355 2.28 16.4056 2.78 17.4502C2.95 17.8093 3.01 18.2161 2.91 18.6006L2.58 19.8267C2.32 20.793 3.21 21.677 4.17 21.4185L5.4 21.0904C5.78 20.9876 6.19 21.0479 6.55 21.2198C7.59 21.7199 8.76 22 10 22Z"/>'
+        '<path d="M18 14.5C18.07 14.47 18.13 14.45 18.2 14.42C18.56 14.25 18.97 14.19 19.35 14.29L19.83 14.42C20.79 14.68 21.68 13.79 21.42 12.83L21.29 12.35C21.19 11.97 21.25 11.56 21.42 11.2C21.79 10.38 22 9.46 22 8.5C22 4.91 19.09 2 15.5 2C12.8 2 10.48 3.65 9.5 5.99"/>'
+        '<circle cx="6.5" cy="14" r="0.75" fill="currentColor" stroke="none"/>'
+        '<circle cx="10" cy="14" r="0.75" fill="currentColor" stroke="none"/>'
+        '<circle cx="13.5" cy="14" r="0.75" fill="currentColor" stroke="none"/>'
+        "</svg></a>"
+    )
     parts.append('    <span class="view-label" id="view-label">Line-up</span>')
     parts.append('    <div class="cmd-group">')
     if has_timetable:
@@ -618,9 +632,6 @@ def render_output_html(
         )
     parts.append("    </div>")
     parts.append('    <div class="cmd-group cmd-group-right">')
-    parts.append(
-        '      <button type="button" onmousedown="this.blur()" onclick="window.open(\'/chat\',\'_self\')">Chat</button>'
-    )
     parts.append(
         '      <button type="button" onmousedown="this.blur()" onclick="openShareModal()">Share</button>'
     )
@@ -655,9 +666,6 @@ def render_output_html(
         parts.append(
             '    <button type="button" onclick="toggleScheduleFilter(document.getElementById(\'btn-schedule\')); closeMenu()" id="dd-schedule" style="display:none">Show My Schedule</button>'
         )
-    parts.append(
-        "    <button type=\"button\" onclick=\"window.open('/chat','_self'); closeMenu()\">Chat</button>"
-    )
     parts.append(
         '    <button type="button" onclick="openShareModal(); closeMenu()">Share</button>'
     )
@@ -2083,7 +2091,7 @@ def render_output_html(
     }
     if (window.matchMedia('(max-width:768px)').matches) {
       document.getElementById('cmd-bar').addEventListener('click', function(e) {
-        if (!e.target.closest('.hamburger')) toggleMenu();
+        if (!e.target.closest('.hamburger') && !e.target.closest('.nav-chat-icon')) toggleMenu();
       });
     }
     function closeMenu() {
@@ -2552,6 +2560,30 @@ def render_output_html(
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(function() {});
     }
+
+    function setStickyTops() {
+      var bar = document.getElementById('cmd-bar');
+      if (!bar) return;
+      var barH = bar.offsetHeight;
+      var h1 = document.querySelector('h1');
+      if (h1) { h1.style.top = barH + 'px'; }
+      var h1H = h1 ? h1.offsetHeight : 0;
+      document.querySelectorAll('.date-section > h2').forEach(function(h2) {
+        h2.style.top = (barH + h1H) + 'px';
+      });
+      var h2 = document.querySelector('.date-section > h2');
+      var h2H = h2 ? h2.offsetHeight : 0;
+      document.querySelectorAll('h3.period-heading').forEach(function(h3) {
+        h3.style.top = (barH + h1H + h2H) + 'px';
+      });
+      var h3 = document.querySelector('h3.period-heading');
+      var h3H = h3 ? h3.offsetHeight : 0;
+      document.querySelectorAll('h4.location-heading').forEach(function(h4) {
+        h4.style.top = (barH + h1H + h2H + h3H) + 'px';
+      });
+    }
+    setStickyTops();
+    window.addEventListener('resize', setStickyTops);
     """)
     parts.append("  </script>")
     parts.append("  </main>")
