@@ -116,13 +116,15 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .link-preview-domain { font-size: var(--font-xs); color: var(--color-muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* --- Input bar --- */
-.input-bar { display: flex; align-items: center; gap: var(--space-xs); padding: var(--space-sm) var(--space-md); border-top: 1px solid var(--color-border); background: var(--color-bg); flex-shrink: 0; position: relative; }
-.input-bar button { background: none; border: none; padding: 0; cursor: pointer; color: var(--color-text-secondary); width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.input-bar { display: flex; align-items: flex-end; gap: var(--space-xs); padding: var(--space-sm) var(--space-md); border-top: 1px solid var(--color-border); background: var(--color-bg); flex-shrink: 0; position: relative; }
+.input-bar button { background: none; border: none; padding: 0; cursor: pointer; color: var(--color-text-secondary); width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-bottom: 4px; }
 .input-bar button svg { width: 24px; height: 24px; }
-.input-wrap { flex: 1; position: relative; display: flex; align-items: center; }
-.input-wrap input { width: 100%; padding: var(--space-md) 44px var(--space-md) var(--space-lg); border: 1px solid var(--color-border); border-radius: var(--radius-pill); font-size: var(--font-base); outline: none; font-family: inherit; }
-.input-wrap input:focus { border-color: var(--gray-400); }
-.input-bar .emoji-btn { position: absolute; right: 10px; width: 22px; height: 22px; padding: 0; background: none; border: none; color: var(--color-disabled); display: flex; align-items: center; justify-content: center; }
+.input-wrap { flex: 1; position: relative; display: flex; align-items: flex-end; }
+.input-wrap textarea { width: 100%; padding: 10px 44px 10px var(--space-lg); border: 1px solid var(--color-border); border-radius: 20px; font-size: var(--font-base); outline: none; font-family: inherit; resize: none; overflow-y: hidden; line-height: 1.4; box-sizing: content-box; scrollbar-width: none; }
+.input-wrap textarea:focus { border-color: var(--gray-400); }
+.input-wrap textarea::-webkit-scrollbar { display: none; }
+.input-wrap textarea.multiline { border-radius: var(--radius-lg); }
+.input-bar .emoji-btn { position: absolute; right: 10px; bottom: 9px; width: 22px; height: 22px; padding: 0; background: none; border: none; color: var(--color-disabled); display: flex; align-items: center; justify-content: center; margin-bottom: 0; }
 .input-bar .emoji-btn svg { width: 22px; height: 22px; }
 .input-bar .send { color: var(--color-text-secondary); }
 .input-bar .send svg { width: 28px; height: 28px; }
@@ -309,7 +311,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
   .main-panel { display: none; }
   .main-panel.visible { display: flex; flex-direction: column; height: 100%; }
   .input-bar { padding: var(--space-sm) calc((var(--header-h) - 32px) / 2); }
-  .input-wrap input { padding: var(--space-sm) 44px var(--space-sm) var(--space-lg); }
+  .input-wrap textarea { padding: var(--space-sm) 44px var(--space-sm) var(--space-lg); }
   .nav-icon { display: flex; }
   .hamburger { display: flex; }
   .header-count { display: flex; align-items: center; gap: var(--space-xs); font-size: var(--font-xs); color: #fff; position: absolute; right: var(--header-h); top: 0; height: 100%; }
@@ -1559,8 +1561,9 @@ function renderChatView(roomName) {
         <button onclick="uploadVideo(); closeActionMenu()"><svg viewBox="0 0 24 24" fill="none" width="16" height="16"><path d="M2 12C2 7.28595 2 4.92893 3.46447 3.46447C4.92893 2 7.28595 2 12 2C16.714 2 19.0711 2 20.5355 3.46447C22 4.92893 22 7.28595 22 12C22 16.714 22 19.0711 20.5355 20.5355C19.0711 22 16.714 22 12 22C7.28595 22 4.92893 22 3.46447 20.5355C2 19.0711 2 16.714 2 12Z" stroke="currentColor" stroke-width="1.5"/><path d="M9.5 8.96533C9.5 8.48805 9.5 8.24941 9.59974 8.11618C9.68666 8.00007 9.81971 7.92744 9.96438 7.9171C10.1304 7.90525 10.3311 8.03429 10.7326 8.29239L15.4532 11.3271C15.8016 11.551 15.9758 11.663 16.0359 11.8054C16.0885 11.9298 16.0885 12.0702 16.0359 12.1946C15.9758 12.337 15.8016 12.449 15.4532 12.6729L10.7326 15.7076C10.3311 15.9657 10.1304 16.0948 9.96438 16.0829C9.81971 16.0726 9.68666 15.9999 9.59974 15.8838C9.5 15.7506 9.5 15.512 9.5 15.0347V8.96533Z" stroke="currentColor" stroke-width="1.5"/></svg> Share Video</button>
       </div>
       <div class="input-wrap">
-        <input id="msg-input" placeholder="Type a message..." autocomplete="off"
-          onkeydown="if(event.key==='Enter'){sendMessage();event.preventDefault()}">
+        <textarea id="msg-input" placeholder="Type a message..." autocomplete="off" maxlength="1000" rows="1"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){sendMessage();event.preventDefault()}"
+          oninput="autoResizeInput(this)"></textarea>
         <button class="emoji-btn" onclick="openEmoji()"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/><path d="M9 16C9.85038 16.6303 10.8846 17 12 17C13.1154 17 14.1496 16.6303 15 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M16 10.5C16 11.3284 15.5523 12 15 12C14.4477 12 14 11.3284 14 10.5C14 9.67157 14.4477 9 15 9C15.5523 9 16 9.67157 16 10.5Z" fill="currentColor"/><ellipse cx="9" cy="10.5" rx="1" ry="1.5" fill="currentColor"/></svg></button>
       </div>
       <button class="send" onclick="sendMessage()"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/><path d="M8 12C12.6863 12 11.3137 12 16 12M16 12L13 9M16 12L13 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
@@ -2041,6 +2044,21 @@ function sendChatMessage(type, content, replyToId) {
   return tempId;
 }
 
+function autoResizeInput(el) {
+  var cs = getComputedStyle(el);
+  var lineH = Math.round(parseFloat(cs.fontSize) * 1.4);
+  var pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+  el.style.height = '0';
+  var contentH = el.scrollHeight - pad;
+  var maxH = lineH * 5;
+  var h = Math.max(lineH, Math.min(contentH, maxH));
+  el.style.height = h + 'px';
+  el.classList.toggle('multiline', h > lineH + 2);
+  var scrolling = contentH > maxH;
+  el.style.overflowY = scrolling ? 'auto' : 'hidden';
+  if (scrolling) el.scrollTop = el.scrollHeight;
+}
+
 async function sendMessage() {
   const input = document.getElementById('msg-input');
   if (!input || !input.value.trim()) return;
@@ -2055,6 +2073,7 @@ async function sendMessage() {
       history.replaceState(null, '', '/chat/d/' + roomId);
       wsSend('join_room', { room_id: roomId });
       input.value = '';
+      autoResizeInput(input);
       sendChatMessage('text', JSON.stringify({ text }), replyTo?.id);
       cancelReply();
       return;
@@ -2062,6 +2081,7 @@ async function sendMessage() {
   }
   sendChatMessage('text', JSON.stringify({ text }), replyTo?.id);
   input.value = '';
+  autoResizeInput(input);
   cancelReply();
   wsSend('typing', { room_id: currentRoom, active: false });
 }
