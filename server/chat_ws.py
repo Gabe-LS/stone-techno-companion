@@ -821,13 +821,16 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
         manager._room_meta[d["room_id"]] = {"type": "dm", "name": dm_name}
     manager.user_unread[user_id] = {}
 
-    main_room = get_main_room(db, event_id)
-    if main_room:
-        join_room_membership(db, user_id, main_room["id"])
-        manager.user_badge_rooms[user_id].add(main_room["id"])
-        manager._room_meta[main_room["id"]] = {
-            "type": main_room["type"],
-            "name": main_room["name"],
+    auto_join_rooms = db.execute(
+        "SELECT id, type, name FROM rooms WHERE event_id = ? AND (auto_join = 1 OR is_main = 1)",
+        (event_id,),
+    ).fetchall()
+    for aj_room in auto_join_rooms:
+        join_room_membership(db, user_id, aj_room["id"])
+        manager.user_badge_rooms[user_id].add(aj_room["id"])
+        manager._room_meta[aj_room["id"]] = {
+            "type": aj_room["type"],
+            "name": aj_room["name"],
         }
 
     counts = get_unread_counts(db, user_id)

@@ -122,9 +122,9 @@ select { -webkit-appearance: none; appearance: none; background-image: url("data
 .modal-field textarea { resize: vertical; min-height: 60px; background: var(--bg-surface); border: 1px solid var(--border); color: var(--text); padding: 7px 12px; border-radius: var(--radius); font-family: inherit; font-size: 13px; outline: none; }
 .modal-field textarea:focus { border-color: var(--text-muted); }
 .modal-toggle { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
-.modal-toggle label { margin: 0; flex: 1; font-size: 13px; color: var(--text); text-transform: none; letter-spacing: 0; }
-.switch { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
-.switch input { opacity: 0; width: 0; height: 0; }
+.modal-toggle label { margin: 0; flex: 1; font-size: 13px; color: var(--text); text-transform: none; letter-spacing: 0; cursor: pointer; }
+.switch { position: relative; width: 36px; height: 20px; flex-shrink: 0; cursor: pointer; }
+.switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; z-index: 1; top: 0; left: 0; }
 .switch span { position: absolute; inset: 0; background: var(--border); border-radius: 10px; cursor: pointer; transition: background 0.2s; }
 .switch span::before { content: ''; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; background: var(--text-sec); border-radius: 50%; transition: transform 0.2s; }
 .switch input:checked + span { background: var(--green); }
@@ -330,7 +330,7 @@ const render = {
       let html = `<div class="toolbar">
         <button class="btn btn-blue" onclick="openRoomModal()">Create room</button>
         <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-sec);cursor:pointer">
-          <div class="switch"><input type="checkbox" id="room-sort-toggle" ${sortMode === 'manual' ? 'checked' : ''} onchange="toggleRoomSort()"><span></span></div>
+          <label class="switch"><input type="checkbox" id="room-sort-toggle" ${sortMode === 'manual' ? 'checked' : ''} onchange="toggleRoomSort()"><span></span></label>
           Manual order
         </label>
       </div>`;
@@ -341,6 +341,7 @@ const render = {
         let h = '';
         if (!r.is_moderated) h += '<span class="pill pill-amber">unmoderated</span> ';
         if (r.is_read_only) h += '<span class="pill pill-red">read-only</span> ';
+        if (r.auto_join) h += '<span class="pill pill-green">auto-join</span> ';
         if (!r.allows_media) h += '<span class="pill pill-gray">text-only</span> ';
         return h;
       };
@@ -653,16 +654,20 @@ function openRoomModal(roomId) {
       </select>
     </div>
     <div class="modal-toggle">
-      <label>Moderation</label>
-      <div class="switch"><input type="checkbox" id="rm-moderated" ${!room || room?.is_moderated ? 'checked' : ''}><span></span></div>
+      <label for="rm-moderated">Moderation</label>
+      <label class="switch"><input type="checkbox" id="rm-moderated" ${!room || room?.is_moderated ? 'checked' : ''}><span></span></label>
     </div>
     <div class="modal-toggle">
-      <label>Read-only (admin posts only)</label>
-      <div class="switch"><input type="checkbox" id="rm-readonly" ${room?.is_read_only ? 'checked' : ''}><span></span></div>
+      <label for="rm-readonly">Read-only (admin posts only)</label>
+      <label class="switch"><input type="checkbox" id="rm-readonly" ${room?.is_read_only ? 'checked' : ''}><span></span></label>
     </div>
     <div class="modal-toggle">
-      <label>Allow media (images, videos)</label>
-      <div class="switch"><input type="checkbox" id="rm-media" ${!room || room?.allows_media ? 'checked' : ''}><span></span></div>
+      <label for="rm-autojoin">Auto-join (new users join automatically)</label>
+      <label class="switch"><input type="checkbox" id="rm-autojoin" ${room?.auto_join || room?.is_main ? 'checked' : ''} ${room?.is_main ? 'disabled' : ''}><span></span></label>
+    </div>
+    <div class="modal-toggle">
+      <label for="rm-media">Allow media (images, videos)</label>
+      <label class="switch"><input type="checkbox" id="rm-media" ${!room || room?.allows_media ? 'checked' : ''}><span></span></label>
     </div>
     <div class="modal-actions">
       <button class="btn btn-neutral" onclick="closeModal()">Cancel</button>
@@ -681,11 +686,12 @@ async function saveRoom(roomId) {
   const ttl_minutes = ttlVal === '' ? null : parseInt(ttlVal);
   const is_moderated = document.getElementById('rm-moderated')?.checked;
   const is_read_only = document.getElementById('rm-readonly')?.checked;
+  const auto_join = document.getElementById('rm-autojoin')?.checked;
   const allows_media = document.getElementById('rm-media')?.checked;
 
   if (!isEdit && !name) return;
 
-  const body = {name, description, ttl_minutes, is_moderated, is_read_only, allows_media};
+  const body = {name, description, ttl_minutes, is_moderated, is_read_only, auto_join, allows_media};
   if (!isEdit) {
     body.type = document.getElementById('rm-type')?.value || 'general';
   }

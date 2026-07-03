@@ -96,6 +96,7 @@ def init_chat_db(db: sqlite3.Connection) -> None:
             is_main       INTEGER NOT NULL DEFAULT 0,
             is_moderated  INTEGER NOT NULL DEFAULT 1,
             is_read_only  INTEGER NOT NULL DEFAULT 0,
+            auto_join     INTEGER NOT NULL DEFAULT 0,
             allows_media  INTEGER NOT NULL DEFAULT 1,
             ttl_minutes   INTEGER DEFAULT 60,
             position      INTEGER NOT NULL DEFAULT 0,
@@ -259,6 +260,7 @@ def _migrate_chat_db(db: sqlite3.Connection) -> None:
         ("description", "TEXT NOT NULL DEFAULT ''"),
         ("is_moderated", "INTEGER NOT NULL DEFAULT 1"),
         ("is_read_only", "INTEGER NOT NULL DEFAULT 0"),
+        ("auto_join", "INTEGER NOT NULL DEFAULT 0"),
         ("allows_media", "INTEGER NOT NULL DEFAULT 1"),
         ("ttl_minutes", "INTEGER DEFAULT 60"),
         ("position", "INTEGER NOT NULL DEFAULT 0"),
@@ -474,6 +476,7 @@ def create_room(
     description: str = "",
     is_moderated: bool = True,
     is_read_only: bool = False,
+    auto_join: bool = False,
     allows_media: bool = True,
     ttl_minutes: int | None = DEFAULT_MESSAGE_TTL_MIN,
     position: int = 0,
@@ -481,8 +484,8 @@ def create_room(
     now = _now()
     db.execute(
         "INSERT OR IGNORE INTO rooms (id, event_id, type, name, description, is_main, "
-        "is_moderated, is_read_only, allows_media, ttl_minutes, position, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "is_moderated, is_read_only, auto_join, allows_media, ttl_minutes, position, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             room_id,
             event_id,
@@ -492,6 +495,7 @@ def create_room(
             1 if is_main else 0,
             1 if is_moderated else 0,
             1 if is_read_only else 0,
+            1 if (auto_join or is_main) else 0,
             1 if allows_media else 0,
             ttl_minutes,
             position,
@@ -507,6 +511,7 @@ def create_room(
         "description": description,
         "is_moderated": is_moderated,
         "is_read_only": is_read_only,
+        "auto_join": auto_join or is_main,
         "allows_media": allows_media,
         "ttl_minutes": ttl_minutes,
         "position": position,
@@ -519,6 +524,7 @@ def update_room(db: sqlite3.Connection, room_id: str, **kwargs) -> None:
         "description",
         "is_moderated",
         "is_read_only",
+        "auto_join",
         "allows_media",
         "ttl_minutes",
         "position",
@@ -527,7 +533,7 @@ def update_room(db: sqlite3.Connection, room_id: str, **kwargs) -> None:
     params = []
     for key, val in kwargs.items():
         if key in allowed:
-            if key in ("is_moderated", "is_read_only", "allows_media"):
+            if key in ("is_moderated", "is_read_only", "auto_join", "allows_media"):
                 val = 1 if val else 0
             updates.append(f"{key} = ?")
             params.append(val)
@@ -1342,7 +1348,7 @@ def get_room_stats(db: sqlite3.Connection, online_counts: dict[str, int]) -> lis
     now = _now()
     rows = db.execute(
         "SELECT r.id, r.name, r.type, r.description, r.is_main, "
-        "r.is_moderated, r.is_read_only, r.allows_media, r.ttl_minutes, r.position, "
+        "r.is_moderated, r.is_read_only, r.auto_join, r.allows_media, r.ttl_minutes, r.position, "
         "  (SELECT COUNT(*) FROM messages m WHERE m.room_id = r.id AND m.expires_at > ?) AS message_count, "
         "  (SELECT MAX(m.created_at) FROM messages m WHERE m.room_id = r.id) AS last_message_at "
         "FROM rooms r ORDER BY r.position, last_message_at DESC NULLS LAST",
@@ -1357,6 +1363,7 @@ def get_room_stats(db: sqlite3.Connection, online_counts: dict[str, int]) -> lis
             "is_main": bool(r["is_main"]),
             "is_moderated": bool(r["is_moderated"]),
             "is_read_only": bool(r["is_read_only"]),
+            "auto_join": bool(r["auto_join"]) if "auto_join" in r.keys() else False,
             "allows_media": bool(r["allows_media"]),
             "ttl_minutes": r["ttl_minutes"],
             "online_count": online_counts.get(r["id"], 0),
