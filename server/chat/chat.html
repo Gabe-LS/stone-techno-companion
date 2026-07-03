@@ -1484,7 +1484,7 @@ function renderMemberItems() {
     const blocked = blockedUserIds.has(u.user_id);
     const av = avatarHtml(name, u.color_index || 0, true, u.avatar_url || '');
     const flag = countryFlag(u.country);
-    const onclick = isSelf ? 'openProfileModal()' : `showUserMenu('${u.user_id}','${jss(name)}')`;
+    const onclick = isSelf ? 'showSettingsMenu()' : `showUserMenu('${u.user_id}','${jss(name)}')`;
     return `<div class="member-item${isSelf ? ' member-item-self' : ''}${blocked ? ' member-blocked' : ''}" data-user-id="${u.user_id}" onclick="${onclick}">
       ${av}
       <span class="member-name">${esc(name)}${isSelf ? ' (you)' : ''}</span>
