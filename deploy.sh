@@ -59,6 +59,10 @@ fi
 PROD_ENV=""
 for var in $PROD_VARS; do
     val=$(grep "^${var}=" "$LOCAL_ENV" | cut -d= -f2-)
+    # VAPID_PRIVATE_KEY uses Docker container path in production
+    if [ "$var" = "VAPID_PRIVATE_KEY" ]; then
+        val="/app/data/vapid_private.pem"
+    fi
     PROD_ENV="${PROD_ENV}${var}=${val}\n"
 done
 # Add CHAT_EVENT_ID if present
