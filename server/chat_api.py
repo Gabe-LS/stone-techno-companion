@@ -40,7 +40,7 @@ from chat_db import (
     get_room,
     get_rooms_by_event,
     get_room_messages,
-    seed_event_room,
+    seed_event_rooms,
     create_meetup,
     join_meetup as db_join_meetup,
     leave_meetup as db_leave_meetup,
@@ -1821,7 +1821,9 @@ async def admin_create_room(request: Request):
             is_read_only=body.get("is_read_only", False),
             auto_join=body.get("auto_join", False),
             allows_media=body.get("allows_media", True),
-            ttl_minutes=body.get("ttl_minutes", 60),
+            ttl_minutes=body.get(
+                "ttl_minutes", int(get_setting(db, "room_ttl_minutes", "360"))
+            ),
             position=body.get("position", 0),
         )
         from chat_ws import manager
@@ -2000,7 +2002,7 @@ def mount_chat(app):
             logger.info("Cleaned %d stale temp files from %s", stale, tmp_dir)
 
     db = _get_db()
-    seed_event_room(db, DEFAULT_EVENT_ID, "Stone Techno 2026")
+    seed_event_rooms(db, DEFAULT_EVENT_ID, "Stone Techno 2026")
     db.close()
 
     return purge_loop

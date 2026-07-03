@@ -213,6 +213,9 @@ def init_chat_db(db: sqlite3.Connection) -> None:
         );
         INSERT OR IGNORE INTO chat_settings (key, value) VALUES ('room_sort', 'auto');
         INSERT OR IGNORE INTO chat_settings (key, value) VALUES ('msg_char_limit', '1000');
+        INSERT OR IGNORE INTO chat_settings (key, value) VALUES ('dm_ttl_minutes', '1440');
+        INSERT OR IGNORE INTO chat_settings (key, value) VALUES ('room_ttl_minutes', '360');
+        INSERT OR IGNORE INTO chat_settings (key, value) VALUES ('meetup_ttl_minutes', '60');
     """)
     db.commit()
 
@@ -661,8 +664,41 @@ def get_unread_counts(db: sqlite3.Connection, user_id: str) -> dict:
     }
 
 
-def seed_event_room(db: sqlite3.Connection, event_id: str, event_name: str) -> None:
-    create_room(db, "general", event_id, "general", event_name, is_main=True)
+def seed_event_rooms(db: sqlite3.Connection, event_id: str, event_name: str) -> None:
+    try:
+        room_ttl = int(get_setting(db, "room_ttl_minutes", "360"))
+    except (ValueError, TypeError):
+        room_ttl = 360
+    create_room(
+        db,
+        "general",
+        event_id,
+        "general",
+        event_name,
+        is_main=True,
+        position=0,
+        ttl_minutes=room_ttl,
+    )
+    create_room(
+        db,
+        "rideshare",
+        event_id,
+        "general",
+        "Rideshare",
+        description="Offer or find rides to and from the festival",
+        position=1,
+        ttl_minutes=room_ttl,
+    )
+    create_room(
+        db,
+        "lost-and-found",
+        event_id,
+        "general",
+        "Lost & Found",
+        description="Lost or found something? Post it here",
+        position=2,
+        ttl_minutes=room_ttl,
+    )
 
 
 # --- Messages ---
@@ -833,7 +869,11 @@ def create_meetup(
     meetup_id = _uuid()
     now = _now()
     mt = datetime.fromisoformat(meetup_time)
-    expires = (mt + timedelta(minutes=DEFAULT_MEETUP_GRACE_MIN)).isoformat()
+    try:
+        meetup_ttl = int(get_setting(db, "meetup_ttl_minutes", "60"))
+    except (ValueError, TypeError):
+        meetup_ttl = 60
+    expires = (mt + timedelta(minutes=meetup_ttl)).isoformat()
 
     db.execute(
         "INSERT INTO meetups (id, creator_id, stage_id, title, location_lat, location_lng, "
@@ -854,7 +894,7 @@ def create_meetup(
         ),
     )
 
-    create_room(db, meetup_id, event_id, "meetup", title)
+    create_room(db, meetup_id, event_id, "meetup", title, ttl_minutes=meetup_ttl)
 
     db.execute(
         "INSERT INTO meetup_attendees (meetup_id, user_id, joined_at) VALUES (?, ?, ?)",
@@ -950,7 +990,11 @@ def find_or_create_dm(
         raise ValueError("User not found")
 
     room_id = _uuid()
-    create_room(db, room_id, event_id, "dm", "DM")
+    try:
+        dm_ttl = int(get_setting(db, "dm_ttl_minutes", "1440"))
+    except (ValueError, TypeError):
+        dm_ttl = 1440
+    create_room(db, room_id, event_id, "dm", "DM", ttl_minutes=dm_ttl)
     now = _now()
     db.execute(
         "INSERT INTO dm_participants (room_id, user_id) VALUES (?, ?), (?, ?)",
