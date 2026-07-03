@@ -218,7 +218,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .modal-textarea { padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--font-sm); outline: none; resize: vertical; width: 100%; font-family: inherit; }
 .modal-footer { padding: var(--space-md) var(--space-lg); border-top: 1px solid var(--color-border); }
 .modal-btn-primary { width: 100%; padding: var(--space-md); background: var(--gray-900); color: #fff; border: none; border-radius: var(--radius-md); font-size: var(--font-base); cursor: pointer; font-weight: 600; font-family: inherit; }
-.modal-btn-secondary { padding: var(--space-md); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--font-xs); cursor: pointer; white-space: nowrap; font-family: inherit; }
+.modal-btn-secondary { padding: var(--space-md); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--font-sm); cursor: pointer; white-space: nowrap; font-family: inherit; }
 
 /* --- Auth screen --- */
 .auth-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-lg); padding: var(--space-2xl); flex: 1; }
@@ -3529,7 +3529,7 @@ async function openBlockedUsersModal() {
     ? list.map(u => `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--color-border)">
         <div class="avatar-sm" style="background:var(--user-${(u.color_index || 0) % 12}-bg);width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:var(--font-xs);font-weight:700;color:var(--color-text);flex-shrink:0">${u.avatar_url ? `<img src="${esc(u.avatar_url)}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">` : (u.display_name || u.username || '?')[0].toUpperCase()}</div>
         <span style="flex:1;font-size:var(--font-sm)">${esc(u.display_name || u.username)}</span>
-        <button style="background:none;border:1px solid var(--color-border);border-radius:var(--radius-md);padding:4px 12px;font-size:var(--font-xs);cursor:pointer;color:var(--color-text);font-family:inherit" onclick="_unblockUser('${u.user_id}',this)">Unblock</button>
+        <button style="background:none;border:1px solid var(--color-border);border-radius:var(--radius-md);padding:4px 12px;font-size:var(--font-sm);cursor:pointer;color:var(--color-text);font-family:inherit" onclick="_unblockUser('${u.user_id}',this)">Unblock</button>
       </div>`).join('')
     : '<p style="color:var(--color-muted);text-align:center;font-size:var(--font-sm)">No blocked users</p>';
   overlay.innerHTML = `<div class="modal" onclick="event.stopPropagation()">
