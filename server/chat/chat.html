@@ -60,12 +60,12 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .room-item:active:not(:has(:active)) { background: var(--color-surface); }
 .room-info { flex: 1; min-width: 0; }
 .room-name { font-weight: 600; font-size: var(--font-sm); line-height: 1.5; }
-.room-badge { flex-shrink: 0; }
+.room-badge { flex-shrink: 0; display: flex; align-items: center; }
 .room-meta { display: none; }
 .room-count { font-size: var(--font-xs); color: var(--gray-400); line-height: 1.2; }
 .room-desc { display: none; }
 .room-member-icon { display: none; }
-.room-bell { width: 32px; height: 32px; padding: 0; border: none; border-radius: 50%; background: none; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--gray-400); flex-shrink: 0; margin-left: calc(-1 * var(--space-lg)); -webkit-tap-highlight-color: transparent; }
+.room-bell { width: 32px; height: 32px; padding: 0; border: none; border-radius: 50%; background: none; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--gray-400); flex-shrink: 0; -webkit-tap-highlight-color: transparent; }
 .room-bell.active { color: var(--color-text); }
 @media (hover: hover) { .room-bell:hover { background: var(--color-surface); } }
 
@@ -1227,6 +1227,13 @@ async function loadRooms() {
   dbg('[ROOM] loadRooms');
   try { rooms = await api('/rooms'); } catch { rooms = []; }
   verify('loadRooms', rooms.length > 0, rooms.length + ' rooms loaded');
+  roomTypeLookup = {};
+  rooms.forEach(r => { roomTypeLookup[r.id] = { type: r.type, name: r.name }; });
+  const validIds = new Set(rooms.map(r => r.id));
+  for (const rid of Object.keys(unreadByRoom)) {
+    if (!validIds.has(rid)) delete unreadByRoom[rid];
+  }
+  updateTabBadges();
 }
 
 function renderRoomList() {
@@ -3564,13 +3571,13 @@ document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preven
 document.addEventListener('contextmenu', (e) => { if (!e.target.closest('.msg')) e.preventDefault(); });
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
-    if (_hiddenUnread > 0) {
-      dbg('[NOTIFY] tab visible, clearing', _hiddenUnread, 'hidden unread');
-      _hiddenUnread = 0;
-      _nw = null;
-      if (_nwTimer) { clearTimeout(_nwTimer); _nwTimer = null; }
-      _updateTitleBadge();
-    }
+    dbg('[NOTIFY] tab visible');
+    _hiddenUnread = 0;
+    _nw = null;
+    if (_nwTimer) { clearTimeout(_nwTimer); _nwTimer = null; }
+    _updateTitleBadge();
+    if (currentRoom) renderMessages();
+    scrollToBottom();
     _setupReadObserver();
   } else {
     _flushMarkRead();
