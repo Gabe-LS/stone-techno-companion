@@ -1127,8 +1127,8 @@ function handleWSEvent(data) {
       if (idx2 !== -1) msgs2.splice(idx2, 1);
       const removedEl = document.querySelector(`[data-msg-id="${data.id}"]`);
       removedEl?.remove();
-      verify('message_removed', !document.querySelector(`[data-msg-id="${data.id}"]`), 'message removed from DOM id=' + data.id);
-      showToast(data.reason || 'Message removed');
+      if (replyTo && replyTo.id === data.id) cancelReply();
+      if (data.user_id !== currentUser?.id) showToast(data.reason || 'Message removed');
       break;
     }
     case 'messages_expired':
@@ -1163,8 +1163,8 @@ function handleWSEvent(data) {
       } else {
         onlineByRoom[data.room_id] = onlineByRoom[data.room_id].filter(u => u.user_id !== data.user_id);
       }
-      _debouncedRoomRefresh();
-      if (data.room_id === currentRoom) renderMemberList();
+      updateSidebarCount(data.room_id);
+      if (data.room_id === currentRoom) { updateHeaderCount(); renderMemberItems(); }
       break;
     case 'rooms_changed':
       dbg('[ROOM] rooms_changed, reloading');
@@ -3761,8 +3761,7 @@ document.addEventListener('visibilitychange', () => {
     _nw = null;
     if (_nwTimer) { clearTimeout(_nwTimer); _nwTimer = null; }
     _updateTitleBadge();
-    if (currentRoom) renderMessages();
-    scrollToBottom();
+    if (_hiddenUnread > 0 && currentRoom) { renderMessages(); scrollToBottom(); }
     _setupReadObserver();
   } else {
     _flushMarkRead();
