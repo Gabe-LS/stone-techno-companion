@@ -3340,10 +3340,16 @@ async function saveProfile() {
     closeProfileModal();
     const headerAvEl = document.querySelector('.header-avatar');
     if (headerAvEl && currentUser.avatar_url) headerAvEl.innerHTML = `<img src="${esc(currentUser.avatar_url)}">`;
-    // Update own messages in DOM with new display name
+    // Update own messages and member list with new profile
     const msgs = messagesByRoom[currentRoom] || [];
-    msgs.forEach(m => { if (m.user_id === currentUser.id) m.display_name = currentUser.display_name; });
+    msgs.forEach(m => {
+      if (m.user_id === currentUser.id) {
+        m.display_name = currentUser.display_name;
+        m.avatar_url = currentUser.avatar_url;
+      }
+    });
     renderMessages();
+    renderMemberItems();
     showToast('Profile updated');
   } catch (e) { showToast(e.message); }
 }
