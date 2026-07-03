@@ -1233,6 +1233,8 @@ async def upload_video(request: Request, file: UploadFile = File(...)):
 
     upload_dir = Path(__file__).resolve().parent / "chat" / "uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
+    tmp_dir = upload_dir.parent / "tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
 
     import subprocess
     import tempfile
@@ -1242,7 +1244,7 @@ async def upload_video(request: Request, file: UploadFile = File(...)):
     out_path = upload_dir / filename
 
     t_start = time.monotonic()
-    tmp_fd, tmp_name = tempfile.mkstemp(suffix=".mp4")
+    tmp_fd, tmp_name = tempfile.mkstemp(suffix=".mp4", dir=str(tmp_dir))
     try:
         os.write(tmp_fd, data)
         os.close(tmp_fd)
@@ -1301,10 +1303,12 @@ async def upload_video(request: Request, file: UploadFile = File(...)):
         frame_path = upload_dir / f"{token}_mod{i}.webp"
         seek = duration * frac if duration > 0 else 0
         try:
+            raw_frame = tmp_dir / f"{token}_raw{i}.png"
             await asyncio.to_thread(
                 subprocess.run,
                 [
                     "ffmpeg",
+                    "-y",
                     "-v",
                     "quiet",
                     "-ss",
@@ -1315,20 +1319,37 @@ async def upload_video(request: Request, file: UploadFile = File(...)):
                     "scale='min(800,iw)':'min(800,ih)':force_original_aspect_ratio=decrease",
                     "-frames:v",
                     "1",
-                    "-q:v",
-                    "60",
-                    str(frame_path),
+                    str(raw_frame),
                 ],
                 timeout=10,
             )
-            if frame_path.exists():
+            if raw_frame.exists() and raw_frame.stat().st_size > 0:
+
+                def _convert(src, dst):
+                    import pyvips
+
+                    img = pyvips.Image.new_from_file(str(src))
+                    img.webpsave(str(dst), Q=60)
+                    src.unlink()
+
+                await asyncio.to_thread(_convert, raw_frame, frame_path)
                 mod_frames += 1
-        except Exception:
-            pass
+            else:
+                raw_frame.unlink(missing_ok=True)
+                logger.warning(
+                    "[UPLOAD] ffmpeg frame extraction failed for frame %d", i
+                )
+        except Exception as e:
+            logger.warning("[UPLOAD] frame %d failed: %s", i, e)
+            raw_frame.unlink(missing_ok=True)
+            frame_path.unlink(missing_ok=True)
     t_frames_end = time.monotonic()
 
     if mod_frames == 0:
         out_path.unlink(missing_ok=True)
+        for j in range(3):
+            (tmp_dir / f"{token}_raw{j}.png").unlink(missing_ok=True)
+            (upload_dir / f"{token}_mod{j}.webp").unlink(missing_ok=True)
         raise HTTPException(400, "Could not process video for moderation")
 
     logger.info(
@@ -1920,6 +1941,16 @@ def mount_chat(app):
     _load_disposable_domains()
     _load_admin_emails()
     _load_site_short()
+
+    tmp_dir = CHAT_DIR / "tmp"
+    if tmp_dir.is_dir():
+        stale = 0
+        for f in tmp_dir.iterdir():
+            if f.is_file():
+                f.unlink()
+                stale += 1
+        if stale:
+            logger.info("Cleaned %d stale temp files from %s", stale, tmp_dir)
 
     db = _get_db()
     seed_event_room(db, DEFAULT_EVENT_ID, "Stone Techno 2026")

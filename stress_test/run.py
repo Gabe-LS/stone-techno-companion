@@ -266,8 +266,8 @@ def setup_db(db_path: str, num_users: int, event_id: str, moderated: bool):
         db.execute(
             "INSERT INTO rooms "
             "(id, event_id, type, name, description, is_moderated, "
-            "is_read_only, auto_join, allows_media, ttl_minutes, position) "
-            "VALUES (?, ?, ?, ?, 'Stress test room', ?, 0, 0, ?, NULL, 999)",
+            "is_read_only, auto_join, allows_media, ttl_minutes, position, created_at) "
+            "VALUES (?, ?, ?, ?, 'Stress test room', ?, 0, 0, ?, NULL, 999, datetime('now'))",
             (rid, event_id, rtype, rname, is_mod, allows_media),
         )
         test_rooms.append(rid)
