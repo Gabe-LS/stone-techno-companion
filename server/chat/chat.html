@@ -1281,11 +1281,15 @@ function handleWSEvent(data) {
     case 'badge_update':
       dbg('[BADGE] update:', data.room_id, data.count);
       roomTypeLookup[data.room_id] = {type: data.type, name: data.name};
-      if (data.count === 0) delete unreadByRoom[data.room_id];
-      else unreadByRoom[data.room_id] = data.count;
+      if (data.count === 0) {
+        delete unreadByRoom[data.room_id];
+        _hiddenUnread = 0;
+      } else {
+        unreadByRoom[data.room_id] = data.count;
+        if (Notification.permission === 'granted' && document.hidden) _queueBrowserNotification(data);
+      }
       updateBadge(data.room_id);
       updateTabBadges();
-      if (Notification.permission === 'granted' && document.hidden) _queueBrowserNotification(data);
       break;
   }
 }
