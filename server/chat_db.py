@@ -566,11 +566,9 @@ def mark_room_read(
 ) -> None:
     ts = timestamp or _now()
     db.execute(
-        "INSERT INTO room_memberships (user_id, room_id, joined_at, last_read_at) "
-        "VALUES (?, ?, ?, ?) "
-        "ON CONFLICT(user_id, room_id) DO UPDATE SET last_read_at = "
-        "MAX(room_memberships.last_read_at, excluded.last_read_at)",
-        (user_id, room_id, ts, ts),
+        "UPDATE room_memberships SET last_read_at = MAX(last_read_at, ?) "
+        "WHERE user_id = ? AND room_id = ?",
+        (ts, user_id, room_id),
     )
     db.commit()
 

@@ -220,6 +220,7 @@ async def check_openai_moderation(
     text: str, image_url: str | list[str] | None = None
 ) -> dict | None:
     if not os.environ.get("OPENAI_API_KEY"):
+        logger.warning("[MOD] OPENAI_API_KEY not set, skipping moderation")
         return None
 
     try:
@@ -240,14 +241,30 @@ async def check_openai_moderation(
         data = r.json()
         results = data.get("results")
         if not results:
+            logger.warning("[MOD] OpenAI returned no results")
             return None
 
         scores = results[0].get("category_scores", {})
+        top_scores = sorted(
+            ((k, v) for k, v in scores.items() if v and v > 0.1),
+            key=lambda x: x[1],
+            reverse=True,
+        )[:5]
+        logger.info(
+            "[MOD] OpenAI scores: %s", ", ".join(f"{k}={v:.3f}" for k, v in top_scores)
+        )
+
         for category, threshold in OPENAI_THRESHOLDS.items():
             score = scores.get(category, 0) or scores.get(
                 category.replace("/", "_").replace("-", "_"), 0
             )
             if score and score >= threshold:
+                logger.info(
+                    "[MOD] FLAGGED: %s=%.3f (threshold %.2f)",
+                    category,
+                    score,
+                    threshold,
+                )
                 return {
                     "category": category,
                     "score": score,
@@ -441,10 +458,10 @@ async def moderate_message(
     ai_errored = isinstance(ai_result, Exception)
     drug_errored = isinstance(drug_result, Exception)
     if ai_errored:
-        logger.warning("OpenAI moderation error: %s", ai_result)
+        logger.error("[MOD] OpenAI moderation error: %s", ai_result)
         ai_result = None
     if drug_errored:
-        logger.warning("Content detection error: %s", drug_result)
+        logger.error("[MOD] Content detection error: %s", drug_result)
         drug_result = None
 
     if (ai_errored or drug_errored) and os.environ.get("OPENAI_API_KEY"):

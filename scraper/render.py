@@ -454,7 +454,7 @@ def render_output_html(
     .tt-cal svg { width: 16px; height: 16px; color: var(--color-muted-icon); transition: color var(--transition-fast); }
     .tt-cal.active svg { color: var(--color-schedule); }
     .tt-block.scheduled { box-shadow: inset 0 0 0 2px var(--color-schedule); }
-    .tt-ics { position: absolute; bottom: 4px; left: 8px; font-size: var(--font-xs); color: var(--color-muted); background: none; border: none; cursor: pointer; font: inherit; padding: 0; }
+    .tt-ics { position: absolute; bottom: 4px; left: 8px; color: var(--color-muted); background: none; border: none; cursor: pointer; font: inherit; font-size: var(--font-xs); padding: 0; }
     .filter-schedule .tt-block:not(.scheduled) { opacity: 0.15; }
     @media (hover: hover) { .tt-ics:hover { color: #555; } }
 
@@ -1450,9 +1450,11 @@ def render_output_html(
         )
         parts.append("  </div>")  # end #timetable-view
 
+    parts.append('  <script src="/shared.js"></script>')
     qr_js = (ICONS_DIR.parent / "qrcode.min.js").read_text(encoding="utf-8")
     parts.append(f"  <script>{qr_js}</script>")
     parts.append("  <script>")
+    parts.append("    setDbgTag('lineup');")
     parts.append(f"    var siteShort = {_json.dumps(site_short)};")
     if has_timetable:
         parts.append("""
@@ -2009,9 +2011,6 @@ def render_output_html(
     }
 
     // Bio overlay
-    function _escHtml(s) {
-      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-    }
     function _formatViews(n) {
       if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\\.0$/, '') + 'M';
       if (n >= 1000) return (n / 1000).toFixed(1).replace(/\\.0$/, '') + 'K';
@@ -2046,10 +2045,10 @@ def render_output_html(
       if (data.videos && data.videos.length) {
         let html = '<div class="bio-videos-title">Sets</div>';
         data.videos.forEach(function(v) {
-          html += '<a class="bio-video" href="' + _escHtml(v.url) + '" target="_blank" rel="noopener noreferrer">';
+          html += '<a class="bio-video" href="' + esc(v.url) + '" target="_blank" rel="noopener noreferrer">';
           html += '<img class="bio-video-thumb" src="thumbs/' + v.id + '.avif" alt="" loading="lazy">';
           html += '<div class="bio-video-info">';
-          html += '<div class="bio-video-title">' + _escHtml(v.title) + '</div>';
+          html += '<div class="bio-video-title">' + esc(v.title) + '</div>';
           var dateStr = '';
           if (v.date) { var ds = String(v.date); dateStr = ' \\u00b7 ' + ds.slice(0,4) + '-' + ds.slice(4,6) + '-' + ds.slice(6); }
           html += '<div class="bio-video-meta">' + _formatViews(v.views) + ' views \\u00b7 ' + v.duration + ' min' + dateStr + '</div>';
@@ -2089,14 +2088,7 @@ def render_output_html(
     const _needsSafariSwitch = _isIOS && !!navigator.brave;
     const _supportsPush = 'serviceWorker' in navigator && 'PushManager' in window;
 
-    function _urlBase64ToUint8Array(base64String) {
-      const padding = '='.repeat((4 - base64String.length % 4) % 4);
-      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-      const raw = atob(base64);
-      const out = new Uint8Array(raw.length);
-      for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
-      return out;
-    }
+
 
     function updateBellState() {
       const btn = document.getElementById('btn-bell');
@@ -2128,7 +2120,7 @@ def render_output_html(
         track('push-enable');
       } catch (e) {
         if (navigator.brave && e.name === 'AbortError') { openDialog('m-brave'); return; }
-        console.warn('Push subscribe failed', e);
+        dbg('Push subscribe failed', e);
       }
       updateBellState();
     }
@@ -2337,7 +2329,11 @@ def render_output_html(
       });
     }
     truncateNames();
-    new ResizeObserver(truncateNames).observe(document.body);
+    var _truncateRaf = 0;
+    new ResizeObserver(function() {
+      cancelAnimationFrame(_truncateRaf);
+      _truncateRaf = requestAnimationFrame(truncateNames);
+    }).observe(document.body);
 
     // Artist popup
     const popup = document.getElementById('tt-popup');
@@ -2373,8 +2369,6 @@ def render_output_html(
         _popupJustOpened = true;
         const d = block.dataset;
         const artists = TT_ARTISTS[d.artistId] || [];
-        const timetable = block.closest('.timetable');
-        const tr = timetable ? timetable.getBoundingClientRect() : {left:0, right:window.innerWidth, top:0, bottom:window.innerHeight};
         requestAnimationFrame(() => {
           document.getElementById('popup-meta').textContent = d.time + ' \\u00b7 ' + d.floor;
           let artistsHtml = '';
@@ -2552,18 +2546,18 @@ def render_output_html(
       if (!bar) return;
       var barH = bar.offsetHeight;
       var h1 = document.querySelector('h1');
-      if (h1) { h1.style.top = barH + 'px'; }
       var h1H = h1 ? h1.offsetHeight : 0;
+      var h2 = document.querySelector('.date-section > h2');
+      var h2H = h2 ? h2.offsetHeight : 0;
+      var h3 = document.querySelector('h3.period-heading');
+      var h3H = h3 ? h3.offsetHeight : 0;
+      if (h1) h1.style.top = barH + 'px';
       document.querySelectorAll('.date-section > h2').forEach(function(h2) {
         h2.style.top = (barH + h1H) + 'px';
       });
-      var h2 = document.querySelector('.date-section > h2');
-      var h2H = h2 ? h2.offsetHeight : 0;
       document.querySelectorAll('h3.period-heading').forEach(function(h3) {
         h3.style.top = (barH + h1H + h2H) + 'px';
       });
-      var h3 = document.querySelector('h3.period-heading');
-      var h3H = h3 ? h3.offsetHeight : 0;
       document.querySelectorAll('h4.location-heading').forEach(function(h4) {
         h4.style.top = (barH + h1H + h2H + h3H) + 'px';
       });

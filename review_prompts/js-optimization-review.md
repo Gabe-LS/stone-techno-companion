@@ -3,7 +3,7 @@
 ## Before you start
 
 1. **Read `CLAUDE.md`** at the project root — it contains the full architecture, file map, database schema, design system docs, and development commands. Read it entirely before proceeding.
-2. **Read `review_prompts/css-unification-review.md`** if it exists — the CSS refactor may be running in parallel or already completed. Do not conflict with it.
+2. **Check if the CSS refactor already ran** — read `review_reports/css-unification.md` if it exists. If it does, `server/static/shared.css` exists and class names were renamed: `.chat-hamburger` → `.hamburger`, `.chat-menu-overlay` → `.menu-overlay`, `.nav-chat-icon` → `.nav-icon`. JS selectors referencing these old class names may have already been updated — verify before changing them again.
 3. **Check if the server is running** — `lsof -ti :64728` — if it returns a PID, the server is already up. If not, start it:
    ```bash
    cd server && set -a && source .env && set +a && uvicorn api:app --port 64728 --ssl-keyfile localhost+1-key.pem --ssl-certfile localhost+1.pem
@@ -115,12 +115,23 @@ Document all naming conventions currently used, then standardize:
 | Boolean vars | `is`/`has`/`should` prefix | `isMobile`, `hasStarted`, `_pushSubscribed` |
 | CSS class toggling | verb-based | `addClass`, `toggleClass` |
 
-Check for inconsistencies:
-- Mixed naming styles (e.g., `filterActive` vs `_pushSubscribed` for similar concepts)
-- Ambiguous names (e.g., `data`, `result`, `item` without context)
-- Abbreviations that aren't obvious (e.g., `vl` for view-label, `tt` for timetable)
-- Single-letter variables outside short loops
-- Function names that don't describe what they do
+Check for and **fix** every inconsistency:
+- Mixed naming styles (e.g., `filterActive` vs `_pushSubscribed` for similar concepts) — pick one convention and rename all
+- Ambiguous names (e.g., `data`, `result`, `item` without context) — rename to describe what they hold
+- Abbreviations that aren't obvious (e.g., `vl` for view-label, `tt` for timetable) — expand to readable names
+- Single-letter variables outside short loops — rename
+- Function names that don't describe what they do — rename
+- Constants that should be UPPER_SNAKE but aren't — rename
+- Booleans without `is`/`has`/`should` prefix — rename
+- Private/internal variables without underscore prefix (or with inconsistent use) — standardize
+
+**This is not just documentation — actually rename everything that doesn't follow the convention.** Update all call sites, event handlers, and string references. Use find-and-replace carefully — some names appear in HTML templates built as strings.
+
+**CSS class name consistency:** JS references CSS classes via `querySelector`, `classList`, and `innerHTML` templates. Ensure:
+- CSS classes use kebab-case consistently (e.g., `.room-item`, `.header-info`, `.btn-red`)
+- JS string references to CSS classes match exactly — grep for every `classList.add`, `classList.remove`, `classList.toggle`, `classList.contains`, `querySelector('.')`, and class names in template literals
+- If the CSS refactor renamed classes (see `review_reports/css-unification.md`), verify all JS references were updated
+- Do NOT rename CSS classes in this review — that's the CSS refactor's job. But DO flag any JS references to class names that don't exist in the CSS
 
 ### Phase 1.5: Identify shared JS patterns
 
@@ -199,16 +210,37 @@ function checkMobile() { return window.innerWidth < 768; }
 
 ### Phase 4: Verify
 
-- **Re-test every interactive feature** documented in Phase 0. Compare behavior with the reference.
 - Run `python stone_techno_companion.py --render-only --no-photos` to rebuild lineup
 - Restart the server: `kill -9 $(lsof -ti :64728); cd server && set -a && source .env && set +a && uvicorn api:app --port 64728 --ssl-keyfile localhost+1-key.pem --ssl-certfile localhost+1.pem`
-- Test on mobile (375px) and desktop (1024px):
-  - Lineup: view switching, filtering, sticky headers, bio modal, timetable popup, hearts, schedule, share, sync, push notifications
-  - Chat: login (Google + email), room switching, messaging, reactions, replies, media upload, meetups, DMs, profile edit, push notifications, logout/re-login
-  - Both: navigation via header icons, page reload state preservation
-- Run `python -m pytest tests/ -v`
-- Check browser console for errors on both pages (zero errors, zero warnings from our code)
+- Run `python -m pytest tests/ -v` — all 132 tests must pass
 - Verify `shared.js` is served: `curl -sk https://localhost:64728/shared.js | head -5`
+- Verify `shared.js` has no syntax errors: `node --check server/static/shared.js`
+
+**Write a Playwright verification script** (`tests/test_frontend.py` or inline) that automates:
+
+1. **Console check** — load each page, collect all console errors/warnings, assert zero from our code (filter out third-party like Google SDK)
+2. **Lineup page**:
+   - Page loads without JS errors
+   - View switch (lineup → timetable → lineup) works
+   - Hamburger menu opens and closes
+   - Navigation icon links to `/chat`
+   - Sticky headers stack correctly on scroll
+3. **Chat page**:
+   - Page loads without JS errors
+   - Create a test user session via DB, set cookie
+   - WebSocket connects successfully
+   - Room loads with message history
+   - Send a message and verify it appears
+   - Navigation icon links to `/line-up`
+   - Hamburger menu opens and closes
+4. **Cross-page**:
+   - Navigate from lineup to chat via icon, verify chat loads
+   - Navigate from chat to lineup via icon, verify lineup loads
+   - URL updates correctly on each page
+
+Run this script after every phase. If any assertion fails, fix before proceeding.
+
+**Also check manually** — Playwright can't catch everything (touch gestures, scroll feel, visual glitches). Open both pages in a real browser and verify the interactions feel right.
 
 ### Serving shared.js
 
@@ -225,11 +257,11 @@ async def serve_shared_js():
 | File | What it contains |
 |------|-----------------|
 | `scraper/render.py` | All lineup/timetable JS (inline in generated HTML). Multiple `<script>` blocks. Main JS starts around line 1478. Timetable-specific JS around line 2206. |
-| `server/chat/chat.html` | All chat JS (inline `<script>` block, lines 370-3460). WebSocket handling, room management, message rendering, media processing, auth flow. |
+| `server/chat/chat.html` | All chat JS (inline `<script>` block — read the file to find the actual line range, it may have shifted). WebSocket handling, room management, message rendering, media processing, auth flow. |
 | `server/chat/admin.html` | Admin page JS (inline `<script>`, lines 130-560). API calls, tab management, table rendering. Lower priority. |
 | `server/static/sw.js` | Service worker — push events, notification clicks, subscription change handling. |
 | `output/lineup.html` | Generated output — read this to see the actual rendered JS. |
-| `CLAUDE.md` | Project documentation. Notes 126 `dbg()` calls in chat, `verify()` checks, debug patterns. |
+| `CLAUDE.md` | Project documentation. Notes 181 `dbg()` calls in chat, `verify()` checks, debug patterns. |
 
 ## Git workflow
 
@@ -328,3 +360,16 @@ The goal is not minification — it's eliminating duplication and keeping each f
 - The admin page JS is self-contained and should NOT be merged into shared.js (but can use it if convenient)
 - Keep `dbg()` calls — they are intentional debugging infrastructure, not leftovers
 - Do not refactor CSS — that is handled by the CSS unification review
+
+## Write a report
+
+When done, write a report to `review_reports/js-optimization.md`. Include:
+- What was moved to `shared.js` and why
+- What JS was replaced with CSS equivalents
+- Compatibility issues found and how they were resolved
+- Naming changes applied (before → after table)
+- Dead code and workarounds removed
+- Security issues found and fixed
+- Browser console state (errors/warnings before and after)
+- Test results
+- Future work remaining

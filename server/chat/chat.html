@@ -6,6 +6,7 @@
 <title>Stone Techno 2026 Companion</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="stylesheet" href="/shared.css">
+<script src="/shared.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>if ('scrollRestoration' in history) history.scrollRestoration = 'manual';</script>
 <style>
@@ -69,12 +70,12 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .messages { padding: var(--space-lg) var(--space-md) var(--space-sm); display: flex; flex-direction: column; gap: 2px; min-height: 100%; justify-content: flex-end; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .msg { display: flex; gap: var(--space-sm); padding: var(--space-md) 0; align-items: flex-end; }
 .msg.msg-mine { justify-content: flex-end; }
-.msg-bubble { position: relative; padding: var(--space-md) var(--space-md) var(--space-xl); max-width: min(70%, 480px); min-width: 80px; display: inline-block; word-break: break-word; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.msg-bubble { position: relative; padding: var(--space-md) var(--space-md) var(--space-2xl); max-width: min(70%, 480px); min-width: 80px; display: inline-block; word-break: break-word; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .msg-mine-bubble { background: var(--user-7-bg); color: var(--color-text); border-radius: var(--radius-lg) var(--radius-lg) var(--radius-sm) var(--radius-lg); }
 .msg-other-bubble { background: var(--color-surface); color: var(--color-text); border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) var(--radius-sm); }
 .msg-header { display: flex; gap: var(--space-sm); align-items: baseline; margin-bottom: 2px; }
 .msg-name { font-weight: 600; font-size: var(--font-xs); cursor: default; }
-.msg-time { position: absolute; bottom: var(--space-sm); right: var(--space-md); font-size: var(--font-xs); color: var(--color-muted); }
+.msg-time { position: absolute; bottom: var(--space-md); right: var(--space-md); font-size: var(--font-xs); color: var(--color-muted); }
 .msg-text { font-size: var(--font-base); line-height: 1.5; }
 .msg-image { max-width: 260px; max-height: 260px; border-radius: var(--radius-md); margin-top: var(--space-xs); display: block; -webkit-touch-callout: none; }
 .msg-video-wrap { position: relative; display: inline-block; margin-top: var(--space-xs); }
@@ -335,7 +336,6 @@ let replyTo = null;
 let _pendingDmTarget = null;
 let _pendingDmName = '';
 let isMobile = window.innerWidth < 768;
-let _toastTimer = null;
 let _googleClientId = null;
 let _googleInitialized = false;
 let _siteShort = null;
@@ -343,19 +343,7 @@ let _siteShort = null;
 const REACTION_EMOJIS = {'👍':'thumbs_up','❤️':'heart','😂':'laugh','🔥':'fire','😮':'wow','👏':'clap'};
 const REACTION_KEYS = Object.entries(REACTION_EMOJIS);
 
-// --- Debug ---
-const DEBUG = true;
-const _t0 = performance.now();
-function _ts() { return '+' + ((performance.now() - _t0) | 0) + 'ms'; }
-function dbg(...args) { if (DEBUG) console.log(_ts(), '[chat]', ...args); }
-function verify(label, condition, detail) {
-  if (condition) {
-    console.log(_ts(), `[chat] OK: ${label}`, detail || '');
-  } else {
-    console.error(_ts(), `[chat] FAIL: ${label}`, detail || '');
-  }
-  return condition;
-}
+setDbgTag('chat');
 
 // --- Avatar ---
 const USER_COLORS = [
@@ -386,24 +374,6 @@ function avatarHtml(name, colorIndex, small, avatarUrl) {
   return `<div class="${cls}" style="background:${color.vivid}">${initials}</div>`;
 }
 
-// --- Toast ---
-function showToast(msg, duration) {
-  dbg('[TOAST] showToast', msg);
-  if (!duration) {
-    const words = msg.trim().split(/\s+/).length;
-    duration = Math.max(4000, 1500 + words * 300);
-  }
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  if (_toastTimer) clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => t.classList.remove('show'), duration);
-}
-
-// --- Time format ---
-function fmtTime(iso) {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
 
 // --- API helpers ---
 async function api(path, opts) {
@@ -585,7 +555,7 @@ function renderProfilePrompt() {
     <div class="profile-prompt">
       <h2>Set up your profile</h2>
       <div class="avatar-upload" id="avatar-upload" onclick="uploadAvatar()">
-        ${currentUser?.avatar_url ? '<img src="' + currentUser.avatar_url + '">' : '<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="6" r="4" stroke="currentColor" stroke-width="1.5"/><path d="M20 17.5C20 19.9853 20 22 12 22C4 22 4 19.9853 4 17.5C4 15.0147 7.58172 13 12 13C16.4183 13 20 15.0147 20 17.5Z" stroke="currentColor" stroke-width="1.5"/></svg>'}
+        ${currentUser?.avatar_url ? '<img src="' + esc(currentUser.avatar_url) + '">' : '<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="6" r="4" stroke="currentColor" stroke-width="1.5"/><path d="M20 17.5C20 19.9853 20 22 12 22C4 22 4 19.9853 4 17.5C4 15.0147 7.58172 13 12 13C16.4183 13 20 15.0147 20 17.5Z" stroke="currentColor" stroke-width="1.5"/></svg>'}
       </div>
       <div class="avatar-zoom" id="avatar-zoom"><span>-</span><div class="avatar-zoom-track" id="avatar-zoom-track"><div class="avatar-zoom-thumb hidden" id="avatar-zoom-thumb"></div></div><span>+</span></div>
       <div class="profile-field">
@@ -981,7 +951,7 @@ function connectWS() {
     const sock = new WebSocket(`${proto}://${location.host}/ws/chat/${token.split('=')[1]}`);
     const done = () => { _wsConnecting = false; resolve(); };
     sock.onopen = () => { ws = sock; done(); };
-    sock.onmessage = (e) => { try { handleWSEvent(JSON.parse(e.data)); } catch {} };
+    sock.onmessage = (e) => { try { handleWSEvent(JSON.parse(e.data)); } catch (err) { dbg('[WS] event handler error:', err); } };
     sock.onclose = () => { ws = null; _wsConnecting = false; if (currentUser) setTimeout(() => connectWS(), 3000); };
     sock.onerror = () => { done(); };
     setTimeout(done, 3000);
@@ -1059,6 +1029,12 @@ function handleWSEvent(data) {
         const el = document.querySelector(`[data-msg-id="${data.temp_id}"]`);
         if (el) { el.setAttribute('data-msg-id', data.id); el.classList.remove('msg-pending'); }
         verify('message_acked', el, 'pending→confirmed temp_id=' + data.temp_id + ' → id=' + data.id);
+        const room = rooms.find(r => r.id === currentRoom);
+        if (room && !room.is_member) {
+          room.is_member = true;
+          const bell = document.querySelector(`.room-item[data-room-id="${currentRoom}"] .room-bell`);
+          if (bell) { bell.classList.add('active'); bell.querySelector('svg')?.setAttribute('fill', 'currentColor'); }
+        }
       } else {
         dbg('[WS] message_acked ignored (sent from another device)');
       }
@@ -1466,7 +1442,7 @@ function renderChatView(roomName) {
 
   const avatarSrc = currentUser?.avatar_url || '';
   const headerAvatar = avatarSrc
-    ? `<div class="header-avatar" onclick="showSettingsMenu()"><img src="${avatarSrc}"></div>`
+    ? `<div class="header-avatar" onclick="showSettingsMenu()"><img src="${esc(avatarSrc)}"></div>`
     : `<div class="header-avatar" onclick="showSettingsMenu()" style="background:var(--gray-500);display:flex;align-items:center;justify-content:center;color:#fff;font-size:var(--font-xs);font-weight:700">${(currentUser?.display_name || currentUser?.username || '?')[0].toUpperCase()}</div>`;
 
   if (isMobile) {
@@ -2055,23 +2031,6 @@ async function _populateMenuSections() {
       await _loadMenuSection(section, items);
     }
   }
-}
-
-function leaveRoom() {
-  dbg('leaveRoom:', currentRoom);
-  if (currentRoom) wsSend('leave_room', { room_id: currentRoom });
-  currentRoom = null;
-  currentRoomName = null;
-  currentRoomType = null;
-  history.replaceState(null, '', '/chat');
-  renderRoomList();
-  verify('leaveRoom', !currentRoom, 'currentRoom cleared');
-}
-
-function goBack() {
-  dbg('[NAV] goBack');
-  if (currentRoom) leaveRoom();
-  else history.back();
 }
 
 // --- Action menu ---
@@ -2699,7 +2658,7 @@ function openProfileModal() {
     </div>
     <div class="modal-body" style="align-items:center;gap:var(--space-md)">
       <div class="avatar-upload" id="edit-avatar-upload" onclick="editProfileAvatar()" style="width:80px;height:80px">
-        ${u.avatar_url ? '<img src="' + u.avatar_url + '">' : '<svg viewBox="0 0 24 24" fill="none" style="width:24px;height:24px;color:var(--color-disabled)"><circle cx="12" cy="6" r="4" stroke="currentColor" stroke-width="1.5"/><path d="M20 17.5C20 19.9853 20 22 12 22C4 22 4 19.9853 4 17.5C4 15.0147 7.58172 13 12 13C16.4183 13 20 15.0147 20 17.5Z" stroke="currentColor" stroke-width="1.5"/></svg>'}
+        ${u.avatar_url ? '<img src="' + esc(u.avatar_url) + '">' : '<svg viewBox="0 0 24 24" fill="none" style="width:24px;height:24px;color:var(--color-disabled)"><circle cx="12" cy="6" r="4" stroke="currentColor" stroke-width="1.5"/><path d="M20 17.5C20 19.9853 20 22 12 22C4 22 4 19.9853 4 17.5C4 15.0147 7.58172 13 12 13C16.4183 13 20 15.0147 20 17.5Z" stroke="currentColor" stroke-width="1.5"/></svg>'}
       </div>
       <div class="avatar-zoom" id="edit-avatar-zoom"><span>-</span><div class="avatar-zoom-track" id="edit-avatar-zoom-track"><div class="avatar-zoom-thumb hidden" id="edit-avatar-zoom-thumb"></div></div><span>+</span></div>
       <div class="profile-field" style="width:100%">
@@ -2774,7 +2733,7 @@ function updateEditPreview() {
   const color = USER_COLORS[u.color_index || 0];
   const avatarSrc = _editAvatarUrl || u.avatar_url || '';
   const avatarEl = avatarSrc
-    ? `<div class="avatar-sm"><img src="${avatarSrc}" style="width:100%;height:100%;border-radius:50%;object-fit:cover"></div>`
+    ? `<div class="avatar-sm"><img src="${esc(avatarSrc)}" style="width:100%;height:100%;border-radius:50%;object-fit:cover"></div>`
     : `<div class="avatar-sm" style="background:${color.vivid}">${(shown[0] || '?').toUpperCase()}</div>`;
   el.innerHTML = `<div style="display:flex;gap:var(--space-sm);align-items:flex-end">
     ${avatarEl}
@@ -3024,21 +2983,13 @@ async function saveProfile() {
     _editAvatarUrl = '';
     closeProfileModal();
     const headerAvEl = document.querySelector('.header-avatar');
-    if (headerAvEl && currentUser.avatar_url) headerAvEl.innerHTML = `<img src="${currentUser.avatar_url}">`;
+    if (headerAvEl && currentUser.avatar_url) headerAvEl.innerHTML = `<img src="${esc(currentUser.avatar_url)}">`;
     showToast('Profile updated');
   } catch (e) { showToast(e.message); }
 }
 
 let _pushSubscribed = false;
 
-function _urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const raw = atob(base64);
-  const arr = new Uint8Array(raw.length);
-  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
-  return arr;
-}
 
 let _nw = null;
 let _nwTimer = null;
@@ -3305,14 +3256,10 @@ function openVideoViewer(url, startTime) {
 }
 
 // --- Helpers ---
-function escapeHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
-const esc = escapeHtml;
 function jss(s) { return esc(String(s).replace(/[`'\\]/g, '\\$&')); }
 function _linkify(text) {
   return escapeHtml(text).replace(/(https?:\/\/[^\s<>"')\]]+)/g, '<a href="$1" target="_blank" rel="noopener" onclick="event.stopPropagation()">$1</a>');
 }
-function navigateTo(hash) { location.hash = hash; }
-
 // --- Router ---
 let _routing = false;
 async function route() {
@@ -3390,7 +3337,6 @@ async function route() {
   }
 }
 
-window.addEventListener('hashchange', route);
 window.addEventListener('resize', () => {
   const wasMobile = isMobile;
   isMobile = window.innerWidth < 768;

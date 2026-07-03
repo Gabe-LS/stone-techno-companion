@@ -612,10 +612,12 @@ async def _moderate_and_broadcast(
     ws,
     is_moderated=True,
 ):
+    logger.info("[MOD] text=%r is_moderated=%s", text[:50], is_moderated)
     db = get_chat_db()
     try:
         if is_moderated:
             mod_result = await moderate_message(db, user_id, text, image_url)
+            logger.info("[MOD] result: %s", mod_result)
         else:
             mod_result = {"allowed": True}
 
