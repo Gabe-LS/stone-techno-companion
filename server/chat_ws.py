@@ -1008,6 +1008,17 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     mark_room_read(db, user_id, room_id, timestamp)
                     if user_id in manager.user_unread:
                         manager.user_unread[user_id].pop(room_id, None)
+                    room_meta = manager._room_meta.get(room_id, {})
+                    await manager.send_to_user(
+                        user_id,
+                        {
+                            "event": "badge_update",
+                            "room_id": room_id,
+                            "count": 0,
+                            "type": room_meta.get("type", "general"),
+                            "name": room_meta.get("name", ""),
+                        },
+                    )
 
             elif event == "send_message":
                 room_id = data.get("room_id")
