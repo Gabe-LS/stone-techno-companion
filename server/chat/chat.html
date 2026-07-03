@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <style>body{opacity:0}</style>
+<script>if(window.navigator.standalone||window.matchMedia('(display-mode:standalone)').matches)document.documentElement.classList.add('pwa-standalone')</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Stone Techno 2026 Companion</title>
@@ -122,6 +123,8 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 
 /* --- Input bar --- */
 .input-bar { display: flex; align-items: flex-end; gap: var(--space-xs); padding: var(--space-sm) var(--space-md); border-top: 1px solid var(--color-border); background: var(--color-bg); flex-shrink: 0; position: relative; }
+.pwa-standalone .input-bar { padding-bottom: 20px; }
+.pwa-standalone.kb-open .input-bar { padding-bottom: var(--space-sm); }
 .input-bar button { background: none; border: none; padding: 0; cursor: pointer; color: var(--color-text-secondary); width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-bottom: 4px; }
 .input-bar button svg { width: 24px; height: 24px; }
 .input-wrap { flex: 1; position: relative; display: flex; align-items: flex-end; }
