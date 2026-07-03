@@ -178,7 +178,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 /* --- Action sheet (mobile bottom drawer / desktop centered modal) --- */
 .action-sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: var(--z-popup); display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .action-sheet-overlay.open { opacity: 1; }
-.action-sheet { background: var(--color-bg); width: 90%; max-width: 360px; border-radius: var(--radius-lg); padding: var(--space-sm) 0; transform: scale(0.95); opacity: 0; transition: transform 0.2s, opacity 0.2s; -webkit-user-select: none; user-select: none; }
+.action-sheet { background: var(--color-bg); width: 90%; max-width: 360px; border-radius: var(--radius-lg); padding: var(--space-sm) 0; transform: scale(0.95); opacity: 0; transition: transform 0.2s, opacity 0.2s; -webkit-user-select: none; user-select: none; overflow: hidden; }
 .action-sheet-overlay.open .action-sheet { transform: scale(1); opacity: 1; }
 .action-sheet-title { text-align: center; font-weight: 600; font-size: var(--font-sm); color: var(--color-muted); padding: var(--space-md) var(--space-lg); border-bottom: 1px solid var(--color-border); }
 .action-sheet-btn { display: block; width: 100%; padding: var(--space-md) var(--space-lg); border: none; background: none; font-size: var(--font-base); cursor: pointer; text-align: center; font-family: inherit; color: var(--color-text); }
