@@ -277,7 +277,7 @@ const render = {
         <td>${esc(r.reporter_name)}</td>
         <td><b>${esc(r.reported_name)}</b></td>
         <td>${esc(r.reason)}</td>
-        <td><div class="snapshot">${esc(r.message_snapshot)}</div></td>
+        <td><div class="snapshot">${esc((() => { try { const p = JSON.parse(r.message_snapshot); return p.text || r.message_snapshot; } catch { return r.message_snapshot; } })())}</div></td>
         <td class="col-narrow" style="color:var(--text-muted)">${ago(r.created_at)}</td>
         <td class="col-actions"><div class="btn-group">
           <button class="btn btn-red" onclick="reportAction('${esc(r.id)}','${esc(r.reported_user_id)}','${esc(r.reported_name)}','ban')">Ban</button>

@@ -305,6 +305,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
   .member-item:hover { background: var(--color-surface); }
   .member-item-self { background: var(--color-surface); }
   .member-item-self:hover { background: var(--color-surface-hover); }
+  .member-blocked { opacity: 0.4; }
   .member-item .avatar-sm { position: relative; }
   .member-name { font-size: var(--font-sm); color: var(--color-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
   .member-flag { font-size: var(--font-sm); flex-shrink: 0; margin-left: auto; }
@@ -1395,16 +1396,19 @@ function renderMemberItems() {
   const sorted = [...users].sort((a, b) => {
     if (a.user_id === currentUser?.id) return -1;
     if (b.user_id === currentUser?.id) return 1;
+    const aBlocked = blockedUserIds.has(a.user_id) ? 1 : 0;
+    const bBlocked = blockedUserIds.has(b.user_id) ? 1 : 0;
+    if (aBlocked !== bBlocked) return aBlocked - bBlocked;
     return (a.display_name || a.username || '').localeCompare(b.display_name || b.username || '');
   });
   container.innerHTML = sorted.map(u => {
     const name = u.display_name || u.username || 'Anonymous';
     const isSelf = u.user_id === currentUser?.id;
-    const isOffline = memberTab === 'offline';
+    const blocked = blockedUserIds.has(u.user_id);
     const av = avatarHtml(name, u.color_index || 0, true, u.avatar_url || '');
     const flag = countryFlag(u.country);
     const onclick = isSelf ? 'showSettingsMenu()' : `showUserMenu('${u.user_id}','${jss(name)}')`;
-    return `<div class="member-item${isSelf ? ' member-item-self' : ''}" data-user-id="${u.user_id}" onclick="${onclick}">
+    return `<div class="member-item${isSelf ? ' member-item-self' : ''}${blocked ? ' member-blocked' : ''}" data-user-id="${u.user_id}" onclick="${onclick}">
       ${av}
       <span class="member-name">${esc(name)}${isSelf ? ' (you)' : ''}</span>
       ${flag ? `<span class="member-flag">${flag}</span>` : ''}
@@ -1542,6 +1546,8 @@ async function openRoom(roomId, roomName, roomType) {
   currentRoom = roomId;
   currentRoomName = roomName;
   currentRoomType = roomType || 'stage';
+  delete unreadByRoom[roomId];
+  updateTabBadges();
   if (!isMobile && !document.querySelector('.main-panel')) {
     dbg('openRoom: creating desktop layout first');
     renderRoomList();
