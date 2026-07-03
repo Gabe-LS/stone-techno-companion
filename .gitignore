@@ -17,6 +17,9 @@ lineup.db
 # Server runtime data (databases, VAPID keys)
 server/data/
 
+# Deploy backups (downloaded from VPS)
+backups/
+
 # Generated output
 output/
 

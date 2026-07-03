@@ -129,13 +129,15 @@ Key design decisions:
 
 ### Deploy
 
-Manual SSH deploy (no GitHub Actions):
 ```bash
-ssh root@209.38.244.136 'cd /root/services/stone-techno && rm -rf server/data.bak && cp -r server/data server/data.bak && git pull origin main && cd server && docker compose up -d --build --force-recreate'
+# Server code deploy (backup + pull + rebuild + health check)
+./deploy.sh
+
+# Content deploy (lineup HTML + photos — no server restart needed)
+python stone_techno_companion.py --render-only --deploy
 ```
 
-- **Content** (HTML + photos + thumbs + timetable.json + bios.json + sw.js + manifest.json): `--deploy` flag rsyncs to VPS static dir. No container restart — files are volume-mounted.
-- **Server code**: merge to `main`, then run the deploy command above. Backs up `server/data/` (databases + VAPID keys) before pulling.
+`deploy.sh` does: download VPS data to `backups/{timestamp}/` locally, create timestamped backup on VPS, `git pull`, `docker compose up --build --force-recreate`, health check (container + chat API), prune old VPS backups (keeps 5). Local backups survive VPS disk failure.
 
 ## Generated Artifacts (gitignored)
 
