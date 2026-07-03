@@ -877,7 +877,7 @@ async function updateAvatarPreview() {
     if (_previewAvatarUrl) URL.revokeObjectURL(_previewAvatarUrl);
     _previewAvatarUrl = URL.createObjectURL(blob);
     updateProfilePreview();
-  } catch {}
+  } catch (e) { dbg('[AVATAR] preview render failed', e.message); }
 }
 
 async function submitAvatarCrop() {
@@ -945,7 +945,7 @@ function connectWS() {
   return new Promise((resolve) => {
     if (_wsConnecting) { resolve(); return; }
     _wsConnecting = true;
-    if (ws) { try { ws.onclose = null; ws.close(); } catch {} }
+    if (ws) { try { ws.onclose = null; ws.close(); } catch (e) { /* already closed */ } }
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const token = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('chat_session='));
     if (!token) { _wsConnecting = false; resolve(); return; }
@@ -2948,7 +2948,7 @@ async function updateEditAvatarPreview() {
     if (_editAvatarUrl) URL.revokeObjectURL(_editAvatarUrl);
     _editAvatarUrl = URL.createObjectURL(blob);
     updateEditPreview();
-  } catch {}
+  } catch (e) { dbg('[AVATAR] edit preview render failed', e.message); }
 }
 
 async function saveProfile() {
@@ -3191,8 +3191,8 @@ async function doLogout() {
   dbg('[AUTH] doLogout');
   try {
     await api('/logout', { method: 'POST' });
-  } catch {}
-  if (ws) { try { ws.close(); } catch {} ws = null; }
+  } catch (e) { dbg('[AUTH] logout request failed', e.message); }
+  if (ws) { try { ws.close(); } catch (e) { /* already closed */ } ws = null; }
   currentUser = null;
   currentRoom = null;
   currentRoomName = null;
@@ -3376,7 +3376,7 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 route();
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(function() { /* sw not available */ });
 if (window.visualViewport) {
   const vv = window.visualViewport;
   let _kbOpen = false;

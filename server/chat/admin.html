@@ -232,7 +232,7 @@ function renderStatsHTML(s) {
 }
 async function refreshStats() {
   dbg('[STATS] refresh');
-  try { const s = await api('/stats'); document.getElementById('stats-bar').innerHTML = renderStatsHTML(s); } catch {}
+  try { const s = await api('/stats'); document.getElementById('stats-bar').innerHTML = renderStatsHTML(s); } catch (e) { dbg('[STATS] refresh failed', e.message); }
 }
 
 function switchTab(tab) {

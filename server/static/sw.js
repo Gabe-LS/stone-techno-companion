@@ -5,7 +5,7 @@ function ackPush(action) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ endpoint: sub.endpoint, action: action }),
-    }).catch(function () {});
+    }).catch(function () { /* best-effort ack */ });
   });
 }
 
@@ -74,6 +74,6 @@ self.addEventListener('pushsubscriptionchange', function (event) {
           },
         }),
       });
-    }).catch(function () {})
+    }).catch(function () { /* re-subscribe best-effort */ })
   );
 });

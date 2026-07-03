@@ -269,7 +269,7 @@ def render_output_html(
     @media (hover: hover) { .cmd-bar button:not(.hamburger):hover { color: #fff; } }
 
     /* --- Sticky headings --- */
-    h1 { margin-bottom: var(--space-2xl); font-size: var(--font-2xl); position: sticky; top: 28px; background: var(--color-bg); z-index: 30; padding: var(--space-md) 0 var(--space-sm); border-bottom: 2px solid #222; }
+    h1 { margin-bottom: var(--space-xl); font-size: var(--font-2xl); position: sticky; top: 28px; background: var(--color-bg); z-index: 30; padding: var(--space-md) 0 var(--space-sm); border-bottom: 2px solid #222; }
     section.date-section { margin-bottom: 48px; }
     .date-section > h2 { position: sticky; top: 96px; background: var(--color-bg); z-index: 20; padding: 10px 0 var(--space-sm); margin-bottom: var(--space-sm); font-size: var(--font-xl); border-bottom: 1px solid var(--color-line-hour); }
     h3.period-heading { position: sticky; top: 150px; background: var(--color-bg); z-index: var(--z-sticky); padding: var(--space-sm) 0 6px; margin: var(--space-xl) 0 var(--space-md); font-size: var(--font-lg); color: #333; text-transform: uppercase; letter-spacing: 0.05em; }
@@ -1650,7 +1650,7 @@ def render_output_html(
           for (const id of localSchedule) {
             fetch(API + '/session/' + sessionId + '/schedule/' + id, {method: 'POST'}).catch(() => {});
           }
-        } catch {}
+        } catch (e) { dbg('ensureSession failed', e.message); }
         finally { _sessionPromise = null; }
       })();
       return _sessionPromise;
@@ -1692,7 +1692,7 @@ def render_output_html(
           el.classList.toggle('hearted', !adding);
           saveLocal();
         }
-      } catch {}
+      } catch (e) { dbg('toggleHeart sync failed', e.message); }
     }
 
     async function toggleSchedule(btn) {
@@ -1729,7 +1729,7 @@ def render_output_html(
           el.classList.toggle('scheduled', !adding);
           saveLocal();
         }
-      } catch {}
+      } catch (e) { dbg('toggleSchedule sync failed', e.message); }
     }
 
     async function loadFromServer(code) {
@@ -1758,7 +1758,7 @@ def render_output_html(
         } else {
           document.querySelectorAll('.heart-btn').forEach(b => { b.style.display = ''; b.style.pointerEvents = ''; });
         }
-      } catch {}
+      } catch (e) { dbg('loadFromServer failed', e.message); }
     }
 
     async function reconcile() {
@@ -1788,14 +1788,14 @@ def render_output_html(
         for (const id of serverSchedule) localSchedule.add(id);
         saveLocal();
         applyHearts();
-      } catch {}
+      } catch (e) { dbg('reconcile failed', e.message); }
     }
 
     // WebSocket real-time sync
     let _ws = null;
     let _wsDelay = 2000;
     function connectWS(code) {
-      if (_ws) { try { _ws.close(); } catch {} }
+      if (_ws) { try { _ws.close(); } catch (e) { /* already closed */ } }
       if (!code) return;
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
       _ws = new WebSocket(proto + '//' + location.host + '/ws/' + code);
@@ -1826,7 +1826,7 @@ def render_output_html(
               }
             }
           }
-        } catch {}
+        } catch (e) { dbg('ws message handler error', e); }
       };
       _ws.onclose = (ev) => { if (ev.code === 1008) return; setTimeout(() => { const cur = sessionId || shareToken; if (cur === code) connectWS(code); }, _wsDelay + Math.random() * 1000); _wsDelay = Math.min(_wsDelay * 2, 60000); };
     }
@@ -1961,7 +1961,7 @@ def render_output_html(
         }
         tick();
         _syncTimer = setInterval(tick, 1000);
-      } catch {}
+      } catch (e) { dbg('generateSyncPin failed', e.message); }
     }
     async function openSyncModal() {
       await ensureSession();
@@ -2028,7 +2028,7 @@ def render_output_html(
         }
         applyHearts();
         if (sessionId) connectWS(sessionId);
-      } catch {}
+      } catch (e) { dbg('exchangeSyncPin failed', e.message); }
     }
 
     // Bio overlay
@@ -2157,7 +2157,7 @@ def render_output_html(
             await fetch(API + '/session/' + sessionId + '/push/subscribe', { method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({endpoint}) });
           }
         }
-      } catch {}
+      } catch (e) { dbg('disableNotifications failed', e.message); }
       localStorage.removeItem('stc_push');
       track('push-disable');
       updateBellState();
@@ -2518,7 +2518,7 @@ def render_output_html(
             saveLocal();
             connectWS(sessionId);
           }
-        } catch {}
+        } catch (e) { dbg('fetch /api/me failed', e.message); }
       }
       applyHearts();
       var viewParam = p.get('view');
@@ -2533,7 +2533,7 @@ def render_output_html(
             await pushCache.delete('/_push_navigate');
             if (navUrl.includes('timetable')) currentView = 'timetable';
           }
-        } catch {}
+        } catch (e) { /* cache API unavailable */ }
       }
       if (currentView === 'timetable' && document.getElementById('btn-timetable')) {
         switchView('timetable', document.getElementById('btn-timetable'));
@@ -2551,7 +2551,7 @@ def render_output_html(
             localStorage.removeItem('stc_push');
             updateBellState();
           }
-        } catch {}
+        } catch (e) { dbg('push re-sync failed', e.message); }
       }""")
     if has_timetable:
         parts.append("      updateNowLine();")
