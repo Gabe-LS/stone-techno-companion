@@ -543,7 +543,7 @@ class ConnectionManager:
         ]
 
     def check_rate_limit(
-        self, user_id: str, max_msgs: int = 5, window_secs: int = 10
+        self, user_id: str, max_msgs: int = 10, window_secs: int = 10
     ) -> bool:
         now = time.monotonic()
         bucket = self._rate_buckets.setdefault(user_id, [])
