@@ -3267,6 +3267,10 @@ async function saveProfile() {
     closeProfileModal();
     const headerAvEl = document.querySelector('.header-avatar');
     if (headerAvEl && currentUser.avatar_url) headerAvEl.innerHTML = `<img src="${esc(currentUser.avatar_url)}">`;
+    // Update own messages in DOM with new display name
+    const msgs = messagesByRoom[currentRoom] || [];
+    msgs.forEach(m => { if (m.user_id === currentUser.id) m.display_name = currentUser.display_name; });
+    renderMessages();
     showToast('Profile updated');
   } catch (e) { showToast(e.message); }
 }
