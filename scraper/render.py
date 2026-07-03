@@ -229,6 +229,7 @@ def render_output_html(
     parts.append(
         f'  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,{favicon_b64}">'
     )
+    parts.append('  <link rel="stylesheet" href="/shared.css">')
     parts.append('  <link rel="manifest" href="/manifest.json">')
     parts.append('  <meta name="mobile-web-app-capable" content="yes">')
     parts.append('  <meta name="apple-mobile-web-app-capable" content="yes">')
@@ -240,13 +241,6 @@ def render_output_html(
     parts.append("  <style>")
     parts.append("""
     :root {
-      --color-text: #111;
-      --color-bg: #fff;
-      --color-surface: #f5f5f5;
-      --color-surface-hover: #eee;
-      --color-muted: #717171;
-      --color-muted-icon: #888;
-      --color-border: #e0e0e0;
       --color-accent: #e53e3e;
       --color-schedule: #4a90d9;
       --color-line-hour: #ccc;
@@ -257,21 +251,18 @@ def render_output_html(
       --font-base: 1em;
       --font-sm: 0.875em;
       --font-xs: 0.75em;
-      --shadow-modal: 0 8px 24px rgba(0,0,0,.12);
-      --radius-card: 8px;
+      --radius-card: var(--radius-md);
       --radius-modal: 14px;
-      --transition-fast: 0.15s;
       --fade-gradient: linear-gradient(to bottom, rgba(255,255,255,1) 0%, rgba(255,255,255,0.9) 20%, rgba(255,255,255,0.75) 35%, rgba(255,255,255,0.5) 55%, rgba(255,255,255,0.15) 78%, rgba(255,255,255,0) 100%);
     }
 
-    /* --- Reset & base --- */
-    *, *::before, *::after { box-sizing: border-box; }
-    html { overscroll-behavior: none; scrollbar-width: none; }
+    /* --- Base overrides --- */
+    html { scrollbar-width: none; }
     ::-webkit-scrollbar { display: none; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; line-height: 1.5; max-width: 960px; margin: 0 auto; padding: 0 24px; color: var(--color-text); background: var(--color-bg); }
+    body { max-width: 960px; margin: 0 auto; padding: 0 24px; }
 
     /* --- Command bar --- */
-    .cmd-bar { position: sticky; top: 0; z-index: 40; background: #111; color: #fff; display: flex; align-items: stretch; justify-content: space-between; height: 28px; font-size: var(--font-xs); padding: 0 16px; }
+    .cmd-bar { position: sticky; top: 0; z-index: var(--z-header); background: #111; color: #fff; display: flex; align-items: stretch; justify-content: space-between; height: 28px; font-size: var(--font-xs); padding: 0 var(--space-lg); }
     .cmd-group { display: flex; align-items: stretch; }
     .cmd-bar button { background: none; color: #aaa; border: none; cursor: pointer; padding: 0 16px; font-size: var(--font-base); white-space: nowrap; text-align: center; transition: color var(--transition-fast); letter-spacing: 0.03em; }
     .cmd-bar button:focus:not(:focus-visible) { outline: none; }
@@ -343,7 +334,7 @@ def render_output_html(
     @media (hover: hover) { .bio-video:hover { background: var(--color-surface); } }
 
     /* --- Modals --- */
-    .modal-overlay { display: none; position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,.4); padding: 24px; }
+    .modal-overlay { display: none; position: fixed; inset: 0; z-index: var(--z-modal); background: rgba(0,0,0,.4); padding: 24px; }
     .modal-overlay.open { display: flex; justify-content: center; align-items: center; overflow-y: auto; overscroll-behavior: contain; }
     .modal-box { background: var(--color-bg); border-radius: var(--radius-modal); padding: 24px; width: 420px; max-width: 100%; text-align: center; color: var(--color-text); box-shadow: var(--shadow-modal); }
     .modal-box h3 { margin: 0 0 6px; font-size: var(--font-base); font-weight: 600; text-wrap: balance; }
@@ -391,12 +382,9 @@ def render_output_html(
     .pin-wrap .pin span.filled { color: var(--color-text); }
     .pin-real { position: absolute; inset: 0; opacity: 0; font-size: 16px; width: 100%; height: 100%; border: none; padding: 0; margin: 0; -webkit-tap-highlight-color: transparent; }
 
-    /* --- Hamburger menu & nav icons (hidden on desktop) --- */
-    .hamburger { display: none; }
+    /* --- Desktop-hidden elements --- */
     .view-label { display: none; }
     .cmd-dropdown { display: none; }
-    .menu-overlay { display: none; }
-    .nav-chat-icon { display: none; }
 
     /* --- Mobile (480px) --- */
     @media (max-width: 480px) {
@@ -404,7 +392,6 @@ def render_output_html(
       h1 { font-size: var(--font-xl); padding: 8px 0 6px; }
       .date-section > h2 { font-size: var(--font-lg); padding: 6px 0; }
       h3.period-heading { font-size: var(--font-base); padding: 6px 0 4px; margin: 16px 0 8px; }
-      h4.location-heading { }
       li.artist-item { gap: 10px; padding: 10px; align-items: flex-start; flex-wrap: wrap; }
       .artist-also { margin-left: calc(-72px - 10px); width: calc(100% + 72px + 10px); margin-top: 10px; display: block; }
       .artist-photo { width: 72px; height: 72px; border-radius: 4px; margin-top: 2px; }
@@ -511,25 +498,20 @@ def render_output_html(
     @media (max-width: 480px) {
       h1 { margin-bottom: 0; }
 
-      .cmd-bar { height: 48px; padding: 0 16px; margin-left: -12px; margin-right: -12px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+      .cmd-bar { height: var(--header-h); padding: 0 var(--space-lg); margin-left: -12px; margin-right: -12px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
       .cmd-bar .cmd-group { display: none; }
       .cmd-bar .cmd-group-right { display: none !important; }
       .cmd-sep { display: none; }
       .cmd-bar .view-label { color: #fff; font-size: 16px; font-weight: 600; letter-spacing: 0.02em; display: flex; align-items: center; height: 100%; padding-left: 40px; }
 
-      .nav-chat-icon { display: flex; align-items: center; justify-content: center; color: #fff; text-decoration: none; width: 48px; height: 48px; position: absolute; left: 4px; top: 0; -webkit-tap-highlight-color: transparent; }
-      .nav-chat-icon svg { width: 24px; height: 24px; }
-      .cmd-bar .hamburger { display: flex; align-items: center; justify-content: center; background: none; color: #fff; border: none; width: 48px; height: 48px; position: absolute; right: 4px; top: 0; -webkit-tap-highlight-color: transparent; padding: 0; }
-      .cmd-bar .hamburger:hover { opacity: 1; background: none; color: #fff; }
-      .hamburger svg { width: 24px; height: 24px; min-width: 24px; min-height: 24px; }
+      .nav-icon { display: flex; }
+      .hamburger { display: flex; }
 
-      .cmd-dropdown { position: fixed; top: 48px; left: 0; right: 0; z-index: 49; background: #111; flex-direction: column; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+      .cmd-dropdown { position: fixed; top: var(--header-h); left: 0; right: 0; z-index: var(--z-menu); background: #111; flex-direction: column; box-shadow: var(--shadow-modal); }
       .cmd-dropdown.open { display: flex; }
-      .cmd-dropdown button { background: none; color: #fff; border: none; border-bottom: 1px solid #374151; cursor: pointer; padding: 10px 16px 10px 24px; font-size: 13px; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; text-align: left; line-height: 1.5; -webkit-tap-highlight-color: transparent; }
+      .cmd-dropdown button { background: none; color: #fff; border: none; border-bottom: 1px solid var(--gray-700); cursor: pointer; padding: 10px 16px 10px 24px; font-size: 13px; font-weight: 600; font-family: var(--font-family); text-align: left; line-height: 1.5; -webkit-tap-highlight-color: transparent; }
       .cmd-dropdown button:active { background: #222; }
       .cmd-dropdown button.active { font-weight: 600; }
-
-      .menu-overlay.open { display: block; position: fixed; top: 48px; left: 0; right: 0; bottom: 0; z-index: 47; background: rgba(0,0,0,0.3); }
 
       .tt-photo, .tt-photo-placeholder { width: 30px; height: 30px; border-radius: 4px; }
 
@@ -605,7 +587,7 @@ def render_output_html(
     parts.append("  </svg>")
     parts.append('  <nav class="cmd-bar" id="cmd-bar" aria-label="Main navigation">')
     parts.append(
-        '    <a href="/chat" class="nav-chat-icon" aria-label="Chat">'
+        '    <a href="/chat" class="nav-icon" aria-label="Chat">'
         '<svg width="24" height="24" viewBox="-1.7 -1.7 27.4 27.4" fill="none" stroke="currentColor" stroke-width="1.5">'
         '<path d="M10 22C14.4183 22 18 18.4183 18 14C18 9.58172 14.4183 6 10 6C5.58172 6 2 9.58172 2 14C2 15.2355 2.28 16.4056 2.78 17.4502C2.95 17.8093 3.01 18.2161 2.91 18.6006L2.58 19.8267C2.32 20.793 3.21 21.677 4.17 21.4185L5.4 21.0904C5.78 20.9876 6.19 21.0479 6.55 21.2198C7.59 21.7199 8.76 22 10 22Z"/>'
         '<path d="M18 14.5C18.07 14.47 18.13 14.45 18.2 14.42C18.56 14.25 18.97 14.19 19.35 14.29L19.83 14.42C20.79 14.68 21.68 13.79 21.42 12.83L21.29 12.35C21.19 11.97 21.25 11.56 21.42 11.2C21.79 10.38 22 9.46 22 8.5C22 4.91 19.09 2 15.5 2C12.8 2 10.48 3.65 9.5 5.99"/>'
@@ -2099,7 +2081,7 @@ def render_output_html(
     }
     if (window.matchMedia('(max-width:768px)').matches) {
       document.getElementById('cmd-bar').addEventListener('click', function(e) {
-        if (!e.target.closest('.hamburger') && !e.target.closest('.nav-chat-icon')) toggleMenu();
+        if (!e.target.closest('.hamburger') && !e.target.closest('.nav-icon')) toggleMenu();
       });
     }
     function closeMenu() {
