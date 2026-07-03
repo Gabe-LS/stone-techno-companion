@@ -26,6 +26,14 @@
   /* Font */
   --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
 
+  /* Font scale — em-based, 16px browser default */
+  --font-2xl: 2em;
+  --font-xl: 1.5em;
+  --font-lg: 1.125em;
+  --font-base: 1em;
+  --font-sm: 0.875em;
+  --font-xs: 0.75em;
+
   /* Spacing scale — 4px base */
   --space-xs: 4px;
   --space-sm: 8px;

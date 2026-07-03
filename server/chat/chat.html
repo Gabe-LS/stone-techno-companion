@@ -10,14 +10,6 @@
 <script>if ('scrollRestoration' in history) history.scrollRestoration = 'manual';</script>
 <style>
 :root {
-  /* Chat font scale — base 15px */
-  --font-xl: 20px;
-  --font-lg: 17px;
-  --font-base: 15px;
-  --font-sm: 13px;
-  --font-xs: 11px;
-  --font-xxs: 10px;
-
   /* 12 user colors: vivid (name) + pastel (bubble) */
   --user-1: #B91C1C; --user-1-bg: #FEE2E2;
   --user-2: #C2410C; --user-2-bg: #FFEDD5;
@@ -41,7 +33,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .header .back { background: none; border: none; color: #fff; font-size: var(--font-xl); cursor: default; padding: var(--space-sm); margin-right: var(--space-sm); line-height: 1; }
 .header .title { flex: 1; font-weight: 600; font-size: var(--font-base); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .header .subtitle { font-size: var(--font-xs); color: var(--gray-400); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.header .online { font-size: var(--font-xxs); color: var(--gray-400); }
+.header .online { font-size: var(--font-xs); color: var(--gray-400); }
 .header .header-info { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; padding-left: 40px; padding-right: 40px; }
 .header .header-info .title { font-size: var(--font-sm); line-height: 1.3; }
 .header .header-info .online { display: block; line-height: 1.3; }
@@ -64,7 +56,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .room-name { font-weight: 600; font-size: var(--font-sm); line-height: 1.5; }
 .room-preview { font-size: var(--font-xs); color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
 .room-meta { text-align: right; flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-.room-count { font-size: var(--font-xxs); color: var(--gray-400); line-height: 1.2; margin-bottom: 2px; }
+.room-count { font-size: var(--font-xs); color: var(--gray-400); line-height: 1.2; margin-bottom: 2px; }
 .room-bell { width: 32px; height: 32px; padding: 0; border: none; border-radius: 50%; background: none; cursor: default; display: flex; align-items: center; justify-content: center; color: var(--gray-400); flex-shrink: 0; }
 .room-bell.active { color: var(--color-accent); }
 @media (hover: hover) { .room-bell:hover { background: var(--color-surface); } }
@@ -82,7 +74,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .msg-other-bubble { background: var(--color-surface); color: var(--color-text); border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) var(--radius-sm); }
 .msg-header { display: flex; gap: var(--space-sm); align-items: baseline; margin-bottom: 2px; }
 .msg-name { font-weight: 600; font-size: var(--font-xs); cursor: default; }
-.msg-time { position: absolute; bottom: var(--space-sm); right: var(--space-md); font-size: var(--font-xxs); color: var(--color-muted); }
+.msg-time { position: absolute; bottom: var(--space-sm); right: var(--space-md); font-size: var(--font-xs); color: var(--color-muted); }
 .msg-text { font-size: var(--font-base); line-height: 1.5; }
 .msg-image { max-width: 260px; max-height: 260px; border-radius: var(--radius-md); margin-top: var(--space-xs); display: block; -webkit-touch-callout: none; }
 .msg-video-wrap { position: relative; display: inline-block; margin-top: var(--space-xs); }
@@ -114,7 +106,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .link-preview-body { padding: 10px 12px; }
 .link-preview-title { font-weight: 600; font-size: var(--font-sm); line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .link-preview-desc { font-size: var(--font-xs); color: var(--color-muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.4; }
-.link-preview-domain { font-size: var(--font-xxs); color: var(--color-muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.link-preview-domain { font-size: var(--font-xs); color: var(--color-muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* --- Input bar --- */
 .input-bar { display: flex; align-items: center; gap: var(--space-xs); padding: var(--space-sm) var(--space-md); border-top: 1px solid var(--color-border); background: var(--color-bg); flex-shrink: 0; position: relative; }
@@ -139,14 +131,14 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .reply-preview { display: none; align-items: center; gap: var(--space-sm); padding: var(--space-sm) var(--space-md); border-top: 1px solid var(--color-border); background: var(--color-surface); flex-shrink: 0; }
 .reply-preview.visible { display: flex; }
 .reply-preview-content { flex: 1; min-width: 0; border-left: 3px solid var(--color-accent); padding-left: var(--space-sm); }
-.reply-preview-name { font-weight: 600; font-size: var(--font-xxs); display: block; margin-bottom: 2px; }
+.reply-preview-name { font-weight: 600; font-size: var(--font-xs); display: block; margin-bottom: 2px; }
 .reply-preview-text { font-size: 14px; line-height: 1.4; color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
 .reply-preview-close { background: none; border: none; font-size: 18px; color: var(--color-muted); cursor: default; padding: var(--space-xs) var(--space-sm); }
 
 /* --- Reply quote in message --- */
 .reply-quote { border-left: 3px solid var(--color-accent); padding: var(--space-xs) var(--space-sm); margin: 6px 0; cursor: default; background: rgba(0,0,0,0.04); border-radius: var(--radius-sm); }
 .msg-mine-bubble .reply-quote { background: rgba(0,0,0,0.06); }
-.reply-quote-name { font-weight: 600; font-size: var(--font-xxs); display: block; margin-bottom: 2px; }
+.reply-quote-name { font-weight: 600; font-size: var(--font-xs); display: block; margin-bottom: 2px; }
 .reply-quote-text { font-size: 14px; line-height: 1.4; color: var(--color-muted); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
 .msg.highlight { animation: msg-highlight 1.5s ease-out; }
 @keyframes msg-highlight { 0% { background: rgba(185,28,28,0.1); } 100% { background: transparent; } }
@@ -260,10 +252,10 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .avatar-zoom-track { width: 96px; height: 1px; background: var(--color-border); border-radius: 1px; position: relative; }
 .avatar-zoom-thumb { width: 10px; height: 10px; border-radius: 50%; background: var(--gray-400); position: absolute; top: -4.5px; transition: none; }
 .avatar-zoom-thumb.hidden { opacity: 0; }
-.avatar-zoom span { color: var(--color-disabled); font-size: var(--font-xxs); position: relative; top: -1px; }
+.avatar-zoom span { color: var(--color-disabled); font-size: var(--font-xs); position: relative; top: -1px; }
 
 /* --- Unread badges --- */
-.unread-badge { min-width: 18px; padding: 3px 6px; background: var(--color-accent); color: #fff; border-radius: var(--radius-pill); font-size: var(--font-xxs); font-weight: 700; display: inline-flex; align-items: center; justify-content: center; line-height: 1; box-sizing: border-box; text-align: center; }
+.unread-badge { min-width: 18px; padding: 3px 6px; background: var(--color-accent); color: #fff; border-radius: var(--radius-pill); font-size: var(--font-xs); font-weight: 700; display: inline-flex; align-items: center; justify-content: center; line-height: 1; box-sizing: border-box; text-align: center; }
 .tab-dot { display: none; width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent); margin-left: 6px; vertical-align: middle; position: relative; top: -1px; }
 .tab-dot.active { display: inline-block; }
 
