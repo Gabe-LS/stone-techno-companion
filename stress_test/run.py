@@ -579,7 +579,6 @@ async def simulate_user(
     base_url: str,
     ssl_ctx: ssl.SSLContext | None,
     metrics: Metrics,
-    burst: BurstControl,
     images: list[Path],
     videos: list[Path],
     duration: float,
@@ -634,50 +633,9 @@ async def simulate_user(
 
                 try:
                     while time.monotonic() < end_at and not stop.is_set():
-                        # Check for burst trigger or wait normally
-                        fired_burst = False
-                        try:
-                            await asyncio.wait_for(
-                                burst.trigger.wait(),
-                                timeout=random.uniform(5, 15),
-                            )
-                            fired_burst = True
-                        except asyncio.TimeoutError:
-                            pass
-
+                        await asyncio.sleep(random.uniform(5, 15))
                         if stop.is_set():
                             break
-
-                        if fired_burst and burst.msg_slots == -1:
-                            continue
-
-                        if fired_burst and burst.msg_slots > 0:
-                            burst.msg_slots -= 1
-                            await _send_text(
-                                ws,
-                                random.choice(my_rooms),
-                                metrics,
-                                ulog,
-                                moderated,
-                                burst_tag="MSG_BURST",
-                            )
-                            continue
-
-                        if fired_burst and burst.img_slots > 0 and images:
-                            burst.img_slots -= 1
-                            await _send_image(
-                                ws,
-                                random.choice(my_rooms),
-                                token,
-                                base_url,
-                                metrics,
-                                images,
-                                http,
-                                ulog,
-                                moderated,
-                                burst_tag="IMG_BURST",
-                            )
-                            continue
 
                         # DM opening
                         now = time.monotonic()
@@ -1171,6 +1129,7 @@ async def burst_coordinator(
         burst.trigger.set()
         await asyncio.sleep(0)
         burst.trigger.clear()
+        burst.msg_slots = 0
         await asyncio.sleep(12)
 
         blog.info("MSG_BURST #%d firing, %d slots", cycle, msg_burst_size)
@@ -1222,6 +1181,7 @@ async def burst_coordinator(
         burst.trigger.set()
         await asyncio.sleep(0)
         burst.trigger.clear()
+        burst.msg_slots = 0
         await asyncio.sleep(12)
 
         blog.info("IMG_BURST #%d firing, %d slots", cycle, img_burst_size)
@@ -1621,21 +1581,10 @@ async def run(args):
     try:
         sys_task = asyncio.create_task(collect_system_metrics(metrics, args.db, stop))
         prog_task = asyncio.create_task(progress_reporter(metrics, args.users, stop))
-        burst_task = asyncio.create_task(
-            burst_coordinator(
-                burst,
-                metrics,
-                stop,
-                images,
-                msg_burst_size=args.msg_burst,
-                img_burst_size=args.img_burst,
-            )
-        )
 
         ramp_delay = args.ramp / max(args.users, 1)
         print(
-            f"Launching {args.users} users for {args.duration}s "
-            f"(ramp: {args.ramp}s, bursts: {args.msg_burst}msg/{args.img_burst}img)\n"
+            f"Launching {args.users} users for {args.duration}s (ramp: {args.ramp}s)\n"
         )
         metrics.start_time = time.monotonic()
 
@@ -1650,7 +1599,6 @@ async def run(args):
                     args.url,
                     ssl_ctx,
                     metrics,
-                    burst,
                     images,
                     videos,
                     args.duration,
@@ -1675,14 +1623,14 @@ async def run(args):
         metrics.end_time = time.monotonic()
         stop.set()
 
-        for t in (sys_task, prog_task, burst_task):
+        for t in (sys_task, prog_task):
             t.cancel()
             try:
                 await t
             except asyncio.CancelledError:
                 pass
 
-        report = generate_report(metrics, burst, args)
+        report = generate_report(metrics, BurstControl(), args)
         print(report)
 
         report_dir = Path("stress_test")

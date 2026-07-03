@@ -1481,12 +1481,16 @@ async function _toggleRoomMembership(roomId, btn) {
     await fetch(API + '/rooms/' + roomId + '/join', { method: isMember ? 'DELETE' : 'POST', credentials: 'include' });
     const room = rooms.find(r => r.id === roomId);
     if (room) room.is_member = !isMember;
+    btn.classList.toggle('active');
+    btn.querySelector('svg').setAttribute('fill', isMember ? 'none' : 'currentColor');
     if (isMember && ws && ws.readyState === 1) wsSend('leave_room', { room_id: roomId });
     else if (!isMember && ws && ws.readyState === 1) wsSend('join_room', { room_id: roomId });
-    await loadRooms();
-    renderRoomItems();
-    const menuRooms = document.querySelector('#menu-rooms.open');
-    if (menuRooms) menuRooms.innerHTML = '<ul class="room-list">' + _renderRoomItemsHtml() + '</ul>';
+    setTimeout(async () => {
+      await loadRooms();
+      renderRoomItems();
+      const menuRooms = document.querySelector('#menu-rooms.open');
+      if (menuRooms) menuRooms.innerHTML = '<ul class="room-list">' + _renderRoomItemsHtml() + '</ul>';
+    }, 1000);
   } catch (e) { showToast(e.message); }
 }
 
