@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<style>body{opacity:0}</style>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Chat Admin</title>
@@ -140,7 +141,7 @@ select { -webkit-appearance: none; appearance: none; background-image: url("data
 <script src="/shared.js"></script>
 </head>
 <body>
-<div id="app" style="visibility:hidden"></div>
+<div id="app"></div>
 <div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">
   <div class="modal" id="modal"></div>
 </div>
@@ -181,7 +182,7 @@ function renderLogin() {
   el.innerHTML = `<div class="login-screen"><h2>Chat Admin</h2>
     <input id="token-input" type="password" placeholder="Admin token" onkeydown="if(event.key==='Enter')doLogin()">
     <button onclick="doLogin()">Sign in</button></div>`;
-  el.style.visibility = '';
+  document.body.style.opacity = '1';
 }
 function doLogin() {
   dbg('[AUTH] doLogin');
@@ -218,7 +219,7 @@ async function init() {
   statsInterval = setInterval(refreshStats, 15000);
   currentTab = 'rooms';
   await render.rooms();
-  document.getElementById('app').style.visibility = '';
+  document.body.style.opacity = '1';
 }
 
 function renderStatsHTML(s) {

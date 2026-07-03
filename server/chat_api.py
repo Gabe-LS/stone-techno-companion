@@ -1794,6 +1794,10 @@ def mount_chat(app):
     async def verify_via_path(request: Request, token: str):
         return await auth_email_verify(request, token)
 
+    @app.get("/chat/admin", response_class=HTMLResponse)
+    async def serve_admin_shortcut(request: Request):
+        return HTMLResponse(_admin_html, headers={"Cache-Control": "no-store"})
+
     @app.get("/chat", response_class=HTMLResponse)
     @app.get("/chat/", response_class=HTMLResponse)
     @app.get("/chat/r/{room_id}", response_class=HTMLResponse)

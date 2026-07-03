@@ -99,7 +99,7 @@ body {
   top: 0;
   -webkit-tap-highlight-color: transparent;
   padding: 0;
-
+  cursor: pointer;
 }
 .hamburger svg {
   width: 24px;
@@ -121,6 +121,7 @@ body {
   left: 4px;
   top: 0;
   -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
 }
 .nav-icon svg {
   width: 24px;
@@ -179,4 +180,5 @@ body {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border-width: 0;
+}
 }
