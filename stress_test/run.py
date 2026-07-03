@@ -300,8 +300,8 @@ def setup_db(db_path: str, num_users: int, event_id: str, moderated: bool):
         db.execute(
             "INSERT INTO users "
             "(id, provider, provider_id, display_name, username, "
-            "username_lower, country, color_index, created_at, last_seen) "
-            "VALUES (?, 'stress_test', ?, ?, ?, ?, 'IT', ?, "
+            "username_lower, country, avatar_url, color_index, created_at, last_seen) "
+            "VALUES (?, 'stress_test', ?, ?, ?, ?, 'IT', ?, ?, "
             "datetime('now'), datetime('now'))",
             (
                 uid,
@@ -309,6 +309,7 @@ def setup_db(db_path: str, num_users: int, event_id: str, moderated: bool):
                 f"StressBot {i}",
                 username,
                 username.lower(),
+                "/chat/api/avatar/placeholder",
                 i % 12,
             ),
         )
@@ -339,6 +340,35 @@ def cleanup_db(db_path: str, test_rooms: list[str] | None, user_ids: list[str] |
 
     before = db.execute("SELECT COUNT(*) FROM rooms").fetchone()[0]
 
+    # Collect uploaded file URLs before deleting messages (CASCADE)
+    uploads_dir = Path(db_path).parent.parent / "chat" / "uploads"
+    if user_ids:
+        placeholders = ",".join("?" * len(user_ids))
+        rows = db.execute(
+            f"SELECT content FROM messages WHERE user_id IN ({placeholders}) "
+            "AND type IN ('image', 'video')",
+            user_ids,
+        ).fetchall()
+    else:
+        rows = db.execute(
+            "SELECT content FROM messages WHERE user_id IN "
+            "(SELECT id FROM users WHERE provider = 'stress_test') "
+            "AND type IN ('image', 'video')"
+        ).fetchall()
+    cleaned_files = 0
+    for row in rows:
+        try:
+            url = json.loads(row[0]).get("url", "")
+            fname = url.rsplit("/", 1)[-1]
+            f = uploads_dir / fname
+            if f.is_file():
+                f.unlink()
+                cleaned_files += 1
+        except Exception:
+            pass
+    if cleaned_files:
+        log.info("Cleanup: removed %d uploaded files", cleaned_files)
+
     if user_ids:
         db.executemany(
             "DELETE FROM users WHERE id = ? AND provider = 'stress_test'",
@@ -355,8 +385,17 @@ def cleanup_db(db_path: str, test_rooms: list[str] | None, user_ids: list[str] |
     else:
         db.execute("DELETE FROM rooms WHERE name LIKE 'Stress:%'")
 
-    # Also clean up meetups created by stress test users
+    # Clean up meetups and meetup rooms created by stress test users
     db.execute("DELETE FROM meetups WHERE creator_id NOT IN (SELECT id FROM users)")
+    db.execute(
+        "DELETE FROM rooms WHERE type = 'meetup' "
+        "AND id NOT IN (SELECT 'meetup-' || id FROM meetups)"
+    )
+    # Clean up DM rooms with no participants
+    db.execute(
+        "DELETE FROM rooms WHERE type = 'dm' "
+        "AND id NOT IN (SELECT room_id FROM dm_participants)"
+    )
 
     db.commit()
     after = db.execute("SELECT COUNT(*) FROM rooms").fetchone()[0]
@@ -1611,6 +1650,19 @@ async def run(args):
             for i in range(args.users)
         ]
 
+        pw_task = None
+        if getattr(args, "playwright", False):
+            pw_task = asyncio.create_task(
+                run_playwright_observer(
+                    args.url,
+                    tokens[0],
+                    all_rooms[0],
+                    args.duration,
+                    stop,
+                    metrics,
+                )
+            )
+
         done, pending = await asyncio.wait(
             user_tasks,
             timeout=args.duration + args.ramp + 60,
@@ -1622,6 +1674,19 @@ async def run(args):
 
         metrics.end_time = time.monotonic()
         stop.set()
+
+        if pw_task:
+            try:
+                pw_result = await asyncio.wait_for(pw_task, timeout=15)
+                if pw_result:
+                    print(
+                        f"\n  Playwright: msgs_seen={pw_result['messages_seen']} "
+                        f"rooms={'OK' if pw_result['rooms_loaded'] else 'FAIL'} "
+                        f"switch={'OK' if pw_result['room_switch_ok'] else 'FAIL'} "
+                        f"errors={len(pw_result['errors'])}"
+                    )
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                pass
 
         for t in (sys_task, prog_task):
             t.cancel()
@@ -1966,6 +2031,139 @@ async def run_throughput(args):
         print("Done.")
 
 
+# ---------------------------------------------------------------------------
+# Playwright E2E browser verification
+# ---------------------------------------------------------------------------
+
+
+async def run_playwright_observer(
+    base_url: str,
+    token: str,
+    room_id: str,
+    duration: float,
+    stop: asyncio.Event,
+    metrics: Metrics,
+):
+    """Launch a real browser that joins the chat and verifies messages arrive."""
+    blog = logging.getLogger("playwright")
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError:
+        blog.warning("Playwright not installed, skipping browser verification")
+        return
+
+    blog.info("Launching browser observer...")
+    results = {
+        "messages_seen": 0,
+        "rooms_loaded": False,
+        "room_switch_ok": False,
+        "push_received": False,
+        "errors": [],
+    }
+
+    try:
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(headless=True)
+            context = await browser.new_context(
+                ignore_https_errors=True,
+                permissions=["notifications"],
+            )
+            await context.add_cookies(
+                [
+                    {
+                        "name": "chat_session",
+                        "value": token,
+                        "url": base_url,
+                    }
+                ]
+            )
+
+            page = await context.new_page()
+            console_msgs: list[str] = []
+            page.on("console", lambda m: console_msgs.append(m.text))
+
+            blog.info("Navigating to %s/chat", base_url)
+            await page.goto(f"{base_url}/chat", wait_until="networkidle")
+            await page.wait_for_timeout(5000)
+
+            # Check if profile prompt is showing (blocks chat)
+            profile = await page.query_selector(".profile-prompt")
+            if profile:
+                blog.warning(
+                    "Profile setup prompt is blocking — user needs avatar/username"
+                )
+
+            # Verify rooms loaded (wait up to 10s)
+            for _ in range(10):
+                room_items = await page.query_selector_all(".room-item")
+                if room_items:
+                    break
+                await page.wait_for_timeout(1000)
+            results["rooms_loaded"] = len(room_items) > 0
+            blog.info("Rooms loaded: %d items", len(room_items))
+
+            # Wait for messages from stress test users
+            blog.info("Observing messages for %ds...", min(60, int(duration * 0.3)))
+            observe_until = time.monotonic() + min(60, duration * 0.3)
+            last_count = 0
+            while time.monotonic() < observe_until and not stop.is_set():
+                await page.wait_for_timeout(5000)
+                msg_els = await page.query_selector_all(".msg")
+                current = len(msg_els)
+                if current > last_count:
+                    new = current - last_count
+                    results["messages_seen"] += new
+                    blog.info("Messages in DOM: %d (+%d)", current, new)
+                    last_count = current
+
+            # Test room switching — use CSS selector click (resilient to DOM re-renders)
+            room_items = await page.query_selector_all(".room-item")
+            if len(room_items) > 1:
+                blog.info("Testing room switch...")
+                try:
+                    await page.click(".room-item:nth-child(2)")
+                    await page.wait_for_timeout(2000)
+                    msg_container = await page.query_selector(".messages")
+                    results["room_switch_ok"] = msg_container is not None
+                except Exception as e:
+                    blog.warning("Room switch click failed: %s", e)
+                    results["room_switch_ok"] = False
+                blog.info(
+                    "Room switch: %s", "OK" if results["room_switch_ok"] else "FAIL"
+                )
+
+                # Switch back
+                room_items = await page.query_selector_all(".room-item")
+                if room_items:
+                    await room_items[0].click()
+                    await page.wait_for_timeout(1000)
+
+            # Check push: navigate away, wait for notification
+            blog.info("Testing push notification...")
+            await page.goto(f"{base_url}/line-up", wait_until="networkidle")
+            await page.wait_for_timeout(10000)
+            push_log = [
+                m for m in console_msgs if "push" in m.lower() or "notif" in m.lower()
+            ]
+            if push_log:
+                blog.info("Push-related console: %s", push_log[-3:])
+
+            await browser.close()
+
+    except Exception as e:
+        results["errors"].append(str(e))
+        blog.error("Playwright error: %s", e)
+
+    blog.info(
+        "Browser results: msgs_seen=%d rooms=%s switch=%s errors=%d",
+        results["messages_seen"],
+        results["rooms_loaded"],
+        results["room_switch_ok"],
+        len(results["errors"]),
+    )
+    return results
+
+
 def main():
     p = argparse.ArgumentParser(
         description="Chat stress test",
@@ -2025,6 +2223,11 @@ def main():
         "--throughput",
         action="store_true",
         help="Run throughput benchmark (200 text/s, 50 image/s, 20 video/s, combined)",
+    )
+    p.add_argument(
+        "--playwright",
+        action="store_true",
+        help="Launch a real browser alongside CLI users to verify UX under load",
     )
     p.add_argument(
         "--throughput-duration",
