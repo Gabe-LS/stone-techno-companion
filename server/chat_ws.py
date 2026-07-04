@@ -288,6 +288,9 @@ def _get_room_notification_targets(db, room_id: str, sender_id: str) -> list[str
         ]
 
 
+_push_debounce: dict[str, float] = {}
+
+
 async def _send_chat_push(
     user_id: str,
     room_id: str,
@@ -296,6 +299,11 @@ async def _send_chat_push(
     sender_name: str,
     text_preview: str,
 ) -> None:
+    key = f"{user_id}:{room_id}"
+    now = time.monotonic()
+    if now - _push_debounce.get(key, 0) < 10:
+        return
+    _push_debounce[key] = now
     _push_debounce[key] = now
     db = get_chat_db()
     subs = get_push_subscriptions(db, user_id)
