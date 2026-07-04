@@ -299,7 +299,7 @@ Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DBs at `server/d
 - **Scheduler**: background task runs every 60s, matches `timetable.json` slots against sessions' schedule, sends via `pywebpush`
 - **Dedup**: `sent_notifications` table, pruned after 7 days. Dead subscriptions auto-removed.
 - **Re-sync on load**: client re-sends push subscription to recover from DB purges
-- **iOS notification click**: three-layer approach — SW writes target URL to Cache Storage (`stc-push`/`_push_navigate`), then tries `postMessage` (works on desktop) + `client.navigate()` (unreliable on iOS, wrapped in catch). Pages poll the cache on `visibilitychange` with retries (0ms, 300ms, 1s) to handle the race where iOS resumes the page before the SW finishes the cache write. `openWindow()` silently fails on iOS PWA when a window already exists.
+- **iOS notification click**: SW writes target URL to Cache Storage (`stc-push`/`_push_navigate`), then tries `postMessage` (works on desktop) + `focus()`. Pages poll the cache on `visibilitychange` with retries (0ms, 300ms, 1s) to handle the race where iOS resumes the page before the SW finishes the cache write. `client.navigate()` is unreliable on iOS PWA (half-navigates, breaks cache fallback). `openWindow()` silently fails when a window already exists. Push URL includes message ID (`/chat/msg/{id}`) for scroll-to-message on click.
 
 ### Chat push
 - **Trigger**: sent after message broadcast to room members who are offline or idle

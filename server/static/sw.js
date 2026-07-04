@@ -46,17 +46,12 @@ self.addEventListener('notificationclick', function (event) {
     }).then(function () {
       return self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     }).then(function (list) {
-      if (list.length === 0) return self.clients.openWindow(fullUrl);
-      var client = list[0];
-      client.postMessage({ type: 'navigate', url: fullUrl });
-      if ('navigate' in client) {
-        return client.navigate(fullUrl).then(function (c) {
-          if (c) return c.focus();
-        }).catch(function () {
-          try { client.focus(); } catch (e) { /* best-effort */ }
-        });
+      for (var i = 0; i < list.length; i++) {
+        list[i].postMessage({ type: 'navigate', url: fullUrl });
+        list[i].focus();
+        return;
       }
-      try { client.focus(); } catch (e) { /* best-effort */ }
+      return self.clients.openWindow(fullUrl);
     }),
   );
 });
