@@ -63,7 +63,8 @@ CHECK_DESCS = {
     7: "Report: reporter-provided plaintext snapshot stored, unverified=1",
     8: "Key rotation: Bob re-keys, Alice re-derives, Bob's old messages now fail to decrypt",
     9: "Group room sanity: plaintext message stored and visible, no E2EE wrapper",
-    10: "Zero console errors / page errors across both pages",
+    10: "Keyless peer: DM row and header show NO lock, unavailable banner, plaintext fallback",
+    11: "Zero console errors / page errors across both pages",
 }
 
 
@@ -326,8 +327,24 @@ def setup_users(db_path):
     bob = create_fake_user(
         chat_db, db, f"e2ee-bob-{nonce}", "Bob E2E", f"bob_e2e_{nonce}"
     )
+    # Carol never opens a browser, so she never uploads an E2EE key -- the
+    # keyless-peer case (check 10). Her DM with Alice is pre-created so it
+    # shows up in Alice's DM list without needing Carol online.
+    carol = create_fake_user(
+        chat_db, db, f"e2ee-carol-{nonce}", "Carol NoKey", f"carol_e2e_{nonce}"
+    )
+    carol_dm_id = chat_db.find_or_create_dm(
+        db, "stone-techno-2026", alice["id"], carol["id"]
+    )
+    # The purge loop deletes message-less DM rooms (in production a DM is
+    # always created together with its first message). Seed one plaintext
+    # message from Carol so the room survives the run -- doubling as a
+    # backward-compat fixture: legacy plaintext in a DM must still render.
+    chat_db.create_message(
+        db, carol_dm_id, carol["id"], "text", json.dumps({"text": "hi from carol"})
+    )
     db.close()
-    return alice, bob
+    return alice, bob, carol, carol_dm_id
 
 
 def add_session_cookie(context, base_url, token):
@@ -348,7 +365,14 @@ def add_session_cookie(context, base_url, token):
 def attach_console_collectors(page, label, console_errors, page_errors):
     def on_console(msg):
         if msg.type == "error":
-            console_errors.append(f"[{label}] {msg.text}")
+            loc = ""
+            try:
+                loc = (msg.location or {}).get("url", "")
+            except Exception:  # noqa: BLE001
+                pass
+            console_errors.append(
+                f"[{label}] {msg.text}" + (f" ({loc})" if loc else "")
+            )
 
     def on_pageerror(exc):
         page_errors.append(f"[{label}] {exc}")
@@ -769,7 +793,76 @@ def check9_group_room(page_a, page_b, db_path, nonce5):
     return "group message stored as plaintext, visible to bob"
 
 
-def check10_console_sweep(
+def check10_keyless_peer(page_a, db_path, carol, carol_dm_id, ctx, nonce6):
+    # Alice's sidebar: switch to DMs so loadDMs re-runs and syncs
+    # _unencryptedRooms from the server's other_has_key knowledge.
+    page_a.locator(".tabs button", has_text="DMs").click(timeout=10000)
+    try:
+        page_a.wait_for_selector(
+            f'.member-item[data-room-id="{carol_dm_id}"]', timeout=10000
+        )
+    except Exception:
+        state = page_a.evaluate(
+            """() => ({
+                room: currentRoom,
+                roomList: (document.getElementById('room-list')?.innerHTML || '(none)').slice(0, 400),
+                activeTab: document.querySelector('.tabs button.active')?.textContent || '(none)',
+            })"""
+        )
+        raise AssertionError(f"carol DM row missing; page state: {state}")
+
+    # Carol's row: NO lock. Bob's row (encrypted DM from check 2): lock.
+    carol_locks = page_a.locator(
+        f'.member-item[data-room-id="{carol_dm_id}"] .icon-lock'
+    ).count()
+    if carol_locks != 0:
+        raise AssertionError(f"keyless peer DM row shows a lock icon ({carol_locks})")
+    bob_dm_id = ctx.get("dm_room_id")
+    if bob_dm_id:
+        bob_locks = page_a.locator(
+            f'.member-item[data-room-id="{bob_dm_id}"] .icon-lock'
+        ).count()
+        if bob_locks != 1:
+            raise AssertionError(f"encrypted DM row lost its lock icon ({bob_locks})")
+
+    page_a.click(f'.member-item[data-room-id="{carol_dm_id}"]')
+    expected = (
+        "Encryption unavailable for this user - messages are not end-to-end encrypted."
+    )
+    wait_until(
+        lambda: (page_a.text_content(".dm-e2ee-banner") or "").strip() == expected,
+        timeout=10.0,
+        desc="unavailable-variant banner in keyless DM",
+    )
+    header_locks = page_a.locator(".header .title .icon-lock").count()
+    if header_locks != 0:
+        raise AssertionError(f"keyless DM header shows a lock icon ({header_locks})")
+
+    # Backward compat: Carol's seeded legacy plaintext message renders normally.
+    page_a.wait_for_selector('.msg-text:has-text("hi from carol")', timeout=10000)
+
+    probe = f"keyless probe {nonce6}"
+    page_a.fill("#msg-input", probe)
+    page_a.click(".input-bar .send")
+    page_a.wait_for_selector(f'.msg-text:has-text("{nonce6}")', timeout=10000)
+
+    def _stored_plaintext():
+        rows = query_db(
+            db_path,
+            "SELECT content FROM messages WHERE room_id = ?",
+            (carol_dm_id,),
+        )
+        return any(
+            nonce6 in r["content"] and '"e2ee"' not in r["content"] for r in rows
+        )
+
+    wait_until(
+        _stored_plaintext, timeout=10.0, desc="keyless DM message stored as plaintext"
+    )
+    return "no lock (row + header), unavailable banner, message fell back to plaintext"
+
+
+def check11_console_sweep(
     console_errors_a, console_errors_b, page_errors_a, page_errors_b, allowlist
 ):
     log(
@@ -814,9 +907,10 @@ def main():
 
     try:
         os.environ["CHAT_DB_PATH"] = str(db_path)
-        alice, bob = setup_users(db_path)
+        alice, bob, carol, carol_dm_id = setup_users(db_path)
         log(
-            f"created scratch users alice={alice['id'][:8]} bob={bob['id'][:8]} db={db_path}"
+            f"created scratch users alice={alice['id'][:8]} bob={bob['id'][:8]} "
+            f"carol={carol['id'][:8]} (keyless) db={db_path}"
         )
 
         port = get_free_port()
@@ -860,19 +954,26 @@ def main():
                 nonce3 = secrets.token_hex(4)
                 nonce4 = secrets.token_hex(4)
                 nonce5 = secrets.token_hex(4)
+                nonce6 = secrets.token_hex(4)
 
-                # No allowlist entries: all static assets referenced by
-                # chat.html (favicon.svg, manifest.json, shared.css/js,
-                # sw.js) are served by explicit routes in api.py from files
-                # that already exist in server/static/, the avatar is a
-                # data: URI (no network fetch), and push permission is never
-                # auto-requested (route() only checks an existing
-                # subscription, never calls Notification.requestPermission).
-                # verify()/console.error is the app's own built-in assertion
-                # helper (server/static/shared.js) -- any genuine internal
+                # Single allowlist entry: check 10 deliberately opens a DM
+                # with a keyless peer, whose /chat/api/keys/{id} lookup 404s
+                # by design (that IS the unencrypted-fallback signal), and
+                # Chromium logs every failed fetch as a console error. The
+                # pattern is scoped to that endpoint's URL only. Everything
+                # else stays unfiltered: all static assets referenced by
+                # chat.html are served by explicit routes, avatars have real
+                # blobs behind /chat/api/avatar/, push permission is never
+                # auto-requested, and verify()/console.error is the app's
+                # own built-in assertion helper -- any genuine internal
                 # invariant violation during the run must surface as a real
                 # failure here, not be suppressed.
-                console_allowlist = []
+                console_allowlist = [
+                    (
+                        r"the server responded with a status of 404 .*/chat/api/keys/",
+                        "keyless-peer lookup 404s by design (check 10 fallback probe)",
+                    )
+                ]
 
                 run_check(
                     1, lambda: check1_pages_load(page_a, page_b, alice, bob, db_path)
@@ -906,7 +1007,13 @@ def main():
                 run_check(9, lambda: check9_group_room(page_a, page_b, db_path, nonce5))
                 run_check(
                     10,
-                    lambda: check10_console_sweep(
+                    lambda: check10_keyless_peer(
+                        page_a, db_path, carol, carol_dm_id, ctx, nonce6
+                    ),
+                )
+                run_check(
+                    11,
+                    lambda: check11_console_sweep(
                         console_errors_a,
                         console_errors_b,
                         page_errors_a,

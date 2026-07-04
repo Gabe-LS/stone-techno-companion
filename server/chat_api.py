@@ -1010,11 +1010,13 @@ async def list_dms(request: Request):
             "u.display_name AS other_name, u.username AS other_username, "
             "u.avatar_url AS other_avatar_url, u.color_index AS other_color_index, "
             "u.country AS other_country, "
+            "CASE WHEN k.user_id IS NULL THEN 0 ELSE 1 END AS other_has_key, "
             "(SELECT MAX(m.created_at) FROM messages m WHERE m.room_id = r.id AND m.expires_at > ?) AS last_message_at "
             "FROM dm_participants dp1 "
             "JOIN dm_participants dp2 ON dp1.room_id = dp2.room_id AND dp1.user_id != dp2.user_id "
             "JOIN rooms r ON r.id = dp1.room_id "
             "JOIN users u ON u.id = dp2.user_id "
+            "LEFT JOIN e2ee_keys k ON k.user_id = dp2.user_id "
             "WHERE dp1.user_id = ? "
             "ORDER BY last_message_at DESC",
             (now, user["id"]),
@@ -1030,6 +1032,7 @@ async def list_dms(request: Request):
                 else "",
                 "other_color_index": dm["other_color_index"] or 0,
                 "other_country": dm["other_country"] or "",
+                "other_has_key": bool(dm["other_has_key"]),
                 "last_message_at": dm["last_message_at"] or "",
             }
             for dm in dms

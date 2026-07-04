@@ -327,6 +327,16 @@ class TestDMs:
         assert r.status_code == 200
         assert len(r.json()) == 1
         assert r.json()[0]["other_name"] == "Bob"
+        # Peer has no E2EE key yet: the client uses this to render the DM
+        # row without a lock icon and pre-latch the unencrypted fallback.
+        assert r.json()[0]["other_has_key"] is False
+
+    def test_list_dms_other_has_key(self, auth_client, user1, user2):
+        find_or_create_dm(_test_db, "test-event", user1["id"], user2["id"])
+        upsert_e2ee_key(_test_db, user2["id"], _valid_jwk())
+        r = auth_client.get("/chat/api/dms")
+        assert r.status_code == 200
+        assert r.json()[0]["other_has_key"] is True
 
     def test_dm_nonexistent_user(self, auth_client):
         r = auth_client.post(

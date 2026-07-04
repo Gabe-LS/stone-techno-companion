@@ -91,7 +91,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .msg-time { position: absolute; bottom: var(--space-md); right: var(--space-md); font-size: var(--font-xs); color: var(--color-muted); }
 .msg-text { font-size: var(--font-base); line-height: 1.5; }
 .msg-text.msg-decrypt-failed { font-style: italic; color: var(--color-muted); background: rgba(0,0,0,0.05); border-radius: var(--radius-sm); padding: 2px 6px; display: inline-block; }
-.dm-e2ee-banner { text-align: center; padding: var(--space-sm) var(--space-xl) var(--space-md); color: var(--color-muted); font-size: var(--font-xs); line-height: 1.4; }
+.dm-e2ee-banner { text-align: center; text-wrap: balance; padding: var(--space-sm) var(--space-xl) var(--space-md); color: var(--color-muted); font-size: var(--font-xs); line-height: 1.4; }
 .msg-image { max-width: 260px; max-height: 260px; border-radius: var(--radius-md); margin-top: var(--space-xs); display: block; -webkit-touch-callout: none; cursor: pointer; }
 .msg-video-wrap { position: relative; display: inline-block; margin-top: var(--space-xs); cursor: pointer; }
 .msg-video { max-width: 260px; max-height: 260px; border-radius: var(--radius-md); display: block; -webkit-touch-callout: none; }
@@ -1737,7 +1737,13 @@ async function loadDMs() {
   if (!el) return;
   try {
     const dms = await api('/dms');
-    dms.forEach(dm => { _dmListCache[dm.room_id] = dm.other_user_id; });
+    dms.forEach(dm => {
+      _dmListCache[dm.room_id] = dm.other_user_id;
+      // Sync fallback state from the server's key knowledge so the lock icon
+      // is truthful on first render, not just after a send attempt 404s.
+      if (dm.other_has_key === false) _unencryptedRooms.add(dm.room_id);
+      else _unencryptedRooms.delete(dm.room_id);
+    });
     if (!dms.length) { el.innerHTML = '<div class="empty">No conversations yet</div>'; return; }
     el.innerHTML = dms.map(dm => {
       const unread = unreadByRoom[dm.room_id] || 0;
@@ -1816,10 +1822,37 @@ async function openRoom(roomId, roomName, roomType) {
     }
   }
   await historyReady;
+  if (currentRoomType === 'dm' && roomId !== 'pending-dm') _verifyDmEncryptionState(roomId);
   verify('openRoom', currentRoom === roomId, 'currentRoom set to ' + roomId);
   verify('openRoom', document.getElementById('msg-input'), 'message input exists');
   verify('openRoom', document.getElementById('messages'), 'messages container exists');
   if (!isMobile) document.getElementById('msg-input')?.focus();
+}
+
+async function _verifyDmEncryptionState(roomId) {
+  // The lock icon and banner render from _unencryptedRooms, which is synced
+  // by loadDMs and by send-time 404s -- both can be stale or empty (deep
+  // link, peer uploaded a key since). Verify against the server whenever a
+  // DM opens and fix the UI if the state changed.
+  if (!E2EE.available) return;
+  const peer = _getDmPeerUserId(roomId);
+  if (!peer) { dbg('[E2EE] verify state: peer unresolved for', roomId); return; }
+  try {
+    const wasUnencrypted = _unencryptedRooms.has(roomId);
+    const r = await fetch('/chat/api/keys/' + peer, { credentials: 'same-origin' });
+    if (r.status === 404) _unencryptedRooms.add(roomId);
+    else if (r.ok) _unencryptedRooms.delete(roomId);
+    else return; // transient server error: leave current state alone
+    const nowUnencrypted = _unencryptedRooms.has(roomId);
+    dbg('[E2EE] verified dm state, room=' + roomId + ' unencrypted=' + nowUnencrypted);
+    if (nowUnencrypted === wasUnencrypted || currentRoom !== roomId) return;
+    renderMessages();
+    document.querySelectorAll('.header .title').forEach(t => {
+      const lock = t.querySelector('.icon-lock');
+      if (nowUnencrypted && lock) lock.remove();
+      else if (!nowUnencrypted && !lock) t.insertAdjacentHTML('afterbegin', ICON_LOCK);
+    });
+  } catch (e) { dbg('[E2EE] verify dm state failed:', e && e.message); }
 }
 
 function renderChatView(roomName) {
@@ -2526,7 +2559,11 @@ async function _loadMenuSection(section, container) {
   } else if (section === 'dms') {
     try {
       const dms = await api('/dms');
-      dms.forEach(dm => { _dmListCache[dm.room_id] = dm.other_user_id; });
+      dms.forEach(dm => {
+        _dmListCache[dm.room_id] = dm.other_user_id;
+        if (dm.other_has_key === false) _unencryptedRooms.add(dm.room_id);
+        else _unencryptedRooms.delete(dm.room_id);
+      });
       if (!dms.length) { container.innerHTML = '<div class="empty">No conversations yet</div>'; return; }
       container.innerHTML = dms.map(dm => {
         const unread = unreadByRoom[dm.room_id] || 0;
