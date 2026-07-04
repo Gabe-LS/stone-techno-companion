@@ -3806,6 +3806,30 @@ window.addEventListener('pagehide', function() {
   try { navigator.sendBeacon('/chat/api/push/idle'); } catch(e) {}
 });
 
+if (window.visualViewport) {
+  const vv = window.visualViewport;
+  let _ready = false;
+  setTimeout(() => { _ready = true; }, 1500);
+  vv.addEventListener('resize', () => {
+    if (!_ready) return;
+    const app = document.getElementById('app');
+    if (vv.height < window.outerHeight - 100) {
+      app.style.height = vv.height + 'px';
+    } else {
+      app.style.height = '';
+    }
+    window.scrollTo(0, 0);
+  });
+  vv.addEventListener('scroll', () => window.scrollTo(0, 0));
+  document.addEventListener('focusout', () => {
+    setTimeout(() => {
+      if (!document.activeElement || document.activeElement === document.body) {
+        document.getElementById('app').style.height = '';
+        window.scrollTo(0, 0);
+      }
+    }, 50);
+  });
+}
 </script>
 </body>
 </html>
