@@ -1670,7 +1670,7 @@ async function openRoom(roomId, roomName, roomType) {
   verify('openRoom', currentRoom === roomId, 'currentRoom set to ' + roomId);
   verify('openRoom', document.getElementById('msg-input'), 'message input exists');
   verify('openRoom', document.getElementById('messages'), 'messages container exists');
-  document.getElementById('msg-input')?.focus();
+  if (!isMobile) document.getElementById('msg-input')?.focus();
 }
 
 function renderChatView(roomName) {
@@ -2082,7 +2082,7 @@ function setReply(msgId, name, text) {
     document.getElementById('reply-text').textContent = text.slice(0, 60);
     preview.classList.add('visible');
   }
-  document.getElementById('msg-input')?.focus();
+  if (!isMobile) document.getElementById('msg-input')?.focus();
   verify('setReply', replyTo?.id === msgId, 'reply set to msg ' + msgId + ' by ' + name);
   verify('setReply', preview?.classList.contains('visible'), 'reply preview visible');
 }
