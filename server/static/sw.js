@@ -1,14 +1,14 @@
 self.addEventListener('install', function () { self.skipWaiting(); });
 self.addEventListener('activate', function (event) { event.waitUntil(self.clients.claim()); });
 
-var SW_VERSION = 'v8';
+var SW_VERSION = 'v9';
 
 function swlog(step, detail) {
   return fetch('/chat/api/swlog', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ src: 'sw', v: SW_VERSION, step: step, detail: detail || null }),
-  }).catch(function () { /* best-effort */ });
+  }).catch(function () {});
 }
 
 function ackPush(action, url) {
@@ -19,24 +19,38 @@ function ackPush(action, url) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ endpoint: sub.endpoint, action: action, v: SW_VERSION, url: url || null }),
     });
-  }).catch(function () { /* best-effort ack */ });
+  }).catch(function () {});
 }
 
 self.addEventListener('push', function (event) {
-  var data = event.data ? event.data.json() : {};
+  var raw = event.data ? event.data.text() : '';
+  var data = {};
+  try { data = JSON.parse(raw); } catch (e) { data = {}; }
+
   var title = data.title || 'Stone Techno Companion';
-  // Tag MUST be unique per notification: iOS drops notificationclick on a
-  // notification that replaced an earlier one (same tag + renotify), the tap
-  // then opens the app at start_url with no event. Never reuse tags.
+  var body = data.body || '';
+  var tag = 'stc-' + (data.room_id || '') + '-' + (data.push_index || Math.random().toString(36).slice(2));
   var options = {
-    body: data.body || '',
+    body: body,
     icon: '/favicon.png',
     badge: '/favicon.png',
-    tag: 'stc-' + (data.url || Math.random().toString(36).slice(2)),
-    data: { url: data.url || '/' },
+    tag: tag,
+    data: { url: data.url || '/', roomId: data.room_id, count: data.count },
+    silent: data.silent || false,
   };
+
   event.waitUntil(
-    self.registration.showNotification(title, options).then(function () {
+    self.registration.getNotifications().then(function (list) {
+      if (data.room_id) {
+        list.filter(function (n) {
+          return n.data && n.data.roomId === data.room_id;
+        }).forEach(function (n) { n.close(); });
+      }
+      return self.registration.showNotification(title, options);
+    }).then(function () {
+      if (data.total_unread && navigator.setAppBadge) {
+        navigator.setAppBadge(data.total_unread);
+      }
       return Promise.all([swlog('push-received', data.url), ackPush('delivered', data.url)]);
     })
   );
@@ -50,8 +64,6 @@ self.addEventListener('notificationclick', function (event) {
   var fullUrl = new URL(targetUrl, self.location.origin).href;
 
   event.waitUntil(
-    // All local work first: iOS may kill the SW moments after the app
-    // foregrounds, so no network before cache write + postMessage.
     caches.open('stc-push').then(function (cache) {
       return cache.put('/_push_navigate', new Response(targetUrl));
     }).catch(function () {}).then(function () {
@@ -74,7 +86,7 @@ self.addEventListener('notificationclick', function (event) {
 });
 
 self.addEventListener('notificationclose', function (event) {
-  ackPush('dismissed');
+  event.waitUntil(ackPush('dismissed'));
 });
 
 self.addEventListener('pushsubscriptionchange', function (event) {
@@ -92,6 +104,6 @@ self.addEventListener('pushsubscriptionchange', function (event) {
           },
         }),
       });
-    }).catch(function () { /* re-subscribe best-effort */ })
+    }).catch(function () {})
   );
 });

@@ -289,9 +289,12 @@ def _get_room_notification_targets(db, room_id: str, sender_id: str) -> list[str
 
 
 _push_debounce: dict[str, float] = {}
+_push_sent: dict[str, bool] = {}
+_push_flush_tasks: dict[str, asyncio.Task] = {}
+_push_counter: int = 0
 
 
-async def _send_chat_push(
+async def _push_or_defer(
     user_id: str,
     room_id: str,
     room_type: str,
@@ -300,39 +303,136 @@ async def _send_chat_push(
     text_preview: str,
     msg_id: str | None = None,
 ) -> None:
+    global _push_counter
     key = f"{user_id}:{room_id}"
     now = time.monotonic()
-    if now - _push_debounce.get(key, 0) < 10:
+    last = _push_debounce.get(key, 0)
+    if now - last > 1800:
+        _push_sent.pop(key, None)
+    window = 60 if _push_sent.get(key) else 10
+    if now - last < window:
+        if key not in _push_flush_tasks:
+            delay = last + window - now
+            _push_flush_tasks[key] = asyncio.create_task(
+                _flush_push_later(key, delay, user_id, room_id, room_type, room_name)
+            )
         return
     _push_debounce[key] = now
+    silent = bool(_push_sent.get(key))
+    _push_sent[key] = True
+    _push_counter += 1
+    await _do_send_push(
+        user_id,
+        room_id,
+        room_type,
+        room_name,
+        sender_name,
+        text_preview,
+        msg_id,
+        silent=silent,
+        push_index=_push_counter,
+    )
+
+
+async def _flush_push_later(
+    key: str,
+    delay: float,
+    user_id: str,
+    room_id: str,
+    room_type: str,
+    room_name: str,
+) -> None:
+    await asyncio.sleep(delay)
+    _push_flush_tasks.pop(key, None)
+    await _push_or_defer(user_id, room_id, room_type, room_name, "", "", None)
+
+
+async def _do_send_push(
+    user_id: str,
+    room_id: str,
+    room_type: str,
+    room_name: str,
+    sender_name: str,
+    text_preview: str,
+    msg_id: str | None,
+    silent: bool,
+    push_index: int,
+) -> None:
     db = get_chat_db()
-    subs = get_push_subscriptions(db, user_id)
-    db.close()
-    if not subs:
-        return
+    try:
+        subs = get_push_subscriptions(db, user_id)
+        if not subs:
+            return
+        counts = get_unread_counts(db, user_id)
+        room_counts = counts.get(room_id)
+        count = room_counts["count"] if room_counts else 0
+        total_unread = sum(c["count"] for c in counts.values())
+        if count == 0:
+            return
+        last_read = room_counts["last_read_at"] if room_counts else "1970-01-01"
+        now_iso = datetime.now(timezone.utc).isoformat()
+        row = db.execute(
+            "SELECT id FROM messages WHERE room_id = ? AND created_at > ? "
+            "AND user_id != ? AND expires_at > ? ORDER BY created_at LIMIT 1",
+            (room_id, last_read, user_id, now_iso),
+        ).fetchone()
+        first_msg_id = row["id"] if row else msg_id
+        if not sender_name:
+            msg_row = db.execute(
+                "SELECT m.content, u.display_name, u.username FROM messages m "
+                "JOIN users u ON u.id = m.user_id "
+                "WHERE m.room_id = ? AND m.created_at > ? AND m.user_id != ? AND m.expires_at > ? "
+                "ORDER BY m.created_at DESC LIMIT 1",
+                (room_id, last_read, user_id, now_iso),
+            ).fetchone()
+            if msg_row:
+                sender_name = msg_row["display_name"] or msg_row["username"]
+                if count == 1:
+                    text_preview = msg_row["content"] or ""
+    finally:
+        db.close()
+
     vapid_private_key = os.environ.get("VAPID_PRIVATE_KEY")
     if not vapid_private_key:
         return
     if "BEGIN" not in vapid_private_key and not os.path.isfile(vapid_private_key):
         logger.warning("VAPID_PRIVATE_KEY file not found: %s", vapid_private_key)
         return
-    if room_type == "dm":
-        title = sender_name
-        body = text_preview[:100]
-    elif room_type == "meetup":
-        title = room_name
-        body = f"{sender_name}: {text_preview[:80]}"
+
+    if count == 1:
+        if room_type == "dm":
+            title = sender_name
+            body = text_preview[:100]
+        elif room_type == "meetup":
+            title = room_name
+            body = f"{sender_name}: {text_preview[:80]}"
+        else:
+            title = f"#{room_name}"
+            body = f"{sender_name}: {text_preview[:80]}"
     else:
-        title = f"#{room_name}"
-        body = f"{sender_name}: {text_preview[:80]}"
+        if room_type == "dm":
+            title = sender_name
+        elif room_type == "meetup":
+            title = room_name
+        else:
+            title = f"#{room_name}"
+        body = f"{count} new messages"
+
+    url = f"/chat/msg/{first_msg_id}" if first_msg_id else f"/chat/r/{room_id}"
     payload = json.dumps(
         {
             "title": title,
             "body": body,
-            "tag": f"chat-{room_id}",
-            "url": f"/chat/msg/{msg_id}" if msg_id else f"/chat/r/{room_id}",
+            "room_id": room_id,
+            "room_type": room_type,
+            "count": count,
+            "total_unread": total_unread,
+            "url": url,
+            "silent": silent,
+            "push_index": push_index,
         }
     )
+
     vapid_claims = {
         "sub": os.environ.get("VAPID_CLAIMS_EMAIL", "mailto:noreply@example.com")
     }
@@ -805,7 +905,7 @@ async def _moderate_and_broadcast(
         room_name = meta.get("name", "")
         for uid in push_targets:
             asyncio.create_task(
-                _send_chat_push(
+                _push_or_defer(
                     uid,
                     room_id,
                     room_type,
@@ -1029,6 +1129,15 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                             "name": room_meta.get("name", ""),
                         },
                     )
+                    key = f"{user_id}:{room_id}"
+                    _push_sent.pop(key, None)
+                    _push_debounce.pop(key, None)
+                    task = _push_flush_tasks.pop(key, None)
+                    if task:
+                        task.cancel()
+
+            elif event == "visible":
+                manager._last_ws_activity[user_id] = time.monotonic()
 
             elif event == "send_message":
                 room_id = data.get("room_id")
@@ -1610,6 +1719,25 @@ async def purge_loop() -> None:
 
             if _purge_cycle % 2880 == 0:
                 purge_stale_push_subscriptions(db)
+
+            if _purge_cycle % 240 == 0:
+                cutoff = time.monotonic() - 7200
+                stale_keys = [k for k, v in _push_debounce.items() if v < cutoff]
+                for k in stale_keys:
+                    _push_debounce.pop(k, None)
+                    _push_sent.pop(k, None)
+                    t = _push_flush_tasks.pop(k, None)
+                    if t:
+                        t.cancel()
+                connected = set(manager.user_conns.keys())
+                stale_activity = [
+                    uid
+                    for uid in list(manager._last_ws_activity)
+                    if uid not in connected
+                    and time.monotonic() - manager._last_ws_activity.get(uid, 0) > 7200
+                ]
+                for uid in stale_activity:
+                    manager._last_ws_activity.pop(uid, None)
 
         except Exception:
             logger.exception("Purge loop error")

@@ -1282,6 +1282,7 @@ function handleWSEvent(data) {
         roomTypeLookup[room_id] = {type, name};
       });
       refreshAllBadges();
+      _updateAppBadge();
       break;
     case 'badge_update':
       dbg('[BADGE] update:', data.room_id, data.count);
@@ -1295,6 +1296,7 @@ function handleWSEvent(data) {
       }
       updateBadge(data.room_id);
       updateTabBadges();
+      _updateAppBadge();
       break;
   }
 }
@@ -1634,6 +1636,8 @@ async function openRoom(roomId, roomName, roomType) {
   currentRoomType = roomType || 'stage';
   delete unreadByRoom[roomId];
   updateTabBadges();
+  _clearRoomNotifications(roomId);
+  _updateAppBadge();
   if (!isMobile && !document.querySelector('.main-panel')) {
     dbg('openRoom: creating desktop layout first');
     renderRoomList();
@@ -1981,6 +1985,7 @@ function _debouncedMarkRead() {
     updateBadge(_markReadRoom);
     updateTabBadges();
     _updateTitleBadge();
+    _updateAppBadge();
   }, 500);
 }
 
@@ -3840,14 +3845,56 @@ if ('serviceWorker' in navigator) {
     if (e.data && e.data.type === 'navigate') { _plog('postmessage-received', e.data.url); window.location.href = e.data.url; }
   });
 }
+var _visibleInterval = null;
+function _startVisibleKeepalive() {
+  if (_visibleInterval || document.hidden) return;
+  if (ws && ws.readyState === 1) wsSend('visible', {});
+  _visibleInterval = setInterval(function() {
+    if (ws && ws.readyState === 1) wsSend('visible', {});
+    else if (document.hidden) { clearInterval(_visibleInterval); _visibleInterval = null; }
+  }, 20000);
+}
+_startVisibleKeepalive();
 document.addEventListener('visibilitychange', function() {
   if (document.hidden) {
     try { navigator.sendBeacon('/chat/api/push/idle'); } catch(e) {}
+    if (_visibleInterval) { clearInterval(_visibleInterval); _visibleInterval = null; }
+  } else {
+    _startVisibleKeepalive();
   }
 });
 window.addEventListener('pagehide', function() {
   try { navigator.sendBeacon('/chat/api/push/idle'); } catch(e) {}
 });
+
+function _clearRoomNotifications(roomId) {
+  if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) return;
+  navigator.serviceWorker.ready.then(function(reg) {
+    reg.getNotifications().then(function(list) {
+      var roomNotifs = list.filter(function(n) {
+        return n.data && n.data.roomId === roomId;
+      });
+      roomNotifs.forEach(function(n) { n.close(); });
+      if (roomNotifs.length > 0) {
+        setTimeout(function() {
+          if (currentRoom !== roomId) return;
+          reg.getNotifications().then(function(list2) {
+            list2.filter(function(n) {
+              return n.data && n.data.roomId === roomId;
+            }).forEach(function(n) { n.close(); });
+          });
+        }, 35000);
+      }
+    });
+  });
+}
+
+function _updateAppBadge() {
+  if (!navigator.setAppBadge) return;
+  var total = Object.values(unreadByRoom).reduce(function(s, n) { return s + n; }, 0) + _hiddenUnread;
+  if (total > 0) navigator.setAppBadge(total);
+  else navigator.clearAppBadge();
+}
 
 if (window.visualViewport) {
   const vv = window.visualViewport;
