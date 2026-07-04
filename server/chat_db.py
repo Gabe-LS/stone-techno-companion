@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import sqlite3
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-CHAT_DB_PATH = Path(__file__).resolve().parent / "data" / "chat.db"
+CHAT_DB_PATH = Path(
+    os.environ.get("CHAT_DB_PATH")
+    or (Path(__file__).resolve().parent / "data" / "chat.db")
+)
 
 DEFAULT_MESSAGE_TTL_MIN = 60
 DEFAULT_MEETUP_GRACE_MIN = 30
