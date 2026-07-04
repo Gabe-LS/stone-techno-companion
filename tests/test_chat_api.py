@@ -376,6 +376,53 @@ class TestAdmin:
         assert len(r.json()) == 1
         assert r.json()[0]["reporter_name"] == "Alice"
 
+    def test_admin_reports_includes_unverified_and_reporter_id(
+        self, client, user1, user2, stage_room
+    ):
+        create_message(_test_db, "grand-hall", user2["id"], "text", '{"text":"bad"}')
+        report_id = create_report(
+            _test_db,
+            user1["id"],
+            user2["id"],
+            '{"text":"bad"}',
+            "grand-hall",
+            "harassment",
+            unverified=1,
+        )
+        r = client.get(
+            "/chat/api/admin/reports?status=pending",
+            headers={"X-Admin-Token": "test-admin-token"},
+        )
+        assert r.status_code == 200
+        report = next(x for x in r.json() if x["id"] == report_id)
+        assert report["unverified"] is True
+        assert report["reporter_id"] == user1["id"]
+
+    def test_admin_user_detail_reports_filed_count(
+        self, client, user1, user2, stage_room
+    ):
+        create_report(_test_db, user1["id"], user2["id"], "snap1", "grand-hall", "spam")
+        create_report(
+            _test_db, user1["id"], user2["id"], "snap2", "grand-hall", "harassment"
+        )
+        r = client.get(
+            f"/chat/api/admin/users/{user1['id']}",
+            headers={"X-Admin-Token": "test-admin-token"},
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["reports_filed_count"] == 2
+        assert len(data["reports_against"]) == 0
+
+        r2 = client.get(
+            f"/chat/api/admin/users/{user2['id']}",
+            headers={"X-Admin-Token": "test-admin-token"},
+        )
+        assert r2.status_code == 200
+        data2 = r2.json()
+        assert len(data2["reports_against"]) == 2
+        assert data2["reports_filed_count"] == 0
+
     def test_admin_resolve_report(self, client, user1, user2, stage_room):
         report_id = create_report(
             _test_db,

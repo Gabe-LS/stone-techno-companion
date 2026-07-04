@@ -24,6 +24,7 @@ from chat_db import (
     purge_expired_messages,
     find_or_create_dm,
     get_pending_reports,
+    save_push_subscription,
 )
 from chat_moderation import moderate_message
 import chat_ws
@@ -732,3 +733,75 @@ class TestE2eeReport:
             in reports[0]["message_snapshot"]
         )
         assert reports[0]["unverified"] == 0
+
+
+class TestDmPushPreview:
+    """The debounced-push DB-refetch path must never leak the E2EE envelope."""
+
+    def _setup_push(self, db, monkeypatch, recipient_id):
+        save_push_subscription(
+            db, recipient_id, "https://push.example/ep1", "p256", "auth"
+        )
+        monkeypatch.setenv("VAPID_PRIVATE_KEY", "BEGIN test key")
+
+    @pytest.mark.asyncio
+    async def test_dm_refetch_preview_is_generic(
+        self, db, user1, user2, event_id, monkeypatch
+    ):
+        room_id = find_or_create_dm(db, event_id, user1["id"], user2["id"])
+        envelope = json.dumps({"e2ee": True, "v": 1, "ct": "Zm9vYmFy"})
+        msg = create_message(db, room_id, user1["id"], "text", envelope)
+        self._setup_push(db, monkeypatch, user2["id"])
+
+        with patch("chat_ws.get_chat_db", return_value=_UnclosableConnection(db)):
+            with patch("pywebpush.webpush") as wp:
+                await chat_ws._do_send_push(
+                    user2["id"],
+                    room_id,
+                    "dm",
+                    "DM",
+                    "",
+                    "",
+                    msg["id"],
+                    silent=False,
+                    push_index=1,
+                )
+
+        assert wp.called
+        payload = wp.call_args.kwargs["data"]
+        parsed = json.loads(payload)
+        assert parsed["title"] == "Alice"
+        assert parsed["body"] == "Sent you a message"
+        assert "e2ee" not in payload
+
+    @pytest.mark.asyncio
+    async def test_group_refetch_preview_keeps_content(
+        self, db, user1, user2, event_id, stage_room, monkeypatch
+    ):
+        from chat_db import join_room_membership
+
+        room_id = stage_room["id"]
+        join_room_membership(db, user2["id"], room_id)
+        msg = create_message(
+            db, room_id, user1["id"], "text", json.dumps({"text": "hello there"})
+        )
+        self._setup_push(db, monkeypatch, user2["id"])
+
+        with patch("chat_ws.get_chat_db", return_value=_UnclosableConnection(db)):
+            with patch("pywebpush.webpush") as wp:
+                await chat_ws._do_send_push(
+                    user2["id"],
+                    room_id,
+                    "stage",
+                    "Grand Hall",
+                    "",
+                    "",
+                    msg["id"],
+                    silent=False,
+                    push_index=1,
+                )
+
+        assert wp.called
+        parsed = json.loads(wp.call_args.kwargs["data"])
+        assert parsed["title"] == "#Grand Hall"
+        assert "hello there" in parsed["body"]

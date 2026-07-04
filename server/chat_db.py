@@ -1368,6 +1368,10 @@ def get_user_admin_detail(db: sqlite3.Connection, user_id: str) -> dict | None:
         (user_id, now),
     ).fetchone()[0]
 
+    reports_filed_count = db.execute(
+        "SELECT COUNT(*) FROM reports WHERE reporter_id = ?", (user_id,)
+    ).fetchone()[0]
+
     return {
         "id": user["id"],
         "display_name": user["display_name"],
@@ -1392,6 +1396,7 @@ def get_user_admin_detail(db: sqlite3.Connection, user_id: str) -> dict | None:
             for s in strikes
         ],
         "reports_against": [dict(r) for r in reports],
+        "reports_filed_count": reports_filed_count,
         "bans": [dict(b) for b in bans],
         "message_count": msg_count,
     }

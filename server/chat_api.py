@@ -1611,6 +1611,7 @@ async def admin_reports(request: Request, status: str = "pending"):
         return [
             {
                 "id": r["id"],
+                "reporter_id": r["reporter_id"],
                 "reporter_name": r["reporter_name"],
                 "reported_name": r["reported_name"],
                 "message_snapshot": r["message_snapshot"],
@@ -1618,6 +1619,7 @@ async def admin_reports(request: Request, status: str = "pending"):
                 "reported_user_id": r["reported_user_id"],
                 "reason": r["reason"],
                 "status": r["status"],
+                "unverified": bool(r["unverified"]),
                 "created_at": r["created_at"],
             }
             for r in reports

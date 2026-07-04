@@ -403,6 +403,7 @@ let _msgCharLimit = 1000;
 let _dmListCache = {};
 let _roomEncrypted = new Set();
 let _unencryptedRooms = new Set();
+let _decryptRetried = new Set();
 const _UPLOAD_URL_RE = /^\/chat\/uploads\/[a-f0-9]{32}\.(webp|mp4)$/;
 
 const REACTION_EMOJIS = {'👍':'thumbs_up','❤️':'heart','😂':'laugh','🔥':'fire','😮':'wow','👏':'clap'};
@@ -1107,6 +1108,7 @@ async function _decryptMessageContent(msg) {
     msg._decryptFailed = true;
     return msg;
   }
+  const envelope = msg.content;
   try {
     const parsed = JSON.parse(msg.content);
     const plaintext = await E2EE.decrypt(msg.room_id, peerUserId, parsed.ct);
@@ -1125,6 +1127,14 @@ async function _decryptMessageContent(msg) {
     _roomEncrypted.add(msg.room_id);
   } catch (e) {
     dbg('[E2EE] decrypt failed:', e && e.message);
+    if (msg.id != null && !_decryptRetried.has(msg.id)) {
+      _decryptRetried.add(msg.id);
+      dbg('[E2EE] retry guard: invalidating caches and retrying decrypt once, msg=' + msg.id);
+      delete E2EE._sharedKeys[msg.room_id];
+      delete E2EE._peerKeys[peerUserId];
+      msg.content = envelope;
+      return _decryptMessageContent(msg);
+    }
     msg.content = JSON.stringify({ text: '[Encrypted message]' });
     msg._decryptFailed = true;
   }
@@ -1400,6 +1410,8 @@ async function handleWSEvent(data) {
       break;
     case 'key_rotated':
       dbg('[E2EE] key_rotated for user', data.user_id, 'room', data.room_id);
+      delete E2EE._peerKeys[data.user_id];
+      delete E2EE._sharedKeys[data.room_id];
       _unencryptedRooms.delete(data.room_id);
       break;
   }
@@ -1738,6 +1750,7 @@ async function openRoom(roomId, roomName, roomType) {
   if (currentRoom && currentRoom !== roomId) {
     wsSend('leave_room', { room_id: currentRoom });
   }
+  _decryptRetried.clear();
   currentRoom = roomId;
   currentRoomName = roomName;
   currentRoomType = roomType || 'stage';
@@ -3102,6 +3115,10 @@ function closeActionSheet() {
 function _doBlock(userId, name, report, msgId) {
   wsSend('block_user', { target_user_id: userId });
   blockedUserIds.add(userId);
+  delete E2EE._peerKeys[userId];
+  const dmRoomId = Object.keys(_dmListCache).find(rid => _dmListCache[rid] === userId);
+  if (dmRoomId) delete E2EE._sharedKeys[dmRoomId];
+  dbg('[E2EE] cleared cached keys for blocked user', userId, 'room', dmRoomId || '(unresolved)');
   if (report && msgId) {
     wsSend('report_message', { message_id: msgId, reason: 'Blocked and reported by user' });
   }
@@ -3825,6 +3842,7 @@ async function doLogout() {
   E2EE._peerKeys = {};
   _roomEncrypted = new Set();
   _unencryptedRooms = new Set();
+  _decryptRetried.clear();
   dbg('[E2EE] cleared key pair and caches on logout');
   renderAuth();
 }
