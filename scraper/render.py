@@ -2548,6 +2548,10 @@ def render_output_html(
           if (navResp) {
             var navUrl = await navResp.text();
             await pushCache.delete('/_push_navigate');
+            if (navUrl && navUrl !== location.pathname && !navUrl.includes('line-up')) {
+              window.location.href = navUrl;
+              return;
+            }
             if (navUrl.includes('timetable')) currentView = 'timetable';
           }
         } catch (e) { /* cache API unavailable */ }
@@ -2574,6 +2578,30 @@ def render_output_html(
         parts.append("      updateNowLine();")
     parts.append("""
     })();
+
+    var _pushNavDone = false;
+    function _checkPushNavigate() {
+      if (_pushNavDone || !('caches' in window)) return;
+      caches.open('stc-push').then(function(c) {
+        return c.match('/_push_navigate').then(function(r) {
+          if (!r) return;
+          return r.text().then(function(url) {
+            c.delete('/_push_navigate');
+            if (url && url !== location.pathname && !url.includes('line-up')) {
+              _pushNavDone = true;
+              window.location.href = url;
+            }
+          });
+        });
+      }).catch(function() {});
+    }
+    document.addEventListener('visibilitychange', function() {
+      if (!document.hidden) {
+        _checkPushNavigate();
+        setTimeout(_checkPushNavigate, 300);
+        setTimeout(_checkPushNavigate, 1000);
+      }
+    });
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(function() {});
