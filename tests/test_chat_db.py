@@ -50,6 +50,7 @@ from chat_db import (
     hash_email,
     upsert_e2ee_key,
     get_e2ee_key,
+    _migrate_chat_db,
 )
 
 
@@ -330,6 +331,20 @@ class TestDMs:
         with pytest.raises(ValueError):
             find_or_create_dm(db, event_id, user["id"], "nonexistent")
 
+    def test_dm_room_not_moderated(self, db, user, user2, event_id):
+        room_id = find_or_create_dm(db, event_id, user["id"], user2["id"])
+        room = get_room(db, room_id)
+        assert room["is_moderated"] == 0
+
+    def test_migration_disables_moderation_on_existing_dm_rooms(
+        self, db, user, user2, event_id
+    ):
+        room_id = "legacy-dm-room"
+        create_room(db, room_id, event_id, "dm", "DM", is_moderated=True)
+        assert get_room(db, room_id)["is_moderated"] == 1
+        _migrate_chat_db(db)
+        assert get_room(db, room_id)["is_moderated"] == 0
+
 
 # --- Blocks ---
 
@@ -475,3 +490,18 @@ class TestE2eeKeys:
             "SELECT unverified FROM reports WHERE id = ?", (report_id,)
         ).fetchone()
         assert row["unverified"] == 0
+
+    def test_reports_unverified_roundtrip(self, db, user, user2, stage_room):
+        report_id = create_report(
+            db,
+            user["id"],
+            user2["id"],
+            "reporter-provided snapshot",
+            "grand-hall",
+            "harassment",
+            unverified=1,
+        )
+        row = db.execute(
+            "SELECT unverified FROM reports WHERE id = ?", (report_id,)
+        ).fetchone()
+        assert row["unverified"] == 1

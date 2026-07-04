@@ -67,6 +67,18 @@ _UPLOADS_DIR = Path(__file__).resolve().parent / "chat" / "uploads"
 _UPLOAD_URL_RE = re.compile(r"^/chat/uploads/[a-f0-9]{32}\.(webp|mp4)$")
 
 
+def _is_e2ee_content(content: str) -> bool:
+    try:
+        c = json.loads(content)
+    except (json.JSONDecodeError, TypeError):
+        return False
+    return isinstance(c, dict) and c.get("e2ee") is True
+
+
+def _dm_preview(sender_name: str) -> tuple[str, str]:
+    return sender_name, "Sent you a message"
+
+
 def _image_to_data_uri(rel_url: str) -> str | None:
     filename = rel_url.rsplit("/", 1)[-1]
     stem = filename.rsplit(".", 1)[0]
@@ -388,7 +400,10 @@ async def _do_send_push(
             if msg_row:
                 sender_name = msg_row["display_name"] or msg_row["username"]
                 if count == 1:
-                    text_preview = msg_row["content"] or ""
+                    if room_type == "dm":
+                        _, text_preview = _dm_preview(sender_name)
+                    else:
+                        text_preview = msg_row["content"] or ""
     finally:
         db.close()
 
@@ -692,7 +707,9 @@ def _build_reply_snippet(db, reply_to_id: str | None) -> dict | None:
     if not orig:
         return None
     reply_text = ""
-    if orig["type"] == "text":
+    if _is_e2ee_content(orig["content"]):
+        reply_text = ""
+    elif orig["type"] == "text":
         try:
             reply_text = json.loads(orig["content"]).get("text", "")[:80]
         except Exception:
@@ -716,7 +733,9 @@ def _format_message_for_history(m, reactions_map: dict) -> dict:
     }
     if m["reply_to_id"] and m["reply_display_name"]:
         reply_text = ""
-        if m["reply_type"] == "text":
+        if _is_e2ee_content(m["reply_content"]):
+            reply_text = ""
+        elif m["reply_type"] == "text":
             try:
                 reply_text = json.loads(m["reply_content"]).get("text", "")[:80]
             except Exception:
@@ -833,7 +852,7 @@ async def _moderate_and_broadcast(
             event_data["reply_to"] = reply_snippet
         await mgr.broadcast_to_room(room_id, event_data, exclude_conn=conn_id)
 
-        if msg_type == "text" and text:
+        if msg_type == "text" and text and not _is_e2ee_content(content):
             link_url = _extract_first_url(text)
             if link_url:
                 preview = await _fetch_link_preview(link_url)
@@ -853,6 +872,8 @@ async def _moderate_and_broadcast(
                         },
                     )
 
+        meta = mgr._room_meta.get(room_id, {"type": "general", "name": ""})
+
         text_preview = ""
         if msg_type == "text":
             text_preview = (text or "")[:100]
@@ -865,9 +886,11 @@ async def _moderate_and_broadcast(
         elif msg_type == "meetup_card":
             text_preview = "Shared a meetup"
 
+        if meta.get("type") == "dm":
+            _, text_preview = _dm_preview(display_name)
+
         room_obj = mgr.rooms.get(room_id)
         active_viewers = set(room_obj.conn_users.values()) if room_obj else set()
-        meta = mgr._room_meta.get(room_id, {"type": "general", "name": ""})
         for uid, badge_rooms in list(mgr.user_badge_rooms.items()):
             if room_id not in badge_rooms or uid in active_viewers or uid == user_id:
                 continue
@@ -1152,7 +1175,23 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 if msg_type not in SENDABLE_MSG_TYPES:
                     continue
 
+                is_e2ee_msg = _is_e2ee_content(content)
+                if is_e2ee_msg:
+                    e2ee_room = get_room(db, room_id)
+                    if not e2ee_room or e2ee_room["type"] != "dm":
+                        await manager.send_to_user(
+                            user_id,
+                            {
+                                "event": "message_rejected",
+                                "temp_id": temp_id,
+                                "reason": "Encrypted messages are only supported in direct messages",
+                            },
+                        )
+                        continue
+
                 max_content = msg_char_limit + 20 if msg_type == "text" else 2000
+                if is_e2ee_msg and msg_type == "text":
+                    max_content = max(max_content * 2, 4000)
                 if len(content) > max_content:
                     await manager.send_to_user(
                         user_id,
@@ -1164,7 +1203,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     )
                     continue
 
-                if msg_type in ("image", "video"):
+                if msg_type in ("image", "video") and not is_e2ee_msg:
                     try:
                         _media_url = json.loads(content).get("url", "")
                     except (json.JSONDecodeError, AttributeError, TypeError):
@@ -1456,8 +1495,6 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     )
                     continue
                 try:
-                    from chat_db import get_user
-
                     existing = db.execute(
                         "SELECT dp1.room_id FROM dm_participants dp1 "
                         "JOIN dm_participants dp2 ON dp1.room_id = dp2.room_id "
@@ -1589,6 +1626,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
             elif event == "report_message":
                 message_id = data.get("message_id")
                 reason = data.get("reason")
+                client_content = data.get("message_content")
                 if not message_id or not reason:
                     continue
                 msg_row = db.execute(
@@ -1604,12 +1642,25 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                             continue
                     sender = get_user(db, msg_row["user_id"])
                     sender_name = sender["display_name"] if sender else "Unknown"
-                    try:
-                        text = json.loads(msg_row["content"]).get(
-                            "text", msg_row["content"]
-                        )
-                    except (json.JSONDecodeError, AttributeError):
-                        text = msg_row["content"]
+                    unverified = 0
+                    if _is_e2ee_content(msg_row["content"]):
+                        if client_content:
+                            try:
+                                text = json.loads(client_content).get(
+                                    "text", client_content
+                                )
+                            except (json.JSONDecodeError, AttributeError):
+                                text = client_content
+                            unverified = 1
+                        else:
+                            text = "[encrypted message - no content provided]"
+                    else:
+                        try:
+                            text = json.loads(msg_row["content"]).get(
+                                "text", msg_row["content"]
+                            )
+                        except (json.JSONDecodeError, AttributeError):
+                            text = msg_row["content"]
                     snapshot = f"[{msg_row['created_at']}] {sender_name}: {text}"
                     create_report(
                         db,
@@ -1618,6 +1669,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                         snapshot,
                         msg_row["room_id"],
                         reason,
+                        unverified=unverified,
                     )
                     await manager.send_to_user(
                         user_id, {"event": "report_confirmed", "message_id": message_id}

@@ -396,6 +396,10 @@ let _googleClientId = null;
 let _googleInitialized = false;
 let _siteShort = null;
 let _msgCharLimit = 1000;
+let _dmListCache = {};
+let _roomEncrypted = new Set();
+let _unencryptedRooms = new Set();
+const _UPLOAD_URL_RE = /^\/chat\/uploads\/[a-f0-9]{32}\.(webp|mp4)$/;
 
 const REACTION_EMOJIS = {'👍':'thumbs_up','❤️':'heart','😂':'laugh','🔥':'fire','😮':'wow','👏':'clap'};
 const REACTION_KEYS = Object.entries(REACTION_EMOJIS);
@@ -1031,7 +1035,12 @@ function connectWS() {
       if (currentRoom) wsSend('join_room', { room_id: currentRoom });
       done();
     };
-    sock.onmessage = (e) => { try { handleWSEvent(JSON.parse(e.data)); } catch (err) { dbg('[WS] event handler error:', err); } };
+    sock.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        handleWSEvent(data).catch((err) => dbg('[WS] event handler error:', err));
+      } catch (err) { dbg('[WS] event handler error:', err); }
+    };
     sock.onclose = (ev) => {
       ws = null; _wsConnecting = false;
       if (ev.code === 4001) { currentUser = null; renderAuth(); return; }
@@ -1051,13 +1060,91 @@ function wsSend(event, payload) {
   if (ws && ws.readyState === 1) ws.send(JSON.stringify({ event, ...payload }));
 }
 
-function handleWSEvent(data) {
+// --- E2EE message helpers (Phase 2) ---
+function _isE2eeContent(content) {
+  try {
+    const c = JSON.parse(content);
+    return !!(c && c.e2ee === true);
+  } catch (e) {
+    return false;
+  }
+}
+
+function _getDmPeerUserId(roomId) {
+  const members = membersByRoom[roomId];
+  if (members && members.length) {
+    const peer = members.find(m => m.user_id !== currentUser?.id);
+    if (peer) return peer.user_id;
+  }
+  if (_pendingDmTarget && (roomId === currentRoom || roomId === 'pending-dm')) return _pendingDmTarget;
+  if (_dmListCache[roomId]) return _dmListCache[roomId];
+  return null;
+}
+
+function _waitForMembers(roomId, timeoutMs) {
+  if (membersByRoom[roomId] && membersByRoom[roomId].length) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const deadline = Date.now() + timeoutMs;
+    const check = () => {
+      if (membersByRoom[roomId] && membersByRoom[roomId].length) { resolve(true); return; }
+      if (Date.now() >= deadline) { resolve(false); return; }
+      setTimeout(check, 100);
+    };
+    check();
+  });
+}
+
+async function _decryptMessageContent(msg) {
+  if (!_isE2eeContent(msg.content)) return msg;
+  const peerUserId = _getDmPeerUserId(msg.room_id);
+  if (!peerUserId) {
+    dbg('[E2EE] cannot decrypt, unknown peer for room', msg.room_id);
+    msg.content = JSON.stringify({ text: '[Encrypted message]' });
+    return msg;
+  }
+  try {
+    const parsed = JSON.parse(msg.content);
+    const plaintext = await E2EE.decrypt(msg.room_id, peerUserId, parsed.ct);
+    if (msg.type === 'image' || msg.type === 'video') {
+      let inner = null;
+      try { inner = JSON.parse(plaintext); } catch (e) { inner = null; }
+      if (!inner || !_UPLOAD_URL_RE.test(inner.url || '')) {
+        dbg('[E2EE] decrypted media URL failed validation, room=' + msg.room_id);
+        msg.content = JSON.stringify({ text: '[Encrypted message]' });
+        _roomEncrypted.add(msg.room_id);
+        return msg;
+      }
+    }
+    msg.content = plaintext;
+    _roomEncrypted.add(msg.room_id);
+  } catch (e) {
+    dbg('[E2EE] decrypt failed:', e && e.message);
+    msg.content = JSON.stringify({ text: '[Encrypted message]' });
+  }
+  return msg;
+}
+
+function _rebuildReplySnippet(msg, roomMsgs) {
+  if (!msg.reply_to || msg.reply_to.text) return;
+  const ref = (roomMsgs || []).find(m => m.id === msg.reply_to.id);
+  if (!ref) {
+    msg.reply_to = { ...msg.reply_to, text: 'Encrypted message' };
+    return;
+  }
+  let text = '';
+  try { text = JSON.parse(ref.content).text || ''; } catch (e) { text = ''; }
+  msg.reply_to = { ...msg.reply_to, text };
+}
+
+async function handleWSEvent(data) {
   dbg('ws event:', data.event, data.room_id || data.message_id || '');
   switch (data.event) {
     case 'room_history':
+      if (data.members) membersByRoom[data.room_id] = data.members;
+      data.messages = await Promise.all(data.messages.map(m => _decryptMessageContent(m)));
+      data.messages.forEach(m => _rebuildReplySnippet(m, data.messages));
       messagesByRoom[data.room_id] = data.messages;
       onlineByRoom[data.room_id] = data.online;
-      if (data.members) membersByRoom[data.room_id] = data.members;
       if (currentUser && !data.online.find(u => u.user_id === currentUser.id))
         onlineByRoom[data.room_id].push({ user_id: currentUser.id, display_name: currentUser.display_name, username: currentUser.username, color_index: currentUser.color_index, avatar_url: currentUser.avatar_url, country: currentUser.country });
       verify('room_history', data.messages, data.messages.length + ' messages for ' + data.room_id);
@@ -1089,7 +1176,10 @@ function handleWSEvent(data) {
       if (window._roomHistoryResolve) { window._roomHistoryResolve(); window._roomHistoryResolve = null; }
       updateSidebarCount(data.room_id);
       break;
-    case 'message':
+    case 'message': {
+      const _wasE2ee = _isE2eeContent(data.content);
+      await _decryptMessageContent(data);
+      _rebuildReplySnippet(data, messagesByRoom[data.room_id] || []);
       if (!messagesByRoom[data.room_id]) messagesByRoom[data.room_id] = [];
       if (messagesByRoom[data.room_id].some(m => m.id === data.id)) break;
       messagesByRoom[data.room_id].push(data);
@@ -1104,7 +1194,8 @@ function handleWSEvent(data) {
         _updateTitleBadge();
         if (Notification.permission === 'granted') {
           let preview = '';
-          if (data.type === 'text') { try { preview = JSON.parse(data.content).text || ''; } catch { preview = data.content; } }
+          if (_wasE2ee) { preview = 'Sent you a message'; }
+          else if (data.type === 'text') { try { preview = JSON.parse(data.content).text || ''; } catch { preview = data.content; } }
           else if (data.type === 'image') preview = 'Sent a photo';
           else if (data.type === 'video') preview = 'Sent a video';
           else if (data.type === 'location') preview = 'Shared a location';
@@ -1116,6 +1207,7 @@ function handleWSEvent(data) {
         }
       }
       break;
+    }
     case 'message_acked': {
       const msgs = messagesByRoom[currentRoom] || [];
       const idx = msgs.findIndex(m => m.temp_id === data.temp_id);
@@ -1218,6 +1310,7 @@ function handleWSEvent(data) {
     case 'dm_opened':
       dbg('[DM] dm_opened', data.room_id, data.name, data.target_user_id);
       if (data.room_id) {
+        if (data.target_user_id) _dmListCache[data.room_id] = data.target_user_id;
         openRoom(data.room_id, data.name || '', 'dm');
       } else {
         _pendingDmTarget = data.target_user_id;
@@ -1297,6 +1390,10 @@ function handleWSEvent(data) {
       updateBadge(data.room_id);
       updateTabBadges();
       _updateAppBadge();
+      break;
+    case 'key_rotated':
+      dbg('[E2EE] key_rotated for user', data.user_id, 'room', data.room_id);
+      _unencryptedRooms.delete(data.room_id);
       break;
   }
 }
@@ -1612,6 +1709,7 @@ async function loadDMs() {
   if (!el) return;
   try {
     const dms = await api('/dms');
+    dms.forEach(dm => { _dmListCache[dm.room_id] = dm.other_user_id; });
     if (!dms.length) { el.innerHTML = '<div class="empty">No conversations yet</div>'; return; }
     el.innerHTML = dms.map(dm => {
       const unread = unreadByRoom[dm.room_id] || 0;
@@ -2165,32 +2263,82 @@ function toggleReaction(msgId, emoji) {
 let _tempIdCounter = 0;
 function genTempId() { return 'tmp_' + (++_tempIdCounter) + '_' + Date.now(); }
 
-function sendChatMessage(type, content, replyToId) {
+async function sendChatMessage(type, content, replyToId) {
   dbg('[CHAT] sendChatMessage', type);
+  const roomId = currentRoom;
+  const roomType = currentRoomType;
+  let outgoingContent = content;
+
+  if (roomType === 'dm' && E2EE.available) {
+    let peerUserId = _getDmPeerUserId(roomId);
+    if (!peerUserId) {
+      dbg('[E2EE] peer unknown for room ' + roomId + ', waiting for room_history');
+      await _waitForMembers(roomId, 5000);
+      peerUserId = _getDmPeerUserId(roomId);
+    }
+    if (!peerUserId) {
+      dbg('[E2EE] could not resolve DM peer for room ' + roomId + ', aborting send');
+      showToast('Could not establish encryption');
+      return null;
+    }
+    try {
+      const ciphertext = await E2EE.encrypt(roomId, peerUserId, content);
+      if (ciphertext === null) {
+        if (_roomEncrypted.has(roomId)) {
+          dbg('[E2EE] peer has no key but room is already encrypted, blocking send (fail closed)');
+          showToast('Message not sent. Encryption error.');
+          return null;
+        }
+        if (!_unencryptedRooms.has(roomId)) {
+          _unencryptedRooms.add(roomId);
+          showToast('Encryption unavailable for this user');
+        }
+        dbg('[E2EE] no key for peer, sending plaintext in room ' + roomId);
+      } else {
+        outgoingContent = JSON.stringify({ e2ee: true, v: 1, ct: ciphertext });
+        _roomEncrypted.add(roomId);
+        _unencryptedRooms.delete(roomId);
+        dbg('[E2EE] message encrypted for room ' + roomId);
+      }
+    } catch (e) {
+      dbg('[E2EE] encrypt error:', e && e.message);
+      if (_roomEncrypted.has(roomId)) {
+        showToast('Message not sent. Encryption error.');
+        return null;
+      }
+      if (!_unencryptedRooms.has(roomId)) {
+        _unencryptedRooms.add(roomId);
+        showToast('Encryption unavailable for this user');
+      }
+    }
+  }
+
   const tempId = genTempId();
   const now = new Date().toISOString();
 
   const optimisticMsg = {
-    id: tempId, temp_id: tempId, room_id: currentRoom,
+    id: tempId, temp_id: tempId, room_id: roomId,
     user_id: currentUser.id, display_name: currentUser.display_name, username: currentUser.username,
     type, content, created_at: now, pending: true,
   };
   if (replyTo) optimisticMsg.reply_to = { ...replyTo };
 
-  if (!messagesByRoom[currentRoom]) messagesByRoom[currentRoom] = [];
-  messagesByRoom[currentRoom].push(optimisticMsg);
-  appendMessage(optimisticMsg);
-  scrollToBottom();
+  if (!messagesByRoom[roomId]) messagesByRoom[roomId] = [];
+  messagesByRoom[roomId].push(optimisticMsg);
+  if (roomId === currentRoom) {
+    appendMessage(optimisticMsg);
+    scrollToBottom();
+  }
 
   const pendingEl = document.querySelector(`[data-msg-id="${tempId}"]`);
   verify('sendChatMessage', pendingEl, 'optimistic ' + type + ' in DOM id=' + tempId);
 
-  const payload = { room_id: currentRoom, type, content, temp_id: tempId };
+  const payload = { room_id: roomId, type, content: outgoingContent, temp_id: tempId };
   if (replyToId) payload.reply_to_id = replyToId;
   wsSend('send_message', payload);
   dbg('sendChatMessage:', type, 'temp_id=' + tempId);
   setTimeout(() => {
-    const msgs = messagesByRoom[currentRoom] || [];
+    const msgs = messagesByRoom[roomId] || [];
     const still = msgs.find(m => m.id === tempId && m.pending);
     if (still) {
       dbg('[CHAT] pending message timed out:', tempId);
@@ -2231,20 +2379,26 @@ async function sendMessage() {
   if (_pendingDmTarget && currentRoom === 'pending-dm') {
     dbg('[DM] creating DM room on first message');
     try {
-      const res = await api('/dms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target_user_id: _pendingDmTarget }) });
+      const targetUserId = _pendingDmTarget;
+      const res = await api('/dms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target_user_id: targetUserId }) });
       const roomId = res.room_id;
+      _dmListCache[roomId] = targetUserId;
       _pendingDmTarget = null;
       currentRoom = roomId;
       history.replaceState(null, '', '/chat/d/' + roomId);
       wsSend('join_room', { room_id: roomId });
       input.value = '';
       autoResizeInput(input);
-      sendChatMessage('text', JSON.stringify({ text }), replyTo?.id);
+      try {
+        await sendChatMessage('text', JSON.stringify({ text }), replyTo?.id);
+      } catch (e) { dbg('[CHAT] sendChatMessage failed:', e && e.message); showToast('Could not send message'); }
       cancelReply();
       return;
     } catch (e) { showToast(e.message); return; }
   }
-  sendChatMessage('text', JSON.stringify({ text }), replyTo?.id);
+  try {
+    await sendChatMessage('text', JSON.stringify({ text }), replyTo?.id);
+  } catch (e) { dbg('[CHAT] sendChatMessage failed:', e && e.message); showToast('Could not send message'); }
   input.value = '';
   autoResizeInput(input);
   cancelReply();
@@ -2320,6 +2474,7 @@ async function _loadMenuSection(section, container) {
   } else if (section === 'dms') {
     try {
       const dms = await api('/dms');
+      dms.forEach(dm => { _dmListCache[dm.room_id] = dm.other_user_id; });
       if (!dms.length) { container.innerHTML = '<div class="empty">No conversations yet</div>'; return; }
       container.innerHTML = '<ul class="room-list">' + dms.map(dm => {
         const unread = unreadByRoom[dm.room_id] || 0;
@@ -2400,9 +2555,11 @@ function shareLocation() {
       dbg('shareLocation: got position', pos.coords.latitude, pos.coords.longitude);
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
-      showConfirm('Share your location?', `${lat.toFixed(5)}, ${lng.toFixed(5)}`, () => {
-        sendChatMessage('location', JSON.stringify({ lat, lng, label: 'My location' }));
-        showToast('Location shared');
+      showConfirm('Share your location?', `${lat.toFixed(5)}, ${lng.toFixed(5)}`, async () => {
+        try {
+          await sendChatMessage('location', JSON.stringify({ lat, lng, label: 'My location' }));
+          showToast('Location shared');
+        } catch (e) { dbg('[CHAT] sendChatMessage failed:', e && e.message); showToast('Could not share location'); }
       }, 'Share');
     },
     err => {
@@ -2444,7 +2601,7 @@ function uploadImage() {
       if (!resp.ok) { showToast('Upload failed'); return; }
       const result = await resp.json();
       if (!result.url) { showToast('Upload failed'); return; }
-      sendChatMessage('image', JSON.stringify(result));
+      await sendChatMessage('image', JSON.stringify(result));
     } catch (e) { showToast('Upload failed'); }
   };
   input.click();
@@ -2723,7 +2880,7 @@ function uploadVideo() {
       }
       const result = await resp.json();
       dbg('[VIDEO] upload result:', result);
-      sendChatMessage('video', JSON.stringify(result));
+      await sendChatMessage('video', JSON.stringify(result));
       showToast('Video shared');
     } catch (e) {
       dbg('[VIDEO] error:', e.message, e.stack);
@@ -2973,6 +3130,16 @@ function showMsgMenu(msgId, isOwn) {
   requestAnimationFrame(() => sheet.classList.add('open'));
 }
 
+function _submitReport(msgId, reason) {
+  const msgs = messagesByRoom[currentRoom] || [];
+  const m = msgs.find(msg => msg.id === msgId);
+  const payload = { message_id: msgId, reason };
+  if (m && m.content) payload.message_content = m.content;
+  dbg('[E2EE] submitting report for msg', msgId, 'content_len=' + (payload.message_content || '').length);
+  wsSend('report_message', payload);
+  showToast('Report submitted');
+}
+
 function _reportMessage(msgId, userId, name) {
   dbg('[MENU] reportMessage', msgId);
   const sheet = document.createElement('div');
@@ -2981,8 +3148,8 @@ function _reportMessage(msgId, userId, name) {
   sheet.innerHTML = `<div class="action-sheet" onclick="event.stopPropagation()">
     <div class="action-sheet-title">Report this message?</div>
     <p class="action-sheet-desc">This will be reviewed by an admin</p>
-    <button class="action-sheet-btn action-sheet-danger" onclick="closeActionSheet();wsSend('report_message',{message_id:'${msgId}',reason:'Reported by user'});showToast('Report submitted')">Report</button>
-    <button class="action-sheet-btn action-sheet-danger" onclick="closeActionSheet();wsSend('report_message',{message_id:'${msgId}',reason:'Reported and blocked by user'});_doBlock('${userId}','${jss(name)}',false);showToast('Report submitted')">Report & Block</button>
+    <button class="action-sheet-btn action-sheet-danger" onclick="closeActionSheet();_submitReport('${msgId}','Reported by user')">Report</button>
+    <button class="action-sheet-btn action-sheet-danger" onclick="closeActionSheet();_submitReport('${msgId}','Reported and blocked by user');_doBlock('${userId}','${jss(name)}',false)">Report & Block</button>
     <button class="action-sheet-btn action-sheet-cancel" onclick="closeActionSheet()">Cancel</button>
   </div>`;
   sheet.addEventListener('click', closeActionSheet);
@@ -3627,6 +3794,11 @@ async function doLogout() {
   E2EE._keyPair = null;
   E2EE.available = true;
   E2EE._initialized = false;
+  E2EE._sharedKeys = {};
+  E2EE._peerKeys = {};
+  _roomEncrypted = new Set();
+  _unencryptedRooms = new Set();
+  dbg('[E2EE] cleared key pair and caches on logout');
   renderAuth();
 }
 
@@ -3792,6 +3964,98 @@ const E2EE = {
     showToast('Encryption setup failed', 15000);
     this.available = false;
   },
+
+  // --- Phase 2: shared key derivation + encrypt/decrypt ---
+  _sharedKeys: {},
+  _peerKeys: {},
+
+  async _deriveSharedKey(peerPublicKey, roomId) {
+    const bits = await crypto.subtle.deriveBits(
+      {name: 'ECDH', public: peerPublicKey},
+      this._keyPair.privateKey,
+      256
+    );
+    const hkdfKey = await crypto.subtle.importKey('raw', bits, 'HKDF', false, ['deriveKey']);
+    const enc = new TextEncoder();
+    return crypto.subtle.deriveKey(
+      {name: 'HKDF', hash: 'SHA-256', salt: enc.encode(roomId), info: enc.encode('e2ee-dm-v1')},
+      hkdfKey,
+      {name: 'AES-GCM', length: 256},
+      false,
+      ['encrypt', 'decrypt']
+    );
+  },
+
+  async _fetchPeerKey(peerUserId) {
+    const res = await fetch('/chat/api/keys/' + peerUserId, {credentials: 'same-origin'});
+    if (res.status === 404) {
+      dbg('[E2EE] no public key for peer', peerUserId);
+      return null;
+    }
+    if (!res.ok) throw new Error('key fetch failed: HTTP ' + res.status);
+    const data = await res.json();
+    const jwk = JSON.parse(data.public_key);
+    return crypto.subtle.importKey('jwk', jwk, {name: 'ECDH', namedCurve: 'P-256'}, true, []);
+  },
+
+  async getPeerKey(peerUserId) {
+    if (this._peerKeys[peerUserId]) return this._peerKeys[peerUserId];
+    const p = this._fetchPeerKey(peerUserId);
+    this._peerKeys[peerUserId] = p;
+    try {
+      const key = await p;
+      if (key === null) delete this._peerKeys[peerUserId];
+      return key;
+    } catch (e) {
+      delete this._peerKeys[peerUserId];
+      throw e;
+    }
+  },
+
+  async getSharedKey(roomId, peerUserId) {
+    if (this._sharedKeys[roomId]) return this._sharedKeys[roomId];
+    if (!this._keyPair) throw new Error('E2EE not initialized');
+    const p = (async () => {
+      const peerKey = await this.getPeerKey(peerUserId);
+      if (!peerKey) return null;
+      return this._deriveSharedKey(peerKey, roomId);
+    })();
+    this._sharedKeys[roomId] = p;
+    try {
+      const key = await p;
+      if (key === null) delete this._sharedKeys[roomId];
+      return key;
+    } catch (e) {
+      delete this._sharedKeys[roomId];
+      throw e;
+    }
+  },
+
+  async encrypt(roomId, peerUserId, plaintext) {
+    const key = await this.getSharedKey(roomId, peerUserId);
+    if (!key) return null;
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const enc = new TextEncoder();
+    const ciphertext = await crypto.subtle.encrypt({name: 'AES-GCM', iv}, key, enc.encode(plaintext));
+    const combined = new Uint8Array(iv.length + ciphertext.byteLength);
+    combined.set(iv, 0);
+    combined.set(new Uint8Array(ciphertext), iv.length);
+    let bin = '';
+    for (let i = 0; i < combined.length; i++) bin += String.fromCharCode(combined[i]);
+    return btoa(bin);
+  },
+
+  async decrypt(roomId, peerUserId, b64) {
+    const key = await this.getSharedKey(roomId, peerUserId);
+    if (!key) throw new Error('no shared key available');
+    const bin = atob(b64);
+    const combined = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) combined[i] = bin.charCodeAt(i);
+    const iv = combined.slice(0, 12);
+    const ciphertext = combined.slice(12);
+    const dec = await crypto.subtle.decrypt({name: 'AES-GCM', iv}, key, ciphertext);
+    return new TextDecoder().decode(dec);
+  },
 };
 
 window.addEventListener('storage', function(e) {
@@ -3805,8 +4069,9 @@ window.addEventListener('storage', function(e) {
       crypto.subtle.importKey('jwk', kp.publicKey, {name: 'ECDH', namedCurve: 'P-256'}, true, []),
     ]).then(function(keys) {
       E2EE._keyPair = {privateKey: keys[0], publicKey: keys[1]};
-      // In later phases: clear _sharedKeys and _peerKeys caches here
-      dbg('[E2EE] re-imported key pair from storage event');
+      E2EE._sharedKeys = {};
+      E2EE._peerKeys = {};
+      dbg('[E2EE] re-imported key pair from storage event, cleared shared/peer key caches');
     }).catch(function(err) {
       dbg('[E2EE] storage event re-import failed:', err && err.message);
     });

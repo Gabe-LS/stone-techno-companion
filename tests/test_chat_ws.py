@@ -16,14 +16,47 @@ from chat_db import (
     create_user,
     create_session,
     create_room,
+    get_room,
     get_room_messages,
     get_strike_count,
     is_banned,
     create_message,
     purge_expired_messages,
+    find_or_create_dm,
+    get_pending_reports,
 )
 from chat_moderation import moderate_message
+import chat_ws
 from chat_ws import ConnectionManager, handle_chat_ws, manager as global_manager
+
+
+class _UnclosableConnection:
+    """Wraps a test sqlite connection so chat_ws's db.close() calls are no-ops."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def close(self):
+        pass
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
+async def _run_ws(ws, token, event_id, db):
+    """Drive handle_chat_ws end-to-end against a patched in-memory db, then
+    drain any background tasks it scheduled (moderation, push) before returning."""
+    with patch("chat_ws.get_chat_db", return_value=_UnclosableConnection(db)):
+        await handle_chat_ws(ws, token, event_id)
+        for _ in range(5):
+            pending = [
+                t
+                for t in asyncio.all_tasks()
+                if t is not asyncio.current_task() and not t.done()
+            ]
+            if not pending:
+                break
+            await asyncio.gather(*pending, return_exceptions=True)
 
 
 @pytest.fixture
@@ -397,3 +430,305 @@ class TestPurgeNotifications:
         expire_events = ws.get_events_by_type("messages_expired")
         assert len(expire_events) == 1
         assert msg["id"] in expire_events[0]["message_ids"]
+
+
+# --- E2EE ---
+
+
+class TestIsE2eeContent:
+    def test_valid_envelope(self):
+        content = json.dumps({"e2ee": True, "v": 1, "ct": "abc"})
+        assert chat_ws._is_e2ee_content(content) is True
+
+    def test_plain_text_json(self):
+        content = json.dumps({"text": "hello everyone"})
+        assert chat_ws._is_e2ee_content(content) is False
+
+    def test_invalid_json(self):
+        assert chat_ws._is_e2ee_content("not json{{{") is False
+
+    def test_empty_string(self):
+        assert chat_ws._is_e2ee_content("") is False
+
+
+class TestE2eeSendMessage:
+    @pytest.mark.asyncio
+    async def test_e2ee_rejected_outside_dm(
+        self, db, user1, session1, stage_room, event_id
+    ):
+        envelope = json.dumps({"e2ee": True, "v": 1, "ct": "ciphertext-blob"})
+        ws = FakeWebSocket()
+        ws.to_receive = [
+            json.dumps(
+                {
+                    "event": "send_message",
+                    "room_id": "grand-hall",
+                    "type": "text",
+                    "content": envelope,
+                    "temp_id": "t1",
+                }
+            )
+        ]
+        await _run_ws(ws, session1["token"], event_id, db)
+
+        rejected = ws.get_events_by_type("message_rejected")
+        assert len(rejected) == 1
+        assert (
+            rejected[0]["reason"]
+            == "Encrypted messages are only supported in direct messages"
+        )
+        assert rejected[0]["temp_id"] == "t1"
+        assert get_room_messages(db, "grand-hall") == []
+
+    @pytest.mark.asyncio
+    async def test_e2ee_length_allowance_in_dm(
+        self, db, user1, user2, session1, event_id
+    ):
+        room_id = find_or_create_dm(db, event_id, user1["id"], user2["id"])
+        envelope = json.dumps({"e2ee": True, "v": 1, "ct": "A" * 3500})
+        assert 1020 < len(envelope) < 4000
+
+        ws = FakeWebSocket()
+        ws.to_receive = [
+            json.dumps(
+                {
+                    "event": "send_message",
+                    "room_id": room_id,
+                    "type": "text",
+                    "content": envelope,
+                    "temp_id": "t2",
+                }
+            )
+        ]
+        await _run_ws(ws, session1["token"], event_id, db)
+
+        assert ws.get_events_by_type("message_rejected") == []
+        assert len(ws.get_events_by_type("message_acked")) == 1
+        stored = get_room_messages(db, room_id)
+        assert len(stored) == 1
+        assert stored[0]["content"] == envelope
+
+    @pytest.mark.asyncio
+    async def test_e2ee_length_still_bounded(
+        self, db, user1, user2, session1, event_id
+    ):
+        room_id = find_or_create_dm(db, event_id, user1["id"], user2["id"])
+        envelope = json.dumps({"e2ee": True, "v": 1, "ct": "A" * 4500})
+        assert len(envelope) > 4000
+
+        ws = FakeWebSocket()
+        ws.to_receive = [
+            json.dumps(
+                {
+                    "event": "send_message",
+                    "room_id": room_id,
+                    "type": "text",
+                    "content": envelope,
+                    "temp_id": "t3",
+                }
+            )
+        ]
+        await _run_ws(ws, session1["token"], event_id, db)
+
+        rejected = ws.get_events_by_type("message_rejected")
+        assert len(rejected) == 1
+        assert rejected[0]["reason"] == "Message too long."
+        assert get_room_messages(db, room_id) == []
+
+    @pytest.mark.asyncio
+    async def test_media_url_check_skipped_for_e2ee_dm_image(
+        self, db, user1, user2, session1, event_id
+    ):
+        room_id = find_or_create_dm(db, event_id, user1["id"], user2["id"])
+        envelope = json.dumps({"e2ee": True, "v": 1, "ct": "image-ciphertext-blob"})
+
+        ws = FakeWebSocket()
+        ws.to_receive = [
+            json.dumps(
+                {
+                    "event": "send_message",
+                    "room_id": room_id,
+                    "type": "image",
+                    "content": envelope,
+                    "temp_id": "t4",
+                }
+            )
+        ]
+        await _run_ws(ws, session1["token"], event_id, db)
+
+        rejected = ws.get_events_by_type("message_rejected")
+        assert not any(r["reason"] == "Invalid media URL." for r in rejected)
+        assert len(get_room_messages(db, room_id)) == 1
+
+    @pytest.mark.asyncio
+    async def test_media_url_check_enforced_for_plaintext_image(
+        self, db, user1, user2, session1, event_id
+    ):
+        room_id = find_or_create_dm(db, event_id, user1["id"], user2["id"])
+        bad_content = json.dumps({"url": "https://evil.example.com/x.webp"})
+
+        ws = FakeWebSocket()
+        ws.to_receive = [
+            json.dumps(
+                {
+                    "event": "send_message",
+                    "room_id": room_id,
+                    "type": "image",
+                    "content": bad_content,
+                    "temp_id": "t5",
+                }
+            )
+        ]
+        await _run_ws(ws, session1["token"], event_id, db)
+
+        rejected = ws.get_events_by_type("message_rejected")
+        assert len(rejected) == 1
+        assert rejected[0]["reason"] == "Invalid media URL."
+        assert get_room_messages(db, room_id) == []
+
+
+class TestDmModerationSkipped:
+    @pytest.mark.asyncio
+    async def test_moderation_skipped_for_dm(self, db, user1, user2, event_id):
+        room_id = find_or_create_dm(db, event_id, user1["id"], user2["id"])
+        room = get_room(db, room_id)
+        assert room["is_moderated"] == 0
+
+        mgr = ConnectionManager()
+        ws = FakeWebSocket()
+        await mgr.connect(ws, user1["id"], "c1")
+
+        text = "got molly?"
+        content = json.dumps({"text": text})
+        msg = create_message(db, room_id, user1["id"], "text", content)
+
+        with patch("chat_ws.get_chat_db", return_value=_UnclosableConnection(db)):
+            await chat_ws._moderate_and_broadcast(
+                mgr,
+                room_id,
+                user1["id"],
+                "c1",
+                "Alice",
+                "alice",
+                0,
+                "",
+                msg,
+                "text",
+                content,
+                text,
+                None,
+                None,
+                ws,
+                is_moderated=bool(room["is_moderated"]),
+            )
+            for _ in range(5):
+                pending = [
+                    t
+                    for t in asyncio.all_tasks()
+                    if t is not asyncio.current_task() and not t.done()
+                ]
+                if not pending:
+                    break
+                await asyncio.gather(*pending, return_exceptions=True)
+
+        assert len(get_room_messages(db, room_id)) == 1
+        assert ws.get_events_by_type("message_removed") == []
+
+
+class TestE2eeReplySnippet:
+    def test_reply_snippet_empty_for_e2ee_message(self, db, user1, stage_room):
+        envelope = json.dumps({"e2ee": True, "v": 1, "ct": "xyz"})
+        orig = create_message(db, "grand-hall", user1["id"], "text", envelope)
+        snippet = chat_ws._build_reply_snippet(db, orig["id"])
+        assert snippet is not None
+        assert snippet["text"] == ""
+
+    def test_reply_snippet_normal_for_plaintext_message(self, db, user1, stage_room):
+        content = json.dumps({"text": "hello there"})
+        orig = create_message(db, "grand-hall", user1["id"], "text", content)
+        snippet = chat_ws._build_reply_snippet(db, orig["id"])
+        assert snippet["text"] == "hello there"
+
+
+class TestE2eeReport:
+    @pytest.mark.asyncio
+    async def test_report_uses_client_content_for_e2ee_and_marks_unverified(
+        self, db, user1, user2, session1, event_id
+    ):
+        room_id = find_or_create_dm(db, event_id, user1["id"], user2["id"])
+        envelope = json.dumps({"e2ee": True, "v": 1, "ct": "gibberish"})
+        msg = create_message(db, room_id, user2["id"], "text", envelope)
+
+        ws = FakeWebSocket()
+        ws.to_receive = [
+            json.dumps(
+                {
+                    "event": "report_message",
+                    "message_id": msg["id"],
+                    "reason": "harassment",
+                    "message_content": '{"text":"actual decrypted abuse"}',
+                }
+            )
+        ]
+        await _run_ws(ws, session1["token"], event_id, db)
+
+        assert ws.get_events_by_type("report_confirmed")
+        reports = get_pending_reports(db)
+        assert len(reports) == 1
+        assert "actual decrypted abuse" in reports[0]["message_snapshot"]
+        assert reports[0]["unverified"] == 1
+
+    @pytest.mark.asyncio
+    async def test_report_ignores_client_content_for_plaintext(
+        self, db, user1, user2, session1, event_id
+    ):
+        room_id = find_or_create_dm(db, event_id, user1["id"], user2["id"])
+        content = json.dumps({"text": "real message"})
+        msg = create_message(db, room_id, user2["id"], "text", content)
+
+        ws = FakeWebSocket()
+        ws.to_receive = [
+            json.dumps(
+                {
+                    "event": "report_message",
+                    "message_id": msg["id"],
+                    "reason": "harassment",
+                    "message_content": '{"text":"forged content"}',
+                }
+            )
+        ]
+        await _run_ws(ws, session1["token"], event_id, db)
+
+        reports = get_pending_reports(db)
+        assert len(reports) == 1
+        assert "real message" in reports[0]["message_snapshot"]
+        assert "forged content" not in reports[0]["message_snapshot"]
+        assert reports[0]["unverified"] == 0
+
+    @pytest.mark.asyncio
+    async def test_report_e2ee_without_client_content_uses_placeholder(
+        self, db, user1, user2, session1, event_id
+    ):
+        room_id = find_or_create_dm(db, event_id, user1["id"], user2["id"])
+        envelope = json.dumps({"e2ee": True, "v": 1, "ct": "gibberish"})
+        msg = create_message(db, room_id, user2["id"], "text", envelope)
+
+        ws = FakeWebSocket()
+        ws.to_receive = [
+            json.dumps(
+                {
+                    "event": "report_message",
+                    "message_id": msg["id"],
+                    "reason": "harassment",
+                }
+            )
+        ]
+        await _run_ws(ws, session1["token"], event_id, db)
+
+        reports = get_pending_reports(db)
+        assert len(reports) == 1
+        assert (
+            "[encrypted message - no content provided]"
+            in reports[0]["message_snapshot"]
+        )
+        assert reports[0]["unverified"] == 0

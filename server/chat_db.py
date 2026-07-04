@@ -287,6 +287,9 @@ def _migrate_chat_db(db: sqlite3.Connection) -> None:
         )
         db.commit()
 
+    db.execute("UPDATE rooms SET is_moderated = 0 WHERE type = 'dm'")
+    db.commit()
+
 
 _chat_db_initialized = False
 
@@ -1008,7 +1011,9 @@ def find_or_create_dm(
         dm_ttl = int(get_setting(db, "dm_ttl_minutes", "1440"))
     except (ValueError, TypeError):
         dm_ttl = 1440
-    create_room(db, room_id, event_id, "dm", "DM", ttl_minutes=dm_ttl)
+    create_room(
+        db, room_id, event_id, "dm", "DM", ttl_minutes=dm_ttl, is_moderated=False
+    )
     now = _now()
     db.execute(
         "INSERT INTO dm_participants (room_id, user_id) VALUES (?, ?), (?, ?)",
@@ -1058,11 +1063,12 @@ def create_report(
     message_snapshot: str,
     room_id: str,
     reason: str,
+    unverified: int = 0,
 ) -> str:
     report_id = _uuid()
     db.execute(
         "INSERT INTO reports (id, reporter_id, reported_user_id, message_snapshot, "
-        "room_id, reason, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)",
+        "room_id, reason, status, unverified, created_at) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
         (
             report_id,
             reporter_id,
@@ -1070,6 +1076,7 @@ def create_report(
             message_snapshot,
             room_id,
             reason,
+            1 if unverified else 0,
             _now(),
         ),
     )
