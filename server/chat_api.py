@@ -1563,7 +1563,11 @@ async def put_e2ee_key(request: Request):
         _validate_e2ee_jwk(public_key)
         existing = get_e2ee_key(db, user["id"])
         upsert_e2ee_key(db, user["id"], public_key)
-        if existing is not None and existing != public_key:
+        # Broadcast on ANY new key, including the first upload: a peer may have
+        # opened the DM (and latched into unencrypted fallback) while this user
+        # was still in profile setup, before their first key existed. Same-key
+        # re-uploads on every login stay silent.
+        if existing != public_key:
             dm_rows = db.execute(
                 "SELECT dp1.room_id, dp2.user_id AS other_user_id "
                 "FROM dm_participants dp1 "

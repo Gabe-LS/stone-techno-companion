@@ -271,11 +271,20 @@ def stop_server(proc):
 # --- Scratch user setup --------------------------------------------------------
 
 
-def make_avatar_data_uri():
-    # 1x1 transparent GIF: satisfies the client's truthy avatar_url check
-    # with zero network fetches, so it can never generate a 404 (or console
-    # noise) regardless of how avatarHtml() renders it.
-    return "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="
+_AVATAR_WEBP_CACHE = None
+
+
+def make_avatar_webp():
+    # Real users always have a WebP blob in the avatars table (the profile
+    # setup makes it mandatory), and /dms rewrites any truthy avatar_url to
+    # the /chat/api/avatar/{id} endpoint -- so fake users must have a real
+    # served blob too, or every DM row render 404s and pollutes check 10.
+    global _AVATAR_WEBP_CACHE
+    if _AVATAR_WEBP_CACHE is None:
+        import pyvips
+
+        _AVATAR_WEBP_CACHE = pyvips.Image.black(8, 8, bands=3).webpsave_buffer()
+    return _AVATAR_WEBP_CACHE
 
 
 def create_fake_user(chat_db, db, provider_id, display_name, username):
@@ -283,9 +292,14 @@ def create_fake_user(chat_db, db, provider_id, display_name, username):
     # create_user() only sets display_name; the client's profile-complete
     # gate also requires username/country/avatar_url (see chat.html route():
     # "if (!currentUser.username || !currentUser.country || !currentUser.avatar_url)").
+    avatar_url = f"/chat/api/avatar/{user['id']}?v=1"
     db.execute(
         "UPDATE users SET username=?, username_lower=?, country=?, avatar_url=? WHERE id=?",
-        (username, username.lower(), "US", make_avatar_data_uri(), user["id"]),
+        (username, username.lower(), "US", avatar_url, user["id"]),
+    )
+    db.execute(
+        "INSERT OR REPLACE INTO avatars (user_id, data) VALUES (?, ?)",
+        (user["id"], make_avatar_webp()),
     )
     db.commit()
     session = chat_db.create_session(db, user["id"])
@@ -431,8 +445,10 @@ def check2_dm_flow(page_a, page_b, alice, bob, ctx, nonce1, nonce2):
 
     # Bob: navigate to the DM via the real sidebar UI (DMs tab -> room item).
     page_b.locator(".tabs button", has_text="DMs").click(timeout=10000)
-    page_b.wait_for_selector(f'.room-item[data-room-id="{dm_room_id}"]', timeout=10000)
-    page_b.click(f'.room-item[data-room-id="{dm_room_id}"]')
+    page_b.wait_for_selector(
+        f'.member-item[data-room-id="{dm_room_id}"]', timeout=10000
+    )
+    page_b.click(f'.member-item[data-room-id="{dm_room_id}"]')
 
     page_b.wait_for_selector(f'.msg-text:has-text("{nonce1}")', timeout=10000)
     bob_msg1_id = wait_for_msg_id(page_b, dm_room_id, nonce1)
@@ -477,14 +493,22 @@ def check3_db_envelope(db_path, ctx, nonce1, nonce2):
     return f"{len(rows)} DM messages verified as envelopes, no plaintext nonce leakage anywhere"
 
 
-def check4_ui_indicators(page_a, page_b):
+def check4_ui_indicators(page_a, page_b, ctx):
     expected_banner = "Messages are end-to-end encrypted. Only you and the other person can read them."
     for label, page in (("alice", page_a), ("bob", page_b)):
         page.wait_for_selector(".header .title .icon-lock", timeout=10000)
         banner_text = page.text_content(".dm-e2ee-banner", timeout=10000)
         if not banner_text or banner_text.strip() != expected_banner:
             raise AssertionError(f"{label} banner mismatch: {banner_text!r}")
-    return "lock icon + encrypted-variant banner present on both pages"
+    # Sidebar lock (Phase 4.3): Bob's sidebar is on the DMs tab after check 2;
+    # the DM row must carry the lock icon. Guards against sidebar-markup
+    # rewrites silently dropping the indicator.
+    dm_room_id = ctx.get("dm_room_id")
+    if dm_room_id:
+        page_b.wait_for_selector(
+            f'.member-item[data-room-id="{dm_room_id}"] .icon-lock', timeout=10000
+        )
+    return "lock icon (header + sidebar row) + encrypted-variant banner present"
 
 
 def check5_reply_gesture(page_a, page_b, ctx, nonce1, nonce_reply):
@@ -673,8 +697,10 @@ def check8_rekey(page_a, page_b, db_path, bob, ctx, nonce4):
 
     # Bob re-opens the DM (fresh page state after reload) via the real UI.
     page_b.locator(".tabs button", has_text="DMs").click(timeout=10000)
-    page_b.wait_for_selector(f'.room-item[data-room-id="{dm_room_id}"]', timeout=10000)
-    page_b.click(f'.room-item[data-room-id="{dm_room_id}"]')
+    page_b.wait_for_selector(
+        f'.member-item[data-room-id="{dm_room_id}"]', timeout=10000
+    )
+    page_b.click(f'.member-item[data-room-id="{dm_room_id}"]')
 
     page_b.wait_for_selector(f'.msg-text:has-text("{nonce4}")', timeout=10000)
     new_msg_id = wait_for_msg_id(page_b, dm_room_id, nonce4)
@@ -858,7 +884,7 @@ def main():
                     ),
                 )
                 run_check(3, lambda: check3_db_envelope(db_path, ctx, nonce1, nonce2))
-                run_check(4, lambda: check4_ui_indicators(page_a, page_b))
+                run_check(4, lambda: check4_ui_indicators(page_a, page_b, ctx))
                 run_check(
                     5,
                     lambda: check5_reply_gesture(

@@ -1413,6 +1413,15 @@ async function handleWSEvent(data) {
       delete E2EE._peerKeys[data.user_id];
       delete E2EE._sharedKeys[data.room_id];
       _unencryptedRooms.delete(data.room_id);
+      if (currentRoom === data.room_id) {
+        // Room is open: refresh the banner and restore the header lock so a
+        // previously-latched unencrypted room shows its true state live.
+        renderMessages();
+        document.querySelectorAll('.header .title').forEach(t => {
+          if (!t.querySelector('.icon-lock')) t.insertAdjacentHTML('afterbegin', ICON_LOCK);
+        });
+        dbg('[E2EE] key_rotated refreshed open room UI', data.room_id);
+      }
       break;
   }
 }
@@ -1735,9 +1744,10 @@ async function loadDMs() {
       const badgeHtml = unread > 0 ? `<span class="unread-badge">${unread > 99 ? '99+' : unread}</span>` : '';
       const av = avatarHtml(dm.other_name, dm.other_color_index || 0, true, dm.other_avatar_url || '');
       const flag = countryFlag(dm.other_country);
+      const lockHtml = _unencryptedRooms.has(dm.room_id) ? '' : ICON_LOCK;
       return `<div class="member-item${currentRoom === dm.room_id ? ' member-item-self' : ''}" data-room-id="${dm.room_id}" onclick="openRoom('${dm.room_id}','${jss(dm.other_name)}','dm')">
         ${av}
-        <span class="member-name">${esc(dm.other_name)}</span>
+        <span class="member-name">${lockHtml}${esc(dm.other_name)}</span>
         ${flag ? `<span class="member-flag">${flag}</span>` : ''}
         <span class="room-badge">${badgeHtml}</span>
       </div>`;
@@ -2523,9 +2533,10 @@ async function _loadMenuSection(section, container) {
         const badgeHtml = unread > 0 ? `<span class="unread-badge">${unread > 99 ? '99+' : unread}</span>` : '';
         const av = avatarHtml(dm.other_name, dm.other_color_index || 0, true, dm.other_avatar_url || '');
         const flag = countryFlag(dm.other_country);
+        const lockHtml = _unencryptedRooms.has(dm.room_id) ? '' : ICON_LOCK;
         return `<div class="menu-member" data-room-id="${dm.room_id}" onclick="closeChatMenu();openRoom('${dm.room_id}','${jss(dm.other_name)}','dm')">
           ${av}
-          <span class="menu-member-name">${esc(dm.other_name)}</span>
+          <span class="menu-member-name">${lockHtml}${esc(dm.other_name)}</span>
           ${flag ? `<span class="menu-member-flag">${flag}</span>` : ''}
           <span class="room-badge">${badgeHtml}</span>
         </div>`;

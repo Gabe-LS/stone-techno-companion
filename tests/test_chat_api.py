@@ -553,11 +553,14 @@ class TestE2eeKeys:
         jwk1 = _valid_jwk(0x01, 0x02)
         jwk2 = _valid_jwk(0x03, 0x04)
 
-        # First upload: no existing key, no broadcast
-        with patch("chat_api.asyncio.create_task") as mock_ct:
-            r = auth_client.put("/chat/api/keys", json={"public_key": jwk1})
-            assert r.status_code == 204
-            mock_ct.assert_not_called()
+        # First upload: broadcast expected too — a DM peer may have latched
+        # into unencrypted fallback while this user was still in profile setup
+        # (before any key existed), and key_rotated is what unlatches them.
+        with patch("chat_ws.manager.send_to_user", new_callable=AsyncMock):
+            with patch("chat_api.asyncio.create_task") as mock_ct:
+                r = auth_client.put("/chat/api/keys", json={"public_key": jwk1})
+                assert r.status_code == 204
+                assert mock_ct.call_count == 1
 
         # Second upload with different key: broadcast expected
         with patch("chat_ws.manager.send_to_user", new_callable=AsyncMock):

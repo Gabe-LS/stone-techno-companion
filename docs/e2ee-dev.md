@@ -80,7 +80,7 @@ Two new functions:
 
 ### 1.2 REST Endpoints — `server/chat_api.py`
 
-- `PUT /chat/api/keys` — authenticated, body `{"public_key": "<JWK>"}`, validates JWK, calls `upsert_e2ee_key()`, returns 204. Server must validate the JWK before storing: `kty == "EC"`, `crv == "P-256"`, `x` and `y` present and valid base64url of 32 bytes each, no `d` field (private key). Reject with 422 on invalid input — a user uploading garbage would cause `crypto.subtle.importKey` to throw for every peer that tries to derive a shared key with them. If the user already had a *different* key (re-keying), broadcast `key_rotated` to active DM peers (see Phase 5.1)
+- `PUT /chat/api/keys` — authenticated, body `{"public_key": "<JWK>"}`, validates JWK, calls `upsert_e2ee_key()`, returns 204. Server must validate the JWK before storing: `kty == "EC"`, `crv == "P-256"`, `x` and `y` present and valid base64url of 32 bytes each, no `d` field (private key). Reject with 422 on invalid input — a user uploading garbage would cause `crypto.subtle.importKey` to throw for every peer that tries to derive a shared key with them. Broadcast `key_rotated` to active DM peers whenever the stored key changes — including the FIRST upload (see Phase 5.1). First uploads matter: a peer can open the DM (and latch into unencrypted fallback) while this user is still in profile setup, before any key exists; the broadcast is what unlatches them. Only a byte-identical re-upload (every login with a cached key pair) stays silent
 - `GET /chat/api/keys/{user_id}` — authenticated, returns `{"user_id", "public_key", "created_at"}` or 404
 
 ### 1.3 Client Key Management — `server/chat/chat.html`
