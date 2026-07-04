@@ -50,6 +50,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .header .header-avatar { width: 30px; height: 30px; border-radius: 50%; overflow: hidden; cursor: pointer; flex-shrink: 0; border: 1.5px solid rgba(255,255,255,0.5); }
 .header .header-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .icon-user { vertical-align: -3.5px; }
+.icon-lock { vertical-align: -2px; margin-right: 4px; opacity: 0.85; flex-shrink: 0; }
 .header-count { display: none; }
 .content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; overflow-anchor: none; scrollbar-width: none; }
 .content::-webkit-scrollbar { display: none; }
@@ -89,6 +90,8 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .msg-name { font-weight: 600; font-size: var(--font-xs); cursor: pointer; }
 .msg-time { position: absolute; bottom: var(--space-md); right: var(--space-md); font-size: var(--font-xs); color: var(--color-muted); }
 .msg-text { font-size: var(--font-base); line-height: 1.5; }
+.msg-text.msg-decrypt-failed { font-style: italic; color: var(--color-muted); background: rgba(0,0,0,0.05); border-radius: var(--radius-sm); padding: 2px 6px; display: inline-block; }
+.dm-e2ee-banner { text-align: center; padding: var(--space-sm) var(--space-xl) var(--space-md); color: var(--color-muted); font-size: var(--font-xs); line-height: 1.4; }
 .msg-image { max-width: 260px; max-height: 260px; border-radius: var(--radius-md); margin-top: var(--space-xs); display: block; -webkit-touch-callout: none; cursor: pointer; }
 .msg-video-wrap { position: relative; display: inline-block; margin-top: var(--space-xs); cursor: pointer; }
 .msg-video { max-width: 260px; max-height: 260px; border-radius: var(--radius-md); display: block; -webkit-touch-callout: none; }
@@ -387,6 +390,7 @@ let unreadByRoom = {};
 let _lastReadByRoom = {};
 let roomTypeLookup = {};
 const USER_ICON = '<svg class="icon-user" width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="6" r="4" stroke="currentColor" stroke-width="2"/><path d="M20 17.5C20 19.9853 20 22 12 22C4 22 4 19.9853 4 17.5C4 15.0147 7.58172 13 12 13C16.4183 13 20 15.0147 20 17.5Z" stroke="currentColor" stroke-width="2"/></svg>';
+const ICON_LOCK = '<svg class="icon-lock" width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="10" rx="2" stroke="currentColor" stroke-width="2"/><path d="M8 11V7a4 4 0 018 0v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 const ICON_BACK = '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2.75C6.89137 2.75 2.75 6.89137 2.75 12C2.75 17.1086 6.89137 21.25 12 21.25C17.1086 21.25 21.25 17.1086 21.25 12C21.25 6.89137 17.1086 2.75 12 2.75ZM1.25 12C1.25 6.06294 6.06294 1.25 12 1.25C17.9371 1.25 22.75 6.06294 22.75 12C22.75 17.9371 17.9371 22.75 12 22.75C6.06294 22.75 1.25 17.9371 1.25 12ZM11.5303 8.46967C11.8232 8.76256 11.8232 9.23744 11.5303 9.53033L9.81066 11.25H16C16.4142 11.25 16.75 11.5858 16.75 12C16.75 12.4142 16.4142 12.75 16 12.75H9.81066L11.5303 14.4697C11.8232 14.7626 11.8232 15.2374 11.5303 15.5303C11.2374 15.8232 10.7626 15.8232 10.4697 15.5303L7.46967 12.5303C7.17678 12.2374 7.17678 11.7626 7.46967 11.4697L10.4697 8.46967C10.7626 8.17678 11.2374 8.17678 11.5303 8.46967Z"/></svg>';
 let replyTo = null;
 let _pendingDmTarget = null;
@@ -1100,6 +1104,7 @@ async function _decryptMessageContent(msg) {
   if (!peerUserId) {
     dbg('[E2EE] cannot decrypt, unknown peer for room', msg.room_id);
     msg.content = JSON.stringify({ text: '[Encrypted message]' });
+    msg._decryptFailed = true;
     return msg;
   }
   try {
@@ -1111,6 +1116,7 @@ async function _decryptMessageContent(msg) {
       if (!inner || !_UPLOAD_URL_RE.test(inner.url || '')) {
         dbg('[E2EE] decrypted media URL failed validation, room=' + msg.room_id);
         msg.content = JSON.stringify({ text: '[Encrypted message]' });
+        msg._decryptFailed = true;
         _roomEncrypted.add(msg.room_id);
         return msg;
       }
@@ -1120,6 +1126,7 @@ async function _decryptMessageContent(msg) {
   } catch (e) {
     dbg('[E2EE] decrypt failed:', e && e.message);
     msg.content = JSON.stringify({ text: '[Encrypted message]' });
+    msg._decryptFailed = true;
   }
   return msg;
 }
@@ -1714,12 +1721,14 @@ async function loadDMs() {
     el.innerHTML = dms.map(dm => {
       const unread = unreadByRoom[dm.room_id] || 0;
       const badgeHtml = unread > 0 ? `<span class="unread-badge">${unread > 99 ? '99+' : unread}</span>` : '';
+      const lockHtml = _unencryptedRooms.has(dm.room_id) ? '' : ICON_LOCK;
       return `<li class="room-item${currentRoom === dm.room_id ? ' active' : ''}" data-room-id="${dm.room_id}" onclick="openRoom('${dm.room_id}','${jss(dm.other_name)}','dm')">
         ${avatarHtml(dm.other_name, 0)}
-        <div class="room-info"><div class="room-name">${esc(dm.other_name)}</div></div>
+        <div class="room-info"><div class="room-name">${lockHtml}${esc(dm.other_name)}</div></div>
         <span class="room-badge">${badgeHtml}</span>
       </li>`;
     }).join('');
+    dbg('[E2EE] loadDMs: rendered lock icons for ' + dms.filter(dm => !_unencryptedRooms.has(dm.room_id)).length + '/' + dms.length + ' DMs');
   } catch { el.innerHTML = '<div class="empty">Could not load DMs</div>'; }
 }
 
@@ -1754,7 +1763,14 @@ async function openRoom(roomId, roomName, roomType) {
   else if (targetTab === 'meetups') loadMeetups();
   else renderRoomItems();
   renderChatView(roomName);
-  if (currentRoomType === 'dm') history.replaceState(null, '', '/chat/d/' + roomId);
+  if (currentRoomType === 'dm') {
+    const unencrypted = _unencryptedRooms.has(roomId);
+    dbg('[E2EE] openRoom: dm header lock, room=' + roomId + ' unencrypted=' + unencrypted);
+    if (!unencrypted) {
+      document.querySelectorAll('.header .title').forEach(t => t.insertAdjacentHTML('afterbegin', ICON_LOCK));
+    }
+    history.replaceState(null, '', '/chat/d/' + roomId);
+  }
   else if (currentRoomType === 'meetup') history.replaceState(null, '', '/chat/m/' + roomId);
   else if (rooms.length > 1) history.replaceState(null, '', '/chat/r/' + roomId);
   const historyReady = new Promise(r => { window._roomHistoryResolve = r; setTimeout(r, 3000); });
@@ -1880,12 +1896,22 @@ function renderChatView(roomName) {
   }
 }
 
+function _dmBannerHtml() {
+  if (currentRoomType !== 'dm') return '';
+  const unencrypted = _unencryptedRooms.has(currentRoom);
+  dbg('[E2EE] dm banner, room=' + currentRoom + ' unencrypted=' + unencrypted);
+  const text = unencrypted
+    ? 'Encryption unavailable for this user - messages are not end-to-end encrypted.'
+    : 'Messages are end-to-end encrypted. Only you and the other person can read them.';
+  return `<div class="dm-e2ee-banner">${esc(text)}</div>`;
+}
+
 function renderMessages() {
   dbg('[CHAT] renderMessages');
   const el = document.getElementById('messages');
   if (!el) { verify('renderMessages', false, '#messages not found'); return; }
   const msgs = (messagesByRoom[currentRoom] || []).filter(m => !blockedUserIds.has(m.user_id));
-  el.innerHTML = msgs.map(m => renderMessage(m)).join('');
+  el.innerHTML = _dmBannerHtml() + msgs.map(m => renderMessage(m)).join('');
   const rendered = el.querySelectorAll('.msg').length;
   verify('renderMessages', rendered === msgs.length, rendered + '/' + msgs.length + ' messages rendered');
 }
@@ -1915,6 +1941,7 @@ function renderMessage(m) {
     const c = JSON.parse(m.content);
     if (m.type === 'text') {
       const rawText = c.text || '';
+      const failedCls = m._decryptFailed ? ' msg-decrypt-failed' : '';
       if (m.link_preview) {
         const lp = m.link_preview;
         contentHtml = `<a class="msg-link-preview" href="${esc(lp.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">
@@ -1925,9 +1952,9 @@ function renderMessage(m) {
             <div class="link-preview-domain">${esc(lp.domain || '')}</div>
           </div>
         </a>`;
-        contentHtml += `<div class="msg-text">${_linkify(rawText)}</div>`;
+        contentHtml += `<div class="msg-text${failedCls}">${_linkify(rawText)}</div>`;
       } else {
-        contentHtml = `<div class="msg-text">${_linkify(rawText)}</div>`;
+        contentHtml = `<div class="msg-text${failedCls}">${_linkify(rawText)}</div>`;
       }
     } else if (m.type === 'image') {
       contentHtml = `<img class="msg-image" src="${esc(c.url)}" loading="lazy" onclick="event.stopPropagation();openImageViewer('${esc(c.url).replace(/'/g, "&#39;")}')">`;
