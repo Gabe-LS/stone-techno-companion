@@ -652,6 +652,8 @@ function openRoomModal(roomId) {
         <option value="60" ${!room || room?.ttl_minutes === 60 ? 'selected' : ''}>1 hour</option>
         <option value="360" ${room?.ttl_minutes === 360 ? 'selected' : ''}>6 hours</option>
         <option value="1440" ${room?.ttl_minutes === 1440 ? 'selected' : ''}>24 hours</option>
+        <option value="2880" ${room?.ttl_minutes === 2880 ? 'selected' : ''}>48 hours</option>
+        <option value="4320" ${room?.ttl_minutes === 4320 ? 'selected' : ''}>72 hours</option>
         <option value="" ${room?.ttl_minutes === null ? 'selected' : ''}>No expiry</option>
       </select>
     </div>
