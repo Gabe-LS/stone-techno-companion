@@ -124,7 +124,6 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 /* --- Input bar --- */
 .input-bar { display: flex; align-items: flex-end; gap: var(--space-xs); padding: var(--space-sm) var(--space-md); border-top: 1px solid var(--color-border); background: var(--color-bg); flex-shrink: 0; position: relative; }
 .pwa-standalone .input-bar { padding-bottom: 20px; }
-.pwa-standalone.kb-open .input-bar { padding-bottom: var(--space-sm); }
 .input-bar button { background: none; border: none; padding: 0; cursor: pointer; color: var(--color-text-secondary); width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-bottom: 4px; }
 .input-bar button svg { width: 24px; height: 24px; }
 .input-wrap { flex: 1; position: relative; display: flex; align-items: flex-end; }
@@ -3807,33 +3806,6 @@ window.addEventListener('pagehide', function() {
   try { navigator.sendBeacon('/chat/api/push/idle'); } catch(e) {}
 });
 
-if (window.visualViewport) {
-  const vv = window.visualViewport;
-  let _kbOpen = false;
-  vv.addEventListener('resize', () => {
-    const app = document.getElementById('app');
-    if (vv.height < window.outerHeight - 100) {
-      app.style.height = vv.height + 'px';
-      document.body.classList.add('kb-open');
-      _kbOpen = true;
-    } else if (_kbOpen) {
-      app.style.height = '';
-      document.body.classList.remove('kb-open');
-      _kbOpen = false;
-    }
-    window.scrollTo(0, 0);
-  });
-  vv.addEventListener('scroll', () => window.scrollTo(0, 0));
-  document.addEventListener('focusout', () => {
-    setTimeout(() => {
-      if (!document.activeElement || document.activeElement === document.body) {
-        document.getElementById('app').style.height = '';
-        _kbOpen = false;
-        window.scrollTo(0, 0);
-      }
-    }, 50);
-  });
-}
 </script>
 </body>
 </html>

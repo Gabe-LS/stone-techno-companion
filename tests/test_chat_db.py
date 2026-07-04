@@ -25,7 +25,7 @@ from chat_db import (
     create_room,
     get_room,
     get_rooms_by_event,
-    seed_event_room,
+    seed_event_rooms,
     create_message,
     get_room_messages,
     purge_expired_messages,
@@ -197,11 +197,13 @@ class TestRooms:
         assert found is not None
         assert found["name"] == "Grand Hall"
 
-    def test_seed_event_room(self, db, event_id):
-        seed_event_room(db, event_id, "Test Festival 2026")
+    def test_seed_event_rooms(self, db, event_id):
+        seed_event_rooms(db, event_id, "Test Festival 2026")
         rooms = get_rooms_by_event(db, event_id)
         names = {r["name"] for r in rooms}
         assert "Test Festival 2026" in names
+        assert "Rideshare" in names
+        assert "Lost & Found" in names
 
     def test_duplicate_room_ignored(self, db, event_id):
         create_room(db, "test", event_id, "stage", "Test")

@@ -295,10 +295,26 @@ Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DBs at `server/d
 
 ## Push Notifications
 
+### Lineup push
 - **Scheduler**: background task runs every 60s, matches `timetable.json` slots against sessions' schedule, sends via `pywebpush`
 - **Dedup**: `sent_notifications` table, pruned after 7 days. Dead subscriptions auto-removed.
 - **Re-sync on load**: client re-sends push subscription to recover from DB purges
 - **iOS**: Cache Storage flag for notification click navigation (service worker can't access localStorage)
+
+### Chat push
+- **Trigger**: sent after message broadcast to room members who are offline or idle
+- **Idle detection**: two-layer approach:
+  1. **Instant** (primary): client sends `POST /chat/api/push/idle` via `sendBeacon` on `visibilitychange(hidden)` and `pagehide`. Sets `_last_ws_activity` to 0 on the server, making the user immediately eligible for push. Tested on iOS: `visibilitychange`, `pagehide`, and `unload` all fire on lock screen, home swipe, and force close. `sendBeacon` delivers before the app is suspended.
+  2. **30-second fallback** (safety net): if `sendBeacon` fails, the server considers a user idle if no user-initiated WS event (`send_message`, `typing`, `add_reaction`, etc.) in 30 seconds. Passive events (`join_room`, `mark_read`) don't reset the idle timer.
+- **iOS limitation**: iOS does not send a WebSocket close frame when a PWA is killed. The connection silently dies until the server's ping times out (~30s). The `sendBeacon` idle signal makes this irrelevant — push is sent before the WS timeout.
+- **VAPID key**: production uses file path `/app/data/vapid_private.pem` (Docker), local dev uses `data/vapid_private.pem` (relative). Deploy script overrides to Docker path.
+- **Cross-device badge sync**: `mark_read` broadcasts `badge_update` with count=0 to all of the user's connections. Reading on phone clears the badge on desktop.
+- **Subscriptions**: stored in `chat_push_subscriptions` table. Old/expired subscriptions auto-removed on 410 Gone response from push service.
+
+### PWA standalone mode
+- **Keyboard handling**: `visualViewport` API constrains app height when keyboard opens, `body.kb-open` class removes safe area padding. Required — iOS doesn't auto-reposition input bars in PWA standalone.
+- **Safe area**: no `viewport-fit=cover` (caused inconsistent `env()` values). Bottom padding for home indicator via JS class `pwa-standalone` (detected in `<head>` script before render). 20px fixed padding, zeroed when keyboard opens.
+- **Keyboard accessory bar** (prev/next/done): cannot be hidden in PWA — iOS platform limitation, only native apps (Capacitor) can control it.
 
 ## Multi-Event Support
 
