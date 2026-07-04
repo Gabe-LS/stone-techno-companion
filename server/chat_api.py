@@ -1006,7 +1006,10 @@ async def list_dms(request: Request):
     try:
         now = datetime.now(timezone.utc).isoformat()
         dms = db.execute(
-            "SELECT r.id, r.name, dp2.user_id AS other_user_id, u.display_name AS other_name, "
+            "SELECT r.id, r.name, dp2.user_id AS other_user_id, "
+            "u.display_name AS other_name, u.username AS other_username, "
+            "u.avatar_url AS other_avatar_url, u.color_index AS other_color_index, "
+            "u.country AS other_country, "
             "(SELECT MAX(m.created_at) FROM messages m WHERE m.room_id = r.id AND m.expires_at > ?) AS last_message_at "
             "FROM dm_participants dp1 "
             "JOIN dm_participants dp2 ON dp1.room_id = dp2.room_id AND dp1.user_id != dp2.user_id "
@@ -1016,11 +1019,17 @@ async def list_dms(request: Request):
             "ORDER BY last_message_at DESC",
             (now, user["id"]),
         ).fetchall()
+        avatar_base = "/chat/api/avatar/"
         return [
             {
                 "room_id": dm["id"],
                 "other_user_id": dm["other_user_id"],
-                "other_name": dm["other_name"],
+                "other_name": dm["other_name"] or dm["other_username"] or "Anonymous",
+                "other_avatar_url": f"{avatar_base}{dm['other_user_id']}?v=1"
+                if dm["other_avatar_url"]
+                else "",
+                "other_color_index": dm["other_color_index"] or 0,
+                "other_country": dm["other_country"] or "",
                 "last_message_at": dm["last_message_at"] or "",
             }
             for dm in dms
