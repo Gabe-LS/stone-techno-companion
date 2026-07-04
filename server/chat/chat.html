@@ -3798,7 +3798,12 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 route();
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(function() { /* sw not available */ });
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(function() {});
+  navigator.serviceWorker.addEventListener('message', function(e) {
+    if (e.data && e.data.type === 'navigate') window.location.href = e.data.url;
+  });
+}
 document.addEventListener('visibilitychange', function() {
   if (document.hidden) {
     try { navigator.sendBeacon('/chat/api/push/idle'); } catch(e) {}

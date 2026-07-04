@@ -47,11 +47,9 @@ self.addEventListener('notificationclick', function (event) {
       return self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     }).then(function (list) {
       for (var i = 0; i < list.length; i++) {
-        if ('navigate' in list[i]) {
-          return list[i].navigate(fullUrl).then(function (c) {
-            return c.focus();
-          });
-        }
+        list[i].postMessage({ type: 'navigate', url: fullUrl });
+        list[i].focus();
+        return;
       }
       return self.clients.openWindow(fullUrl);
     }),

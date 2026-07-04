@@ -2576,7 +2576,10 @@ def render_output_html(
     })();
 
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(function() { /* sw not available */ });
+      navigator.serviceWorker.register('/sw.js').catch(function() {});
+      navigator.serviceWorker.addEventListener('message', function(e) {
+        if (e.data && e.data.type === 'navigate') window.location.href = e.data.url;
+      });
     }
 
     function setStickyTops() {
