@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 import logging
@@ -73,6 +74,8 @@ from chat_db import (
     get_reachable_member_counts,
     get_setting,
     set_setting,
+    upsert_e2ee_key,
+    get_e2ee_key,
 )
 from chat_ws import handle_chat_ws, purge_loop
 
@@ -1503,6 +1506,95 @@ async def chat_push_ack(request: Request):
         update_last_seen(db, user["id"])
         if action == "clicked":
             update_last_active(db, user["id"])
+    finally:
+        db.close()
+
+
+# --- E2EE keys ---
+
+
+def _validate_e2ee_jwk(public_key: str) -> None:
+    """Validate a P-256 public key JWK string. Raises HTTPException 422 on invalid input."""
+    if not isinstance(public_key, str):
+        raise HTTPException(422, "public_key must be a string")
+    try:
+        jwk = json.loads(public_key)
+    except Exception:
+        raise HTTPException(422, "Invalid JWK: not valid JSON")
+    if not isinstance(jwk, dict):
+        raise HTTPException(422, "Invalid JWK: must be an object")
+    if jwk.get("kty") != "EC":
+        raise HTTPException(422, "Invalid JWK: kty must be EC")
+    if jwk.get("crv") != "P-256":
+        raise HTTPException(422, "Invalid JWK: crv must be P-256")
+    if "d" in jwk:
+        raise HTTPException(422, "Invalid JWK: private key field d not allowed")
+    for coord in ("x", "y"):
+        val = jwk.get(coord)
+        if not val or not isinstance(val, str):
+            raise HTTPException(422, f"Invalid JWK: {coord} missing")
+        try:
+            rem = len(val) % 4
+            padded = val + "=" * (4 - rem) if rem else val
+            decoded = base64.urlsafe_b64decode(padded)
+        except Exception:
+            raise HTTPException(422, f"Invalid JWK: {coord} is not valid base64url")
+        if len(decoded) != 32:
+            raise HTTPException(
+                422, f"Invalid JWK: {coord} must decode to exactly 32 bytes"
+            )
+
+
+@router.put("/keys", status_code=204)
+async def put_e2ee_key(request: Request):
+    user, db = _get_user_from_cookie(request)
+    try:
+        body = await request.json()
+        public_key = body.get("public_key", "")
+        _validate_e2ee_jwk(public_key)
+        existing = get_e2ee_key(db, user["id"])
+        upsert_e2ee_key(db, user["id"], public_key)
+        if existing is not None and existing != public_key:
+            dm_rows = db.execute(
+                "SELECT dp1.room_id, dp2.user_id AS other_user_id "
+                "FROM dm_participants dp1 "
+                "JOIN dm_participants dp2 "
+                "  ON dp1.room_id = dp2.room_id AND dp2.user_id != dp1.user_id "
+                "WHERE dp1.user_id = ?",
+                (user["id"],),
+            ).fetchall()
+            from chat_ws import manager
+
+            for row in dm_rows:
+                asyncio.create_task(
+                    manager.send_to_user(
+                        row["other_user_id"],
+                        {
+                            "event": "key_rotated",
+                            "user_id": user["id"],
+                            "room_id": row["room_id"],
+                        },
+                    )
+                )
+        return Response(status_code=204)
+    finally:
+        db.close()
+
+
+@router.get("/keys/{user_id}")
+async def get_e2ee_key_endpoint(user_id: str, request: Request):
+    _user, db = _get_user_from_cookie(request)
+    try:
+        row = db.execute(
+            "SELECT public_key, created_at FROM e2ee_keys WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "Key not found")
+        return {
+            "user_id": user_id,
+            "public_key": row["public_key"],
+            "created_at": row["created_at"],
+        }
     finally:
         db.close()
 

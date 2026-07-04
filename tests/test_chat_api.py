@@ -1,9 +1,10 @@
 """Tests for chat REST API endpoints."""
 
+import base64
 import json
 import sqlite3
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime, timedelta, timezone
 
 import sys
@@ -29,6 +30,7 @@ from chat_db import (
     block_user,
     get_user,
     add_strike,
+    upsert_e2ee_key,
 )
 
 
@@ -414,3 +416,119 @@ class TestAdmin:
         )
         assert r.status_code == 200
         assert "Chat Admin" in r.text
+
+
+# --- E2EE keys ---
+
+
+def _valid_jwk(x_byte: int = 0x01, y_byte: int = 0x02) -> str:
+    x = base64.urlsafe_b64encode(bytes([x_byte]) * 32).rstrip(b"=").decode()
+    y = base64.urlsafe_b64encode(bytes([y_byte]) * 32).rstrip(b"=").decode()
+    return json.dumps({"kty": "EC", "crv": "P-256", "x": x, "y": y})
+
+
+class TestE2eeKeys:
+    def test_put_get_round_trip(self, auth_client, user1):
+        jwk = _valid_jwk()
+        r = auth_client.put("/chat/api/keys", json={"public_key": jwk})
+        assert r.status_code == 204
+
+        r = auth_client.get(f"/chat/api/keys/{user1['id']}")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["user_id"] == user1["id"]
+        assert data["public_key"] == jwk
+        assert "created_at" in data
+
+    def test_get_404_missing(self, auth_client):
+        r = auth_client.get("/chat/api/keys/nonexistent-user-id")
+        assert r.status_code == 404
+
+    def test_put_auth_required(self, client):
+        jwk = _valid_jwk()
+        r = client.put("/chat/api/keys", json={"public_key": jwk})
+        assert r.status_code == 401
+
+    def test_get_auth_required(self, client, user1):
+        r = client.get(f"/chat/api/keys/{user1['id']}")
+        assert r.status_code == 401
+
+    def test_jwk_wrong_kty(self, auth_client):
+        x = base64.urlsafe_b64encode(b"\x01" * 32).rstrip(b"=").decode()
+        y = base64.urlsafe_b64encode(b"\x02" * 32).rstrip(b"=").decode()
+        jwk = json.dumps({"kty": "RSA", "crv": "P-256", "x": x, "y": y})
+        r = auth_client.put("/chat/api/keys", json={"public_key": jwk})
+        assert r.status_code == 422
+
+    def test_jwk_wrong_crv(self, auth_client):
+        x = base64.urlsafe_b64encode(b"\x01" * 32).rstrip(b"=").decode()
+        y = base64.urlsafe_b64encode(b"\x02" * 32).rstrip(b"=").decode()
+        jwk = json.dumps({"kty": "EC", "crv": "P-384", "x": x, "y": y})
+        r = auth_client.put("/chat/api/keys", json={"public_key": jwk})
+        assert r.status_code == 422
+
+    def test_jwk_missing_x(self, auth_client):
+        y = base64.urlsafe_b64encode(b"\x02" * 32).rstrip(b"=").decode()
+        jwk = json.dumps({"kty": "EC", "crv": "P-256", "y": y})
+        r = auth_client.put("/chat/api/keys", json={"public_key": jwk})
+        assert r.status_code == 422
+
+    def test_jwk_missing_y(self, auth_client):
+        x = base64.urlsafe_b64encode(b"\x01" * 32).rstrip(b"=").decode()
+        jwk = json.dumps({"kty": "EC", "crv": "P-256", "x": x})
+        r = auth_client.put("/chat/api/keys", json={"public_key": jwk})
+        assert r.status_code == 422
+
+    def test_jwk_x_wrong_length(self, auth_client):
+        x_short = base64.urlsafe_b64encode(b"\x01" * 16).rstrip(b"=").decode()
+        y = base64.urlsafe_b64encode(b"\x02" * 32).rstrip(b"=").decode()
+        jwk = json.dumps({"kty": "EC", "crv": "P-256", "x": x_short, "y": y})
+        r = auth_client.put("/chat/api/keys", json={"public_key": jwk})
+        assert r.status_code == 422
+
+    def test_jwk_y_wrong_length(self, auth_client):
+        x = base64.urlsafe_b64encode(b"\x01" * 32).rstrip(b"=").decode()
+        y_short = base64.urlsafe_b64encode(b"\x02" * 16).rstrip(b"=").decode()
+        jwk = json.dumps({"kty": "EC", "crv": "P-256", "x": x, "y": y_short})
+        r = auth_client.put("/chat/api/keys", json={"public_key": jwk})
+        assert r.status_code == 422
+
+    def test_jwk_present_d_rejected(self, auth_client):
+        x = base64.urlsafe_b64encode(b"\x01" * 32).rstrip(b"=").decode()
+        y = base64.urlsafe_b64encode(b"\x02" * 32).rstrip(b"=").decode()
+        d = base64.urlsafe_b64encode(b"\x03" * 32).rstrip(b"=").decode()
+        jwk = json.dumps({"kty": "EC", "crv": "P-256", "x": x, "y": y, "d": d})
+        r = auth_client.put("/chat/api/keys", json={"public_key": jwk})
+        assert r.status_code == 422
+
+    def test_key_rotated_broadcast_on_rekey(self, auth_client, user1, user2, session2):
+        find_or_create_dm(_test_db, "test-event", user1["id"], user2["id"])
+        jwk1 = _valid_jwk(0x01, 0x02)
+        jwk2 = _valid_jwk(0x03, 0x04)
+
+        # First upload: no existing key, no broadcast
+        with patch("chat_api.asyncio.create_task") as mock_ct:
+            r = auth_client.put("/chat/api/keys", json={"public_key": jwk1})
+            assert r.status_code == 204
+            mock_ct.assert_not_called()
+
+        # Second upload with different key: broadcast expected
+        with patch("chat_ws.manager.send_to_user", new_callable=AsyncMock):
+            with patch("chat_api.asyncio.create_task") as mock_ct:
+                r = auth_client.put("/chat/api/keys", json={"public_key": jwk2})
+                assert r.status_code == 204
+                assert mock_ct.call_count == 1
+
+    def test_no_broadcast_same_key_reupload(self, auth_client, user1, user2):
+        find_or_create_dm(_test_db, "test-event", user1["id"], user2["id"])
+        jwk = _valid_jwk()
+
+        # First upload
+        r = auth_client.put("/chat/api/keys", json={"public_key": jwk})
+        assert r.status_code == 204
+
+        # Same key re-upload: no broadcast
+        with patch("chat_api.asyncio.create_task") as mock_ct:
+            r = auth_client.put("/chat/api/keys", json={"public_key": jwk})
+            assert r.status_code == 204
+            mock_ct.assert_not_called()

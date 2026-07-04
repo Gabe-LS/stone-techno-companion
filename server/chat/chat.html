@@ -3623,6 +3623,10 @@ async function doLogout() {
   currentRoomName = null;
   currentRoomType = null;
   document.cookie = 'chat_session=; path=/; max-age=0';
+  localStorage.removeItem('e2ee_keypair');
+  E2EE._keyPair = null;
+  E2EE.available = true;
+  E2EE._initialized = false;
   renderAuth();
 }
 
@@ -3693,6 +3697,124 @@ function jss(s) { return esc(String(s).replace(/[`'\\]/g, '\\$&')); }
 function _linkify(text) {
   return escapeHtml(text).replace(/(https?:\/\/[^\s<>"')\]]+)/g, '<a href="$1" target="_blank" rel="noopener" onclick="event.stopPropagation()">$1</a>');
 }
+// --- E2EE key management (Phase 1: key infrastructure) ---
+const E2EE = {
+  available: true,
+  _keyPair: null,
+  _initialized: false,
+
+  async init() {
+    try {
+      if (!window.crypto || !window.crypto.subtle) {
+        dbg('[E2EE] crypto.subtle unavailable');
+        this.available = false;
+        return;
+      }
+      const stored = localStorage.getItem('e2ee_keypair');
+      if (stored) {
+        const kp = JSON.parse(stored);
+        this._keyPair = {
+          privateKey: await crypto.subtle.importKey(
+            'jwk', kp.privateKey, {name: 'ECDH', namedCurve: 'P-256'}, true, ['deriveBits']
+          ),
+          publicKey: await crypto.subtle.importKey(
+            'jwk', kp.publicKey, {name: 'ECDH', namedCurve: 'P-256'}, true, []
+          ),
+        };
+        dbg('[E2EE] loaded existing key pair from localStorage');
+      } else {
+        const kp = await crypto.subtle.generateKey(
+          {name: 'ECDH', namedCurve: 'P-256'}, true, ['deriveBits']
+        );
+        const privateJwk = await crypto.subtle.exportKey('jwk', kp.privateKey);
+        const publicJwk = await crypto.subtle.exportKey('jwk', kp.publicKey);
+        // Re-read before setItem to handle multi-tab race
+        const raceCheck = localStorage.getItem('e2ee_keypair');
+        if (raceCheck) {
+          const kp2 = JSON.parse(raceCheck);
+          this._keyPair = {
+            privateKey: await crypto.subtle.importKey(
+              'jwk', kp2.privateKey, {name: 'ECDH', namedCurve: 'P-256'}, true, ['deriveBits']
+            ),
+            publicKey: await crypto.subtle.importKey(
+              'jwk', kp2.publicKey, {name: 'ECDH', namedCurve: 'P-256'}, true, []
+            ),
+          };
+          dbg('[E2EE] adopted key pair from another tab (race)');
+        } else {
+          localStorage.setItem('e2ee_keypair', JSON.stringify({privateKey: privateJwk, publicKey: publicJwk}));
+          this._keyPair = kp;
+          dbg('[E2EE] generated new key pair');
+        }
+      }
+      this.available = true;
+    } catch (e) {
+      dbg('[E2EE] init failed:', e && e.message);
+      this.available = false;
+    }
+  },
+
+  async getPublicKeyJwk() {
+    if (!this._keyPair) return null;
+    try {
+      return JSON.stringify(await crypto.subtle.exportKey('jwk', this._keyPair.publicKey));
+    } catch (e) {
+      dbg('[E2EE] getPublicKeyJwk failed:', e && e.message);
+      return null;
+    }
+  },
+
+  async uploadPublicKey() {
+    if (!this.available || !this._keyPair) return;
+    const jwk = await this.getPublicKeyJwk();
+    if (!jwk) return;
+    let attempt = 0;
+    while (attempt < 3) {
+      try {
+        const res = await fetch('/chat/api/keys', {
+          method: 'PUT',
+          headers: {'Content-Type': 'application/json'},
+          credentials: 'same-origin',
+          body: JSON.stringify({public_key: jwk}),
+        });
+        if (res.ok) {
+          dbg('[E2EE] public key uploaded (attempt ' + (attempt + 1) + ')');
+          return;
+        }
+        throw new Error('HTTP ' + res.status);
+      } catch (e) {
+        attempt++;
+        dbg('[E2EE] upload attempt ' + attempt + ' failed:', e && e.message);
+        if (attempt < 3) await new Promise(function(r) { setTimeout(r, 2000); });
+      }
+    }
+    dbg('[E2EE] all upload attempts failed');
+    showToast('Encryption setup failed', 15000);
+    this.available = false;
+  },
+};
+
+window.addEventListener('storage', function(e) {
+  if (e.key !== 'e2ee_keypair') return;
+  dbg('[E2EE] e2ee_keypair changed in another tab');
+  if (!e.newValue) return;
+  try {
+    const kp = JSON.parse(e.newValue);
+    Promise.all([
+      crypto.subtle.importKey('jwk', kp.privateKey, {name: 'ECDH', namedCurve: 'P-256'}, true, ['deriveBits']),
+      crypto.subtle.importKey('jwk', kp.publicKey, {name: 'ECDH', namedCurve: 'P-256'}, true, []),
+    ]).then(function(keys) {
+      E2EE._keyPair = {privateKey: keys[0], publicKey: keys[1]};
+      // In later phases: clear _sharedKeys and _peerKeys caches here
+      dbg('[E2EE] re-imported key pair from storage event');
+    }).catch(function(err) {
+      dbg('[E2EE] storage event re-import failed:', err && err.message);
+    });
+  } catch (err) {
+    dbg('[E2EE] storage event parse failed:', err && err.message);
+  }
+});
+
 // --- Router ---
 let _routing = false;
 async function route() {
@@ -3725,6 +3847,10 @@ async function route() {
   if (!currentUser.username || !currentUser.country || !currentUser.avatar_url) { renderProfilePrompt(); return; }
   await _checkPushStatus();
   if (!ws || ws.readyState !== 1) await connectWS();
+  if (!E2EE._initialized && currentUser) {
+    E2EE._initialized = true;
+    E2EE.init().then(function() { return E2EE.uploadPublicKey(); }).catch(function(e) { dbg('[E2EE] setup error:', e && e.message); });
+  }
   await loadBlockedUsers();
   await loadRooms();
 

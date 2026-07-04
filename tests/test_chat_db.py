@@ -48,6 +48,8 @@ from chat_db import (
     purge_expired_sessions,
     wipe_all_chat_data,
     hash_email,
+    upsert_e2ee_key,
+    get_e2ee_key,
 )
 
 
@@ -439,3 +441,37 @@ class TestEmailHash:
 
     def test_hash_strips_whitespace(self):
         assert hash_email("  test@example.com  ") == hash_email("test@example.com")
+
+
+# --- E2EE keys ---
+
+
+class TestE2eeKeys:
+    _JWK = '{"kty":"EC","crv":"P-256","x":"AAAA","y":"BBBB"}'
+    _JWK2 = '{"kty":"EC","crv":"P-256","x":"CCCC","y":"DDDD"}'
+
+    def test_upsert_and_get(self, db, user):
+        upsert_e2ee_key(db, user["id"], self._JWK)
+        assert get_e2ee_key(db, user["id"]) == self._JWK
+
+    def test_get_missing_returns_none(self, db, user):
+        assert get_e2ee_key(db, user["id"]) is None
+
+    def test_overwrite(self, db, user):
+        upsert_e2ee_key(db, user["id"], self._JWK)
+        upsert_e2ee_key(db, user["id"], self._JWK2)
+        assert get_e2ee_key(db, user["id"]) == self._JWK2
+
+    def test_cascade_on_user_delete(self, db, user):
+        upsert_e2ee_key(db, user["id"], self._JWK)
+        delete_user(db, user["id"])
+        assert get_e2ee_key(db, user["id"]) is None
+
+    def test_reports_unverified_default(self, db, user, user2, stage_room):
+        report_id = create_report(
+            db, user["id"], user2["id"], "snapshot", "grand-hall", "harassment"
+        )
+        row = db.execute(
+            "SELECT unverified FROM reports WHERE id = ?", (report_id,)
+        ).fetchone()
+        assert row["unverified"] == 0

@@ -178,6 +178,7 @@ def init_chat_db(db: sqlite3.Connection) -> None:
             room_id          TEXT NOT NULL,
             reason           TEXT NOT NULL,
             status           TEXT NOT NULL DEFAULT 'pending',
+            unverified       INTEGER NOT NULL DEFAULT 0,
             created_at       TEXT NOT NULL,
             reviewed_at      TEXT
         );
@@ -201,6 +202,12 @@ def init_chat_db(db: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_chat_push_user ON chat_push_subscriptions(user_id);
+
+        CREATE TABLE IF NOT EXISTS e2ee_keys (
+            user_id    TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            public_key TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
 
         CREATE TABLE IF NOT EXISTS avatars (
             user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -272,6 +279,13 @@ def _migrate_chat_db(db: sqlite3.Connection) -> None:
         if col not in room_cols:
             db.execute(f"ALTER TABLE rooms ADD COLUMN {col} {defn}")
     db.commit()
+
+    report_cols = {r[1] for r in db.execute("PRAGMA table_info(reports)").fetchall()}
+    if "unverified" not in report_cols:
+        db.execute(
+            "ALTER TABLE reports ADD COLUMN unverified INTEGER NOT NULL DEFAULT 0"
+        )
+        db.commit()
 
 
 _chat_db_initialized = False
@@ -1549,3 +1563,21 @@ def get_push_subscription_count(db: sqlite3.Connection, user_id: str) -> int:
         (user_id,),
     ).fetchone()
     return row[0]
+
+
+# --- E2EE keys ---
+
+
+def upsert_e2ee_key(db: sqlite3.Connection, user_id: str, public_key_jwk: str) -> None:
+    db.execute(
+        "INSERT OR REPLACE INTO e2ee_keys (user_id, public_key, created_at) VALUES (?, ?, ?)",
+        (user_id, public_key_jwk, _now()),
+    )
+    db.commit()
+
+
+def get_e2ee_key(db: sqlite3.Connection, user_id: str) -> str | None:
+    row = db.execute(
+        "SELECT public_key FROM e2ee_keys WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    return row["public_key"] if row else None
