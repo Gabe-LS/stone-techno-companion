@@ -1,3 +1,6 @@
+self.addEventListener('install', function () { self.skipWaiting(); });
+self.addEventListener('activate', function (event) { event.waitUntil(self.clients.claim()); });
+
 function ackPush(action) {
   self.registration.pushManager.getSubscription().then(function (sub) {
     if (!sub) return;
@@ -11,17 +14,27 @@ function ackPush(action) {
 
 self.addEventListener('push', function (event) {
   var data = event.data ? event.data.json() : {};
-  var title = data.title || 'Stone Techno Companion';
-  var options = {
-    body: data.body || '',
-    icon: '/favicon.png',
-    badge: '/favicon.png',
-    tag: data.tag || 'stc-notification',
-    renotify: false,
-    data: { url: data.url || '/' },
-  };
+  var tag = data.tag || 'stc-notification';
+
   event.waitUntil(
-    self.registration.showNotification(title, options).then(function () {
+    self.registration.getNotifications({ tag: tag }).then(function (existing) {
+      var count = 1;
+      if (existing.length > 0 && existing[0].data && existing[0].data.count) {
+        count = existing[0].data.count + 1;
+      }
+      var title = data.title || 'Stone Techno Companion';
+      var body = count > 1
+        ? count + ' new messages'
+        : (data.body || '');
+      return self.registration.showNotification(title, {
+        body: body,
+        icon: '/favicon.png',
+        badge: '/favicon.png',
+        tag: tag,
+        renotify: count === 1,
+        data: { url: data.url || '/', count: count },
+      });
+    }).then(function () {
       ackPush('delivered');
     })
   );
