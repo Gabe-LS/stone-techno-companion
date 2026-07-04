@@ -17,7 +17,7 @@ self.addEventListener('push', function (event) {
     icon: '/favicon.png',
     badge: '/favicon.png',
     tag: data.tag || 'stc-notification',
-    renotify: !!data.tag,
+    renotify: false,
     data: { url: data.url || '/' },
   };
   event.waitUntil(
