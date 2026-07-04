@@ -1065,18 +1065,24 @@ function handleWSEvent(data) {
       if (currentRoom === data.room_id) {
         renderMessages();
         _setupReadObserver();
-        const unreadCount = unreadByRoom[data.room_id] || 0;
-        if (unreadCount > 0 && data.messages.length > 0) {
-          const otherMsgs = data.messages.filter(m => m.user_id !== currentUser?.id);
-          const firstUnreadIdx = Math.max(0, otherMsgs.length - unreadCount);
-          const firstUnread = otherMsgs[firstUnreadIdx];
-          if (firstUnread) {
-            dbg('[SCROLL] scrolling to first unread', firstUnread.id, 'unread=' + unreadCount);
-            const target = document.querySelector(`[data-msg-id="${firstUnread.id}"]`);
-            if (target) target.scrollIntoView({ block: 'start' });
-            else scrollToBottom();
+        if (window._pendingScrollMsg) {
+          var _sm = window._pendingScrollMsg; window._pendingScrollMsg = null;
+          dbg('[SCROLL] pending scroll to message', _sm);
+          setTimeout(function() { scrollToMessage(_sm); }, 200);
+        } else {
+          const unreadCount = unreadByRoom[data.room_id] || 0;
+          if (unreadCount > 0 && data.messages.length > 0) {
+            const otherMsgs = data.messages.filter(m => m.user_id !== currentUser?.id);
+            const firstUnreadIdx = Math.max(0, otherMsgs.length - unreadCount);
+            const firstUnread = otherMsgs[firstUnreadIdx];
+            if (firstUnread) {
+              dbg('[SCROLL] scrolling to first unread', firstUnread.id, 'unread=' + unreadCount);
+              const target = document.querySelector(`[data-msg-id="${firstUnread.id}"]`);
+              if (target) target.scrollIntoView({ block: 'start' });
+              else scrollToBottom();
+            } else { scrollToBottom(); }
           } else { scrollToBottom(); }
-        } else { scrollToBottom(); }
+        }
         updateHeaderCount();
         renderMemberList();
       }
@@ -3721,10 +3727,9 @@ async function route() {
     try {
       dbg('[NAV] resolving message', pathMsg);
       const ctx = await api('/messages/' + pathMsg);
+      window._pendingScrollMsg = pathMsg;
       await openRoom(ctx.room_id, ctx.room_name, ctx.room_type);
-      await new Promise(r => setTimeout(r, 500));
-      scrollToMessage(pathMsg);
-      history.replaceState(null, '', '/chat');
+      history.replaceState(null, '', '/chat/r/' + ctx.room_id);
     } catch (e) {
       dbg('[NAV] message not found:', e.message);
       showToast('Message no longer available');
@@ -3784,29 +3789,37 @@ window.addEventListener('keydown', (e) => {
 document.addEventListener('gesturestart', e => e.preventDefault());
 document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
 document.addEventListener('contextmenu', (e) => { if (!e.target.closest('.msg')) e.preventDefault(); });
-var _pushNavDone = false;
+var _pushNavigating = false;
 function _checkPushNavigate() {
-  if (_pushNavDone || !('caches' in window)) return;
+  if (_pushNavigating || !('caches' in window)) return;
   caches.open('stc-push').then(function(c) {
     return c.match('/_push_navigate').then(function(r) {
       if (!r) return;
       return r.text().then(function(url) {
-        c.delete('/_push_navigate');
-        if (url && url !== location.pathname) {
-          dbg('[PUSH] cache navigate to', url);
-          _pushNavDone = true;
-          window.location.href = url;
-        }
+        return c.delete('/_push_navigate').then(function() {
+          if (url && url !== location.pathname) {
+            dbg('[PUSH] cache navigate to', url);
+            _plog('cache-hit-nav', url);
+            _pushNavigating = true;
+            setTimeout(function() { _pushNavigating = false; }, 3000);
+            window.location.href = url;
+          }
+        });
       });
     });
   }).catch(function() {});
 }
+function _pushNavRetry() {
+  _checkPushNavigate();
+  setTimeout(_checkPushNavigate, 300);
+  setTimeout(_checkPushNavigate, 1000);
+}
+window.addEventListener('focus', _pushNavRetry);
+window.addEventListener('pageshow', _pushNavRetry);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     dbg('[NOTIFY] tab visible');
-    _checkPushNavigate();
-    setTimeout(_checkPushNavigate, 300);
-    setTimeout(_checkPushNavigate, 1000);
+    _pushNavRetry();
     _hiddenUnread = 0;
     _nw = null;
     if (_nwTimer) { clearTimeout(_nwTimer); _nwTimer = null; }
@@ -3818,10 +3831,13 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 route();
+function _plog(step, detail) {
+  try { fetch('/chat/api/swlog', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ src: 'chat', step: step, detail: detail || null }) }).catch(function() {}); } catch (e) {}
+}
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(function() {});
   navigator.serviceWorker.addEventListener('message', function(e) {
-    if (e.data && e.data.type === 'navigate') window.location.href = e.data.url;
+    if (e.data && e.data.type === 'navigate') { _plog('postmessage-received', e.data.url); window.location.href = e.data.url; }
   });
 }
 document.addEventListener('visibilitychange', function() {

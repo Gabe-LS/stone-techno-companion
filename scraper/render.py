@@ -598,6 +598,36 @@ def render_output_html(
             )
         parts.append("\n".join(color_css))
     parts.append("  </style>")
+    parts.append("""  <script>
+  (function(){
+    var _navigating=false;
+    function plog(step,detail){
+      try{fetch('/chat/api/swlog',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({src:'lineup',step:step,detail:detail||null})}).catch(function(){});}catch(e){}
+    }
+    function nav(u){
+      if(_navigating||!u||u.indexOf('line-up')>=0||u===location.pathname){plog('nav-blocked',u);return;}
+      _navigating=true;
+      setTimeout(function(){_navigating=false;},3000);
+      plog('nav-go',u);
+      window.location.href=u;
+    }
+    function chkCache(){
+      if(_navigating||!('caches'in window))return;
+      caches.open('stc-push').then(function(c){
+        c.match('/_push_navigate').then(function(r){
+          if(r)r.text().then(function(u){plog('cache-hit',u);c.delete('/_push_navigate').then(function(){nav(u);});});
+        });
+      }).catch(function(){});
+    }
+    [0,300,800,1500,3000,5000].forEach(function(d){setTimeout(chkCache,d);});
+    if('serviceWorker'in navigator){
+      navigator.serviceWorker.register('/sw.js').catch(function(){});
+      navigator.serviceWorker.addEventListener('message',function(e){
+        if(e.data&&e.data.type==='navigate'){plog('postmessage-received',e.data.url);nav(e.data.url);}
+      });
+    }
+  })();
+  </script>""")
     parts.append("</head>")
     parts.append("<body>")
     heart_path = "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
@@ -2154,6 +2184,7 @@ def render_output_html(
         if (!sessionId) return;
         await fetch(API + '/session/' + sessionId + '/push/subscribe', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(sub.toJSON()) });
         storageSet('stc_push', '1');
+        storageSet('stc_push_endpoint', sub.endpoint);
         track('push-enable');
       } catch (e) {
         if (navigator.brave && e.name === 'AbortError') { openDialog('m-brave'); return; }
@@ -2567,6 +2598,7 @@ def render_output_html(
           var swReg = await navigator.serviceWorker.ready;
           var existingSub = await swReg.pushManager.getSubscription();
           if (existingSub && sessionId) {
+            storageSet('stc_push_endpoint', existingSub.endpoint);
             fetch(API + '/session/' + sessionId + '/push/subscribe', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(existingSub.toJSON()) }).catch(function() {});
           } else if (!existingSub) {
             storageRemove('stc_push');
@@ -2579,36 +2611,34 @@ def render_output_html(
     parts.append("""
     })();
 
-    var _pushNavDone = false;
+    var _pushNavigating = false;
     function _checkPushNavigate() {
-      if (_pushNavDone || !('caches' in window)) return;
+      if (_pushNavigating || !('caches' in window)) return;
       caches.open('stc-push').then(function(c) {
         return c.match('/_push_navigate').then(function(r) {
           if (!r) return;
           return r.text().then(function(url) {
-            c.delete('/_push_navigate');
-            if (url && url !== location.pathname && !url.includes('line-up')) {
-              _pushNavDone = true;
-              window.location.href = url;
-            }
+            return c.delete('/_push_navigate').then(function() {
+              if (url && url !== location.pathname && !url.includes('line-up')) {
+                _pushNavigating = true;
+                setTimeout(function() { _pushNavigating = false; }, 3000);
+                window.location.href = url;
+              }
+            });
           });
         });
       }).catch(function() {});
     }
-    document.addEventListener('visibilitychange', function() {
-      if (!document.hidden) {
-        _checkPushNavigate();
-        setTimeout(_checkPushNavigate, 300);
-        setTimeout(_checkPushNavigate, 1000);
-      }
-    });
-
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(function() {});
-      navigator.serviceWorker.addEventListener('message', function(e) {
-        if (e.data && e.data.type === 'navigate') window.location.href = e.data.url;
-      });
+    function _pushNavRetry() {
+      _checkPushNavigate();
+      setTimeout(_checkPushNavigate, 300);
+      setTimeout(_checkPushNavigate, 1000);
     }
+    document.addEventListener('visibilitychange', function() {
+      if (!document.hidden) _pushNavRetry();
+    });
+    window.addEventListener('focus', _pushNavRetry);
+    window.addEventListener('pageshow', _pushNavRetry);
 
     function setStickyTops() {
       var bar = document.getElementById('cmd-bar');

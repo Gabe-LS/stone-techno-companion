@@ -1471,6 +1471,16 @@ async def chat_push_idle(request: Request):
     return Response(status_code=204)
 
 
+@router.post("/swlog", status_code=204)
+async def chat_swlog(request: Request):
+    # Temporary diagnostic: SW/page push-navigation timeline, see [PUSH] debugging
+    try:
+        body = await request.json()
+    except Exception:
+        return Response(status_code=204)
+    logger.info("[SWLOG] %s", json.dumps(body)[:500])
+
+
 @router.post("/push/ack", status_code=204)
 async def chat_push_ack(request: Request):
     body = await request.json()
@@ -1478,6 +1488,13 @@ async def chat_push_ack(request: Request):
     action = body.get("action")
     if not endpoint or action not in ("delivered", "clicked", "dismissed"):
         raise HTTPException(400, "endpoint and action required")
+    logger.info(
+        "[PUSH-ACK] action=%s sw=%s url=%s endpoint=...%s",
+        action,
+        body.get("v", "pre-v3"),
+        body.get("url"),
+        endpoint[-16:],
+    )
     db = _get_db()
     try:
         user = find_user_by_push_endpoint(db, endpoint)

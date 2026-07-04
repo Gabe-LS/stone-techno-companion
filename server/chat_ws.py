@@ -305,7 +305,6 @@ async def _send_chat_push(
     if now - _push_debounce.get(key, 0) < 10:
         return
     _push_debounce[key] = now
-    _push_debounce[key] = now
     db = get_chat_db()
     subs = get_push_subscriptions(db, user_id)
     db.close()
