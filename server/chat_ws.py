@@ -298,6 +298,7 @@ async def _send_chat_push(
     room_name: str,
     sender_name: str,
     text_preview: str,
+    msg_id: str | None = None,
 ) -> None:
     key = f"{user_id}:{room_id}"
     now = time.monotonic()
@@ -330,7 +331,7 @@ async def _send_chat_push(
             "title": title,
             "body": body,
             "tag": f"chat-{room_id}",
-            "url": f"/chat/r/{room_id}",
+            "url": f"/chat/msg/{msg_id}" if msg_id else f"/chat/r/{room_id}",
         }
     )
     vapid_claims = {
@@ -812,6 +813,7 @@ async def _moderate_and_broadcast(
                     room_name,
                     display_name,
                     text_preview,
+                    msg_id=msg["id"],
                 )
             )
 
