@@ -3370,6 +3370,7 @@ let _nw = null;
 let _nwTimer = null;
 
 function _queueBrowserNotification(data) {
+  if (_pushSubscribed) return;
   dbg('[NOTIFY] queue', data.room_id, data.type);
   if (data.type === 'dm') {
     _sendDmNotification(data);
