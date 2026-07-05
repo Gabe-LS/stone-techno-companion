@@ -88,6 +88,13 @@ def _normalize(text: str) -> str:
     return text
 
 
+def _collapse_elongation(text: str) -> str:
+    # Collapse runs of 3+ identical characters to one ("fuuuck" -> "fuck").
+    # Applied symmetrically to blocklist terms and input so it never turns a
+    # short term into a common word (e.g. "ass" keeps its double s).
+    return re.sub(r"(.)\1{2,}", r"\1", text)
+
+
 class WordFilter:
     def __init__(self, blocklist_path: str | Path | None = None):
         self._terms: set[str] = set()
@@ -116,18 +123,26 @@ class WordFilter:
     def check(self, text: str) -> dict | None:
         normalized = _normalize(text)
         words = normalized.split()
+        collapsed_words = [_collapse_elongation(w) for w in words]
+
+        def _scan(term: str) -> bool:
+            term_words = term.split()
+            n = len(term_words)
+            collapsed_term = [_collapse_elongation(t) for t in term_words]
+            for i in range(len(words) - n + 1):
+                if words[i : i + n] == term_words:
+                    return True
+                if collapsed_words[i : i + n] == collapsed_term:
+                    return True
+            return False
 
         for term in self._drug_terms:
-            term_words = term.split()
-            for i in range(len(words) - len(term_words) + 1):
-                if words[i : i + len(term_words)] == term_words:
-                    return {"matched": term, "is_drug": True}
+            if _scan(term):
+                return {"matched": term, "is_drug": True}
 
         for term in self._terms - self._drug_terms:
-            term_words = term.split()
-            for i in range(len(words) - len(term_words) + 1):
-                if words[i : i + len(term_words)] == term_words:
-                    return {"matched": term, "is_drug": False}
+            if _scan(term):
+                return {"matched": term, "is_drug": False}
 
         return None
 
@@ -466,7 +481,7 @@ async def moderate_message(
         logger.error("[MOD] Content detection error: %s", drug_result)
         drug_result = None
 
-    if ai_errored and drug_errored and os.environ.get("OPENAI_API_KEY"):
+    if (ai_errored or drug_errored) and os.environ.get("OPENAI_API_KEY"):
         return {
             "allowed": False,
             "reason": "Message could not be verified. Please try again.",
