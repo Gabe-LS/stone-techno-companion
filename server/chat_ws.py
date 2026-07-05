@@ -13,7 +13,7 @@ import secrets
 import socket
 import time
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
@@ -39,6 +39,7 @@ from chat_db import (
     block_user,
     unblock_user,
     is_blocked,
+    is_banned,
     create_report,
     update_last_seen,
     update_last_active,
@@ -49,6 +50,7 @@ from chat_db import (
     purge_old_reports,
     purge_expired_strikes,
     purge_stale_push_subscriptions,
+    sweep_stuck_pending,
     join_room_membership,
     leave_room_membership,
     mark_room_read,
@@ -59,12 +61,24 @@ from chat_db import (
     delete_push_subscription_by_endpoint,
     get_setting,
 )
-from chat_moderation import moderate_message
+from chat_moderation import moderate_message, check_ban_mute
 
 logger = logging.getLogger(__name__)
 
 _UPLOADS_DIR = Path(__file__).resolve().parent / "chat" / "uploads"
 _UPLOAD_URL_RE = re.compile(r"^/chat/uploads/[a-f0-9]{32}\.(webp|mp4)$")
+
+# Holds references to fire-and-forget asyncio tasks so they aren't garbage
+# collected mid-flight (a bare asyncio.create_task() with no held reference
+# can be GC'd before completion).
+_bg_tasks: set = set()
+
+
+def _spawn_bg_task(coro) -> asyncio.Task:
+    t = asyncio.create_task(coro)
+    _bg_tasks.add(t)
+    t.add_done_callback(_bg_tasks.discard)
+    return t
 
 
 def _is_e2ee_content(content: str) -> bool:
@@ -77,6 +91,29 @@ def _is_e2ee_content(content: str) -> bool:
 
 def _dm_preview(sender_name: str) -> tuple[str, str]:
     return sender_name, "Sent you a message"
+
+
+def _preview_from_content(msg_type: str, content: str) -> str:
+    # Type-aware push preview text, mirroring the live-broadcast preview
+    # branching in _moderate_and_broadcast. content is the raw JSON envelope
+    # stored in messages.content -- for E2EE messages the server cannot read
+    # it, so this returns "" and the generic DM preview is used instead.
+    if _is_e2ee_content(content):
+        return ""
+    if msg_type == "text":
+        try:
+            return (json.loads(content).get("text", "") or "")[:100]
+        except (json.JSONDecodeError, AttributeError, TypeError):
+            return (content or "")[:100]
+    if msg_type == "image":
+        return "Sent a photo"
+    if msg_type == "video":
+        return "Sent a video"
+    if msg_type == "location":
+        return "Shared a location"
+    if msg_type == "meetup_card":
+        return "Shared a meetup"
+    return ""
 
 
 def _image_to_data_uri(rel_url: str) -> str | None:
@@ -167,17 +204,17 @@ async def _is_safe_preview_url(url: str) -> bool:
     return True
 
 
-async def _resolve_safe_ip(hostname: str) -> str | None:
+async def _resolve_safe_ips(hostname: str) -> list[str]:
     try:
         infos = await asyncio.to_thread(socket.getaddrinfo, hostname, None)
     except (socket.gaierror, ValueError):
-        return None
+        return []
     safe = []
     for _family, _, _, _, sockaddr in infos:
         try:
             addr = ipaddress.ip_address(sockaddr[0])
         except ValueError:
-            return None
+            return []
         if (
             addr.is_private
             or addr.is_loopback
@@ -186,9 +223,9 @@ async def _resolve_safe_ip(hostname: str) -> str | None:
             or addr.is_multicast
             or addr.is_unspecified
         ):
-            return None
+            return []
         safe.append(sockaddr[0])
-    return safe[0] if safe else None
+    return safe
 
 
 async def _pinned_preview_get(client, url: str, headers: dict):
@@ -207,26 +244,35 @@ async def _pinned_preview_get(client, url: str, headers: dict):
         or host.endswith(".internal")
     ):
         return None
-    ip = await _resolve_safe_ip(host)
-    if not ip:
+    safe_ips = await _resolve_safe_ips(host)
+    if not safe_ips:
         return None
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    ip_host = f"[{ip}]" if ":" in ip else ip
     path = parsed.path or "/"
     if parsed.query:
         path += "?" + parsed.query
-    pinned_url = f"{parsed.scheme}://{ip_host}:{port}{path}"
     req_headers = dict(headers)
     req_headers["Host"] = host if port in (80, 443) else f"{host}:{port}"
-    return await asyncio.wait_for(
-        client.get(
-            pinned_url,
-            headers=req_headers,
-            follow_redirects=False,
-            extensions={"sni_hostname": host},
-        ),
-        timeout=3.0,
-    )
+    # Every candidate address is already SSRF-validated (private/loopback/
+    # link-local/reserved rejected in _resolve_safe_ips); this loop only
+    # decides which validated address is reachable, it never widens the
+    # validation.
+    for ip in safe_ips:
+        ip_host = f"[{ip}]" if ":" in ip else ip
+        pinned_url = f"{parsed.scheme}://{ip_host}:{port}{path}"
+        try:
+            return await asyncio.wait_for(
+                client.get(
+                    pinned_url,
+                    headers=req_headers,
+                    follow_redirects=False,
+                    extensions={"sni_hostname": host},
+                ),
+                timeout=3.0,
+            )
+        except Exception:
+            continue
+    return None
 
 
 async def _fetch_link_preview(url: str) -> dict | None:
@@ -386,15 +432,14 @@ async def _push_or_defer(
     if now - last < window:
         if key not in _push_flush_tasks:
             delay = last + window - now
-            _push_flush_tasks[key] = asyncio.create_task(
+            _push_flush_tasks[key] = _spawn_bg_task(
                 _flush_push_later(key, delay, user_id, room_id, room_type, room_name)
             )
         return
     _push_debounce[key] = now
     silent = bool(_push_sent.get(key))
-    _push_sent[key] = True
     _push_counter += 1
-    await _do_send_push(
+    sent = await _do_send_push(
         user_id,
         room_id,
         room_type,
@@ -405,6 +450,11 @@ async def _push_or_defer(
         silent=silent,
         push_index=_push_counter,
     )
+    # Only escalate to silent follow-ups after a push actually went out.
+    # Marking before the send poisoned the flag when the user had no
+    # subscription yet: their first real push then arrived silent.
+    if sent:
+        _push_sent[key] = True
 
 
 async def _flush_push_later(
@@ -430,31 +480,33 @@ async def _do_send_push(
     msg_id: str | None,
     silent: bool,
     push_index: int,
-) -> None:
+) -> bool:
     db = get_chat_db()
     try:
         subs = get_push_subscriptions(db, user_id)
         if not subs:
-            return
+            return False
         counts = get_unread_counts(db, user_id)
         room_counts = counts.get(room_id)
         count = room_counts["count"] if room_counts else 0
         total_unread = sum(c["count"] for c in counts.values())
         if count == 0:
-            return
+            return False
         last_read = room_counts["last_read_at"] if room_counts else "1970-01-01"
         now_iso = datetime.now(timezone.utc).isoformat()
         row = db.execute(
             "SELECT id FROM messages WHERE room_id = ? AND created_at > ? "
-            "AND user_id != ? AND expires_at > ? ORDER BY created_at LIMIT 1",
+            "AND user_id != ? AND expires_at > ? AND moderation_status != 'pending' "
+            "ORDER BY created_at LIMIT 1",
             (room_id, last_read, user_id, now_iso),
         ).fetchone()
         first_msg_id = row["id"] if row else msg_id
         if not sender_name:
             msg_row = db.execute(
-                "SELECT m.content, u.display_name, u.username FROM messages m "
+                "SELECT m.content, m.type, u.display_name, u.username FROM messages m "
                 "JOIN users u ON u.id = m.user_id "
                 "WHERE m.room_id = ? AND m.created_at > ? AND m.user_id != ? AND m.expires_at > ? "
+                "AND m.moderation_status != 'pending' "
                 "ORDER BY m.created_at DESC LIMIT 1",
                 (room_id, last_read, user_id, now_iso),
             ).fetchone()
@@ -464,16 +516,18 @@ async def _do_send_push(
                     if room_type == "dm":
                         _, text_preview = _dm_preview(sender_name)
                     else:
-                        text_preview = msg_row["content"] or ""
+                        text_preview = _preview_from_content(
+                            msg_row["type"], msg_row["content"]
+                        )
     finally:
         db.close()
 
     vapid_private_key = os.environ.get("VAPID_PRIVATE_KEY")
     if not vapid_private_key:
-        return
+        return False
     if "BEGIN" not in vapid_private_key and not os.path.isfile(vapid_private_key):
         logger.warning("VAPID_PRIVATE_KEY file not found: %s", vapid_private_key)
-        return
+        return False
 
     if count == 1:
         if room_type == "dm":
@@ -520,7 +574,8 @@ async def _do_send_push(
         from pywebpush import webpush, WebPushException
     except ImportError:
         logger.warning("pywebpush not installed, skipping chat push")
-        return
+        return False
+    sent_any = False
     for sub in subs:
         try:
             await asyncio.to_thread(
@@ -537,8 +592,14 @@ async def _do_send_push(
                 # (FCM rejects an apple aud with 403; mixed-service users
                 # only ever reached the first service).
                 vapid_claims=dict(vapid_claims),
+                # pywebpush defaults to TTL=0 ("deliver this instant or
+                # discard") -- any momentary push-service disconnect on the
+                # client (Brave's GCM socket idles aggressively) silently
+                # drops the push. Let the service hold it for 5 minutes.
+                ttl=300,
                 timeout=10,
             )
+            sent_any = True
         except WebPushException as e:
             if (
                 hasattr(e, "response")
@@ -552,6 +613,7 @@ async def _do_send_push(
                 logger.warning("Chat push failed for %s: %s", sub["endpoint"][:60], e)
         except Exception:
             logger.exception("Unexpected push error")
+    return sent_any
 
 
 class ChatRoom:
@@ -885,7 +947,7 @@ async def _moderate_and_broadcast(
             mod_result = await moderate_message(db, user_id, text, image_url)
             logger.info("[MOD] result: %s", mod_result)
         else:
-            mod_result = {"allowed": True}
+            mod_result = await check_ban_mute(db, user_id)
 
         if not mod_result["allowed"]:
             if msg_type in ("image", "video"):
@@ -928,10 +990,11 @@ async def _moderate_and_broadcast(
                 await mgr.send_to_user(
                     user_id, {"event": "banned", "reason": mod_result["reason"]}
                 )
-                try:
-                    await ws.close(code=4003, reason="Banned")
-                except Exception:
-                    pass
+                for _cid, _ws in list(mgr.user_conns.get(user_id, {}).items()):
+                    try:
+                        await _ws.close(code=4003, reason="Banned")
+                    except Exception:
+                        pass
             elif mod_result["action"] == "mute":
                 await mgr.send_to_user(
                     user_id,
@@ -960,6 +1023,17 @@ async def _moderate_and_broadcast(
             (msg["id"],),
         )
         db.commit()
+        still_exists = db.execute(
+            "SELECT 1 FROM messages WHERE id = ?", (msg["id"],)
+        ).fetchone()
+        if not still_exists:
+            # Message was deleted (user delete) or purged (TTL) while
+            # moderation was in flight. Do not resurrect it: skip broadcast,
+            # link preview, badge fan-out and push.
+            logger.info(
+                "[MOD] message %s gone before approve; skipping broadcast", msg["id"]
+            )
+            return
 
         # Re-fetch the sender's identity so a profile edit made after this
         # connection's handshake is reflected in the live broadcast, not the
@@ -1072,7 +1146,7 @@ async def _moderate_and_broadcast(
         room_type = meta.get("type", "general")
         room_name = meta.get("name", "")
         for uid in push_targets:
-            asyncio.create_task(
+            _spawn_bg_task(
                 _push_or_defer(
                     uid,
                     room_id,
@@ -1131,6 +1205,21 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
         await ws.close(code=4001, reason="Invalid session")
         return
 
+    # Reject a banned user before accepting the socket. Must run before
+    # ws.accept()/the try block: closing db and returning from inside the try
+    # would make the outer finally touch an already-closed connection and a
+    # conn_id that was never registered.
+    if is_banned(
+        db,
+        user["provider"],
+        user["provider_id"],
+        user["device_fingerprint"] if "device_fingerprint" in user.keys() else None,
+    ):
+        logger.info("[WS] rejecting banned user %s at connect", user["id"])
+        db.close()
+        await ws.close(code=4003, reason="Banned")
+        return
+
     await ws.accept()
     try:
         msg_char_limit = int(get_setting(db, "msg_char_limit", "1000"))
@@ -1144,6 +1233,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
     color_index = user["color_index"] if "color_index" in ukeys else 0
     avatar_url = user["avatar_url"] if "avatar_url" in ukeys else ""
     country = user["country"] if "country" in ukeys else ""
+
     await manager.connect(ws, user_id, conn_id)
     update_last_seen(db, user_id)
 
@@ -1238,14 +1328,31 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                             (room_id, user_id),
                         ).fetchone():
                             continue
+                    # Re-fetch the sender's identity so a profile edit made
+                    # after the WS handshake is reflected in the room seed
+                    # and presence broadcast, not the frozen handshake
+                    # values. Local-only: does not change the handshake
+                    # locals used elsewhere in the loop.
+                    _jr_display_name, _jr_username = display_name, username
+                    _jr_color_index, _jr_avatar_url = color_index, avatar_url
+                    sender = get_user(db, user_id)
+                    if sender:
+                        _sk = sender.keys()
+                        _jr_display_name = sender["display_name"]
+                        if "username" in _sk:
+                            _jr_username = sender["username"]
+                        if "color_index" in _sk:
+                            _jr_color_index = sender["color_index"]
+                        if "avatar_url" in _sk:
+                            _jr_avatar_url = sender["avatar_url"]
                     await manager.join_room(
                         room_id,
                         user_id,
                         conn_id,
-                        display_name,
-                        username,
-                        color_index,
-                        avatar_url,
+                        _jr_display_name,
+                        _jr_username,
+                        _jr_color_index,
+                        _jr_avatar_url,
                         country,
                     )
                     if room_row["type"] in ("dm", "meetup"):
@@ -1551,7 +1658,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     except (json.JSONDecodeError, AttributeError):
                         pass
 
-                asyncio.create_task(
+                _spawn_bg_task(
                     _moderate_and_broadcast(
                         manager,
                         room_id,
@@ -1624,6 +1731,21 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     invite_msg = create_message(
                         db, stage_id, user_id, "meetup_invite", invite_content
                     )
+                    # Re-fetch the sender's identity so a profile edit made
+                    # after the WS handshake is reflected in the invite
+                    # broadcast, not the frozen handshake values.
+                    _mi_display_name, _mi_username = display_name, username
+                    _mi_color_index, _mi_avatar_url = color_index, avatar_url
+                    sender = get_user(db, user_id)
+                    if sender:
+                        _sk = sender.keys()
+                        _mi_display_name = sender["display_name"]
+                        if "username" in _sk:
+                            _mi_username = sender["username"]
+                        if "color_index" in _sk:
+                            _mi_color_index = sender["color_index"]
+                        if "avatar_url" in _sk:
+                            _mi_avatar_url = sender["avatar_url"]
                     await manager.broadcast_to_room(
                         stage_id,
                         {
@@ -1631,10 +1753,10 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                             "id": invite_msg["id"],
                             "room_id": stage_id,
                             "user_id": user_id,
-                            "display_name": display_name,
-                            "username": username,
-                            "color_index": color_index,
-                            "avatar_url": avatar_url,
+                            "display_name": _mi_display_name,
+                            "username": _mi_username,
+                            "color_index": _mi_color_index,
+                            "avatar_url": _mi_avatar_url,
                             "type": "meetup_invite",
                             "content": invite_content,
                             "created_at": invite_msg["created_at"],
@@ -1967,6 +2089,27 @@ async def purge_loop() -> None:
         db = None
         try:
             db = get_chat_db()
+
+            # A moderation task that dies mid-flight (server restart, unhandled
+            # error) leaves its message stuck 'pending' forever, since only
+            # that task ever flips it to 'approved'. 3 minutes is far longer
+            # than moderation ever legitimately takes.
+            stuck_cutoff = (
+                datetime.now(timezone.utc) - timedelta(minutes=3)
+            ).isoformat()
+            stuck = sweep_stuck_pending(db, stuck_cutoff)
+            for stuck_id, stuck_room_id, stuck_user_id in stuck:
+                logger.info("[MOD] swept stuck-pending message %s", stuck_id)
+                await manager.send_to_user(
+                    stuck_user_id,
+                    {
+                        "event": "message_removed",
+                        "id": stuck_id,
+                        "room_id": stuck_room_id,
+                        "reason": "Message could not be verified. Please try again.",
+                    },
+                )
+
             expired_msgs = purge_expired_messages(db)
             for batch in expired_msgs:
                 await manager.broadcast_to_room(

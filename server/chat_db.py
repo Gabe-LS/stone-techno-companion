@@ -209,6 +209,9 @@ def init_chat_db(db: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_chat_push_user ON chat_push_subscriptions(user_id);
+        CREATE INDEX IF NOT EXISTS idx_dm_participants_user ON dm_participants(user_id);
+        CREATE INDEX IF NOT EXISTS idx_email_tokens_expires ON email_tokens(expires_at);
+        CREATE INDEX IF NOT EXISTS idx_strikes_expires ON strikes(expires_at);
 
         CREATE TABLE IF NOT EXISTS e2ee_device_keys (
             user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -780,6 +783,7 @@ def get_unread_counts(db: sqlite3.Connection, user_id: str) -> dict:
         "  AND m.created_at > src.last_read_at "
         "  AND m.expires_at > ? "
         "  AND m.user_id != ? "
+        "  AND m.moderation_status != 'pending' "
         "GROUP BY src.room_id",
         (user_id, user_id, now, user_id),
     ).fetchall()
@@ -999,6 +1003,27 @@ def purge_expired_messages(db: sqlite3.Connection) -> list[dict]:
             (uploads_dir / f"{stem}_mod{i}.webp").unlink(missing_ok=True)
 
     return [{"room_id": rid, "message_ids": ids} for rid, ids in by_room.items()]
+
+
+def sweep_stuck_pending(db: sqlite3.Connection, older_than_iso: str) -> list[tuple]:
+    """Delete messages stuck in 'pending' moderation past older_than_iso.
+
+    A moderation task that dies mid-flight (server restart, unhandled error)
+    leaves its message unservable forever since only the task ever flips
+    moderation_status to 'approved'. Rare, so an index-free scan is fine.
+    """
+    stuck = db.execute(
+        "SELECT id, room_id, user_id FROM messages "
+        "WHERE moderation_status = 'pending' AND created_at < ?",
+        (older_than_iso,),
+    ).fetchall()
+    if stuck:
+        db.execute(
+            "DELETE FROM messages WHERE moderation_status = 'pending' AND created_at < ?",
+            (older_than_iso,),
+        )
+        db.commit()
+    return [(m["id"], m["room_id"], m["user_id"]) for m in stuck]
 
 
 # --- Meetups ---

@@ -299,7 +299,7 @@ class TestModeratePipeline:
         mute_user(db, user["id"], minutes=30)
         result = await moderate_message(db, user["id"], "hello")
         assert result["allowed"] is False
-        assert result["action"] == "muted"
+        assert result["action"] == "mute"
 
     @pytest.mark.asyncio
     async def test_ai_moderation_blocks(self, db, user):
@@ -365,7 +365,7 @@ class TestModeratePipeline:
 
             r4 = await moderate_message(db, user["id"], "more drugs")
             assert r4["allowed"] is False
-            assert r4["action"] == "muted"
+            assert r4["action"] == "mute"
 
     @pytest.mark.asyncio
     async def test_three_strike_escalation(self, db, user):
@@ -392,7 +392,7 @@ class TestModeratePipeline:
                 assert r3["action"] == "mute"
 
                 r4 = await moderate_message(db, user["id"], "badword3")
-                assert r4["action"] == "muted"
+                assert r4["action"] == "mute"
 
                 db.execute(
                     "UPDATE users SET muted_until = NULL WHERE id = ?", (user["id"],)
