@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""Standalone Playwright browser verification for E2EE DMs.
+"""Standalone Playwright browser verification for multi-device E2EE (v2) DMs.
 
 Spins up an isolated uvicorn server against a scratch chat.db, drives real
-headless Chromium browser contexts (Alice, Bob, and later Dave) through the
-actual chat UI, and verifies the full E2EE-for-DMs flow end to end: key
+headless Chromium browser contexts (Alice; Bob across three devices/contexts
+bob_d1/bob_d2/bob_d3; later Dave; and keyless Carol) through the actual chat
+UI, and verifies the full E2EE-for-DMs flow end to end: per-device key
 upload, DM encryption, UI indicators, replies, link-preview suppression,
-reporting, key rotation, group-room plaintext behavior, and -- for a brand
-new counterpart appearing mid-session -- browser notifications with an
-E2EE-safe generic preview plus live (no-reload) DM list updates.
+reporting, multi-device fanout (sibling readability, late-joining devices,
+self-decrypt after reload, pruned-sender handling), single-device re-key,
+group-room plaintext behavior, and -- for a brand new counterpart appearing
+mid-session -- browser notifications with an E2EE-safe generic preview plus
+live (no-reload) DM list updates.
 
 Run directly (NOT collected by pytest -- no test_ prefix):
 
@@ -80,19 +83,27 @@ NOTIFICATION_SPY_SCRIPT = """
 """
 
 CHECK_DESCS = {
-    1: "Pages load, WS connects, main room visible; e2ee_keys row exists for both users",
+    1: "Pages load, WS connects, main room visible; e2ee_device_keys has >=1 row for each user",
     2: "Alice opens DM with Bob, sends message, Bob sees plaintext; Bob replies, Alice sees it",
-    3: "DM messages stored as E2EE envelopes; no nonce plaintext anywhere in messages table",
+    3: "DM messages stored as v2 E2EE envelopes (sd+keys+ct, no nonce field); no plaintext leak",
     4: "UI indicators: lock icon in DM header + E2EE banner on both pages",
     5: "Reply gesture (double-click): reply quote rebuilt client-side on both pages; server snippet empty",
     6: "Link message: no link preview rendered on receiver; content stored as envelope",
     7: "Report: reporter-provided plaintext snapshot stored, unverified=1",
-    8: "Key rotation: Bob re-keys, Alice re-derives, Bob's old messages now fail to decrypt",
-    9: "Group room sanity: plaintext message stored and visible, no E2EE wrapper",
-    10: "Keyless peer: DM row and header show NO lock, unavailable banner, plaintext fallback",
-    11: "New-counterpart DM: Bob (hidden tab) gets a browser notification with E2EE-safe generic preview",
-    12: "New-counterpart DM: Bob's DM list shows the new room live (lock + unread), no reload",
-    13: "Zero console errors / page errors across all pages",
+    8: "Multi-device: Bob's second device (bob_d2) registers; e2ee_device_keys has 2 rows for Bob, 1 for Alice",
+    9: "Multi-device: Alice -> Bob, both Bob devices (bob_d1 + bob_d2) decrypt and display the plaintext",
+    10: "Multi-device: Bob device 1 -> Alice AND Bob device 2 both decrypt (sibling readability)",
+    11: "Multi-device: Bob device 2 -> Alice AND Bob device 1 both decrypt (mirrored sibling readability)",
+    12: "Multi-device: v2 envelope keys map contains all 3 device_ids (Alice, Bob d1, Bob d2)",
+    13: "Multi-device: late-joining Bob device 3 shows sentinel for pre-existing messages, decrypts new one",
+    14: "Multi-device: Alice self-decrypts her own earlier message after reload (own-slot ECDH)",
+    15: "Multi-device: message from a server-pruned sender device renders the sentinel, not an error",
+    16: "Re-key: Bob clears localStorage and registers as a brand-new device; old device's messages now fail",
+    17: "Group room sanity: plaintext message stored and visible, no E2EE wrapper",
+    18: "Keyless peer: DM row and header show NO lock, unavailable banner, plaintext fallback",
+    19: "New-counterpart DM: Bob (hidden tab) gets a browser notification with E2EE-safe generic preview",
+    20: "New-counterpart DM: Bob's DM list shows the new room live (lock + unread), no reload",
+    21: "Zero console errors / page errors across all pages",
 }
 
 
@@ -163,6 +174,18 @@ def query_db(db_path, sql, params=()):
         conn.close()
 
 
+def exec_db(db_path, sql, params=()):
+    """Direct write against the scratch DB -- used to simulate server-side
+    device pruning (check 15), which has no corresponding client action to
+    trigger deterministically in a browser test."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute(sql, params)
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def find_msg_id_by_text(page, room_id, needle):
     return page.evaluate(
         """([roomId, needle]) => {
@@ -208,7 +231,7 @@ def click_exact_action(page, text, timeout_ms=10000):
 
 def open_dm_and_send(page, target_user_id, msg_text):
     """Drive the real UI to start a DM with target_user_id and send msg_text.
-    Shared by check 2 (Alice -> Bob) and checks 11/12 (Dave -> Bob).
+    Shared by check 2 (Alice -> Bob) and checks 19/20 (Dave -> Bob).
 
     openRoom('pending-dm') re-renders the input bar; typing before that
     render completes lands in an input element that gets replaced, so the
@@ -237,6 +260,47 @@ def open_dm_and_send(page, target_user_id, msg_text):
         desc="DM room created client-side",
     )
     return page.evaluate("() => currentRoom")
+
+
+def open_existing_dm(page, dm_room_id):
+    """Navigate to the DMs tab and open an already-existing DM room. Shared
+    by every multi-device check that re-opens or first-opens the Alice-Bob
+    DM from a fresh page state (new device context, or post-reload)."""
+    page.locator(".tabs button", has_text="DMs").click(timeout=10000)
+    page.wait_for_selector(f'.member-item[data-room-id="{dm_room_id}"]', timeout=10000)
+    page.click(f'.member-item[data-room-id="{dm_room_id}"]')
+    page.wait_for_selector("#msg-input", timeout=10000)
+
+
+def create_extra_session(db_path, user_id):
+    """Create a second (or third) session token for an already-existing user
+    -- simulates the same account logged in on another physical device. A
+    fresh Playwright context (its own localStorage) using this token is a
+    genuinely new E2EE device: no e2ee_keypair/e2ee_device_id to inherit."""
+    import chat_db
+
+    db = chat_db.get_chat_db()
+    session = chat_db.create_session(db, user_id)
+    db.close()
+    return session["token"]
+
+
+def new_device_context(browser, base_url, user_token, label):
+    """Spin up a brand-new browser context + page logged in as user_token,
+    with its own console/page-error collectors attached before navigation."""
+    ctx = browser.new_context(viewport={"width": 1280, "height": 900})
+    add_session_cookie(ctx, base_url, user_token)
+    page = ctx.new_page()
+    console_errors, page_errors = [], []
+    attach_console_collectors(page, label, console_errors, page_errors)
+    page.goto(base_url + "/chat", timeout=30000)
+    page.wait_for_selector("#messages", timeout=20000)
+    wait_until(
+        lambda: page.evaluate("() => !!ws && ws.readyState === 1"),
+        timeout=15.0,
+        desc=f"{label} WS open",
+    )
+    return ctx, page, console_errors, page_errors
 
 
 # --- Server lifecycle ---------------------------------------------------------
@@ -492,21 +556,22 @@ def check1_pages_load(page_a, page_b, alice, bob, db_path):
             desc=f"{label} main room header visible",
         )
 
-    wait_until(
-        lambda: (
-            len(
-                query_db(
-                    db_path,
-                    "SELECT user_id FROM e2ee_keys WHERE user_id IN (?, ?)",
-                    (alice["id"], bob["id"]),
+    for label, user in (("alice", alice), ("bob", bob)):
+        wait_until(
+            lambda user=user: (
+                len(
+                    query_db(
+                        db_path,
+                        "SELECT device_id FROM e2ee_device_keys WHERE user_id = ?",
+                        (user["id"],),
+                    )
                 )
-            )
-            == 2
-        ),
-        timeout=15.0,
-        desc="e2ee_keys rows for both users",
-    )
-    return "both pages loaded, WS open, main room visible, both e2ee_keys rows present"
+                >= 1
+            ),
+            timeout=15.0,
+            desc=f"e2ee_device_keys row for {label}",
+        )
+    return "both pages loaded, WS open, main room visible, both users have >=1 e2ee_device_keys row"
 
 
 def check2_dm_flow(page_a, page_b, alice, bob, ctx, nonce1, nonce2):
@@ -557,9 +622,25 @@ def check3_db_envelope(db_path, ctx, nonce1, nonce2):
         raise AssertionError(f"expected >=2 messages in DM room, found {len(rows)}")
     for r in rows:
         content = json.loads(r["content"])
-        if content.get("e2ee") is not True or "ct" not in content:
+        if content.get("e2ee") is not True or content.get("v") != 2:
             raise AssertionError(
-                f"message {r['id']} is not an E2EE envelope: {r['content']!r}"
+                f"message {r['id']} is not a v2 E2EE envelope: {r['content']!r}"
+            )
+        if "ct" not in content:
+            raise AssertionError(
+                f"message {r['id']} envelope missing ct: {r['content']!r}"
+            )
+        if not isinstance(content.get("keys"), dict) or not content["keys"]:
+            raise AssertionError(
+                f"message {r['id']} envelope missing/empty keys map: {r['content']!r}"
+            )
+        if not content.get("sd"):
+            raise AssertionError(
+                f"message {r['id']} envelope missing sd: {r['content']!r}"
+            )
+        if '"nonce"' in r["content"]:
+            raise AssertionError(
+                f"message {r['id']} envelope unexpectedly carries a nonce field: {r['content']!r}"
             )
 
     all_rows = query_db(db_path, "SELECT content FROM messages")
@@ -568,7 +649,10 @@ def check3_db_envelope(db_path, ctx, nonce1, nonce2):
             raise AssertionError(
                 f"plaintext nonce leaked into messages table content: {r['content']!r}"
             )
-    return f"{len(rows)} DM messages verified as envelopes, no plaintext nonce leakage anywhere"
+    return (
+        f"{len(rows)} DM messages verified as v2 envelopes (sd+keys+ct, no nonce field), "
+        "no plaintext nonce leakage anywhere"
+    )
 
 
 def check4_ui_indicators(page_a, page_b, ctx):
@@ -739,7 +823,461 @@ def check7_report(page_b, db_path, alice, bob, ctx, nonce3):
     return f"report id={row['id']} unverified=1, snapshot contains reporter-provided plaintext"
 
 
-def check8_rekey(page_a, page_b, db_path, bob, ctx, nonce4):
+def check8_bob_device2(browser, base_url, page_a, page_b, alice, bob, db_path, ctx):
+    """v2 multi-device: bob_d2, a second real browser context logged into
+    Bob's account via its own session token (Bob's user row, not a new
+    user -- exactly how a second physical device authenticates), registers
+    a distinct device key. e2ee_device_keys must show 2 rows for Bob and
+    still 1 for Alice (no reload/rekey has happened yet at this point in
+    the run, so the baseline is clean)."""
+    dm_room_id = ctx.get("dm_room_id")
+    if not dm_room_id:
+        raise AssertionError("dm_room_id missing (check 2 must have failed)")
+
+    alice_device_id = page_a.evaluate("() => E2EE._deviceId")
+    bob_d1_device_id = page_b.evaluate("() => E2EE._deviceId")
+    ctx["alice_device_id"] = alice_device_id
+    ctx["bob_d1_device_id"] = bob_d1_device_id
+
+    session_token = create_extra_session(db_path, bob["id"])
+    ctx_bd2, page_bd2, console_errors_bd2, page_errors_bd2 = new_device_context(
+        browser, base_url, session_token, "bob_d2"
+    )
+    ctx["bob_d2_ctx"] = ctx_bd2
+    ctx["bob_d2_page"] = page_bd2
+    ctx["bob_d2_console_errors"] = console_errors_bd2
+    ctx["bob_d2_page_errors"] = page_errors_bd2
+
+    bob_d2_device_id = page_bd2.evaluate("() => E2EE._deviceId")
+    if bob_d2_device_id == bob_d1_device_id:
+        raise AssertionError(
+            "bob_d2 generated the same device_id as bob_d1 -- contexts are not isolated"
+        )
+    ctx["bob_d2_device_id"] = bob_d2_device_id
+
+    wait_until(
+        lambda: (
+            len(
+                query_db(
+                    db_path,
+                    "SELECT device_id FROM e2ee_device_keys WHERE user_id = ? AND device_id = ?",
+                    (bob["id"], bob_d2_device_id),
+                )
+            )
+            == 1
+        ),
+        timeout=15.0,
+        desc="bob_d2's device key row",
+    )
+
+    bob_rows = query_db(
+        db_path,
+        "SELECT device_id FROM e2ee_device_keys WHERE user_id = ?",
+        (bob["id"],),
+    )
+    alice_rows = query_db(
+        db_path,
+        "SELECT device_id FROM e2ee_device_keys WHERE user_id = ?",
+        (alice["id"],),
+    )
+    if len(bob_rows) != 2:
+        raise AssertionError(
+            f"expected exactly 2 device rows for bob, found: {bob_rows}"
+        )
+    if {r["device_id"] for r in bob_rows} != {bob_d1_device_id, bob_d2_device_id}:
+        raise AssertionError(
+            f"bob's device rows don't match the two known devices: {bob_rows}"
+        )
+    if len(alice_rows) != 1:
+        raise AssertionError(
+            f"expected exactly 1 device row for alice, found: {alice_rows}"
+        )
+
+    return (
+        f"bob_d1={bob_d1_device_id[:8]} bob_d2={bob_d2_device_id[:8]} -- "
+        "2 device rows for bob, 1 for alice"
+    )
+
+
+def check9_multidevice_alice_to_both(page_a, page_b, ctx, nonce):
+    dm_room_id = ctx.get("dm_room_id")
+    page_bd2 = ctx.get("bob_d2_page")
+    if not dm_room_id or not page_bd2:
+        raise AssertionError(
+            "dm_room_id/bob_d2_page missing (check 8 must have failed)"
+        )
+
+    # bob_d2 must join the room before Alice sends -- broadcast_to_room only
+    # reaches connections that sent join_room (see chat_ws.py), which
+    # openRoom() does as part of opening the DM through the real UI.
+    open_existing_dm(page_bd2, dm_room_id)
+
+    msg_text = f"m2 alice broadcast {nonce}"
+    page_a.fill("#msg-input", msg_text)
+    page_a.click(".input-bar .send")
+
+    page_b.wait_for_selector(f'.msg-text:has-text("{nonce}")', timeout=10000)
+    page_bd2.wait_for_selector(f'.msg-text:has-text("{nonce}")', timeout=10000)
+    msg_id = wait_for_msg_id(page_b, dm_room_id, nonce)
+    bd2_msg_id = wait_for_msg_id(page_bd2, dm_room_id, nonce)
+    if msg_id != bd2_msg_id:
+        raise AssertionError(
+            f"message id mismatch across bob's devices: {msg_id} vs {bd2_msg_id}"
+        )
+
+    for label, page in (("bob_d1", page_b), ("bob_d2", page_bd2)):
+        failed = page.locator(
+            f'.msg[data-msg-id="{msg_id}"] .msg-text.msg-decrypt-failed'
+        ).count()
+        if failed:
+            raise AssertionError(
+                f"{label} failed to decrypt alice's message (msg={msg_id})"
+            )
+
+    ctx["m2_msg_id"] = msg_id
+    return f"msg_id={msg_id} decrypted plaintext on both bob_d1 and bob_d2"
+
+
+def check10_multidevice_bob1_to_others(page_a, page_b, ctx, nonce):
+    dm_room_id = ctx.get("dm_room_id")
+    page_bd2 = ctx.get("bob_d2_page")
+    if not dm_room_id or not page_bd2:
+        raise AssertionError(
+            "dm_room_id/bob_d2_page missing (earlier check must have failed)"
+        )
+
+    msg_text = f"m3 bob_d1 sibling {nonce}"
+    page_b.fill("#msg-input", msg_text)
+    page_b.click(".input-bar .send")
+
+    page_a.wait_for_selector(f'.msg-text:has-text("{nonce}")', timeout=10000)
+    page_bd2.wait_for_selector(f'.msg-text:has-text("{nonce}")', timeout=10000)
+    msg_id_a = wait_for_msg_id(page_a, dm_room_id, nonce)
+    msg_id_bd2 = wait_for_msg_id(page_bd2, dm_room_id, nonce)
+    if msg_id_a != msg_id_bd2:
+        raise AssertionError(
+            f"message id mismatch: alice={msg_id_a} bob_d2={msg_id_bd2}"
+        )
+
+    for label, page in (("alice", page_a), ("bob_d2", page_bd2)):
+        failed = page.locator(
+            f'.msg[data-msg-id="{msg_id_a}"] .msg-text.msg-decrypt-failed'
+        ).count()
+        if failed:
+            raise AssertionError(
+                f"{label} failed to decrypt bob_d1's message (msg={msg_id_a})"
+            )
+
+    ctx["m3_msg_id"] = msg_id_a
+    return f"msg_id={msg_id_a} sent by bob_d1, decrypted by alice and bob_d2 (sibling readability)"
+
+
+def check11_multidevice_bob2_to_others(page_a, page_b, ctx, nonce):
+    dm_room_id = ctx.get("dm_room_id")
+    page_bd2 = ctx.get("bob_d2_page")
+    if not dm_room_id or not page_bd2:
+        raise AssertionError(
+            "dm_room_id/bob_d2_page missing (earlier check must have failed)"
+        )
+
+    msg_text = f"m4 bob_d2 mirror {nonce}"
+    page_bd2.fill("#msg-input", msg_text)
+    page_bd2.click(".input-bar .send")
+
+    page_a.wait_for_selector(f'.msg-text:has-text("{nonce}")', timeout=10000)
+    page_b.wait_for_selector(f'.msg-text:has-text("{nonce}")', timeout=10000)
+    msg_id_a = wait_for_msg_id(page_a, dm_room_id, nonce)
+    msg_id_b = wait_for_msg_id(page_b, dm_room_id, nonce)
+    if msg_id_a != msg_id_b:
+        raise AssertionError(f"message id mismatch: alice={msg_id_a} bob_d1={msg_id_b}")
+
+    for label, page in (("alice", page_a), ("bob_d1", page_b)):
+        failed = page.locator(
+            f'.msg[data-msg-id="{msg_id_a}"] .msg-text.msg-decrypt-failed'
+        ).count()
+        if failed:
+            raise AssertionError(
+                f"{label} failed to decrypt bob_d2's message (msg={msg_id_a})"
+            )
+
+    ctx["m4_msg_id"] = msg_id_a
+    return f"msg_id={msg_id_a} sent by bob_d2, decrypted by alice and bob_d1 (mirrored sibling readability)"
+
+
+def check12_multidevice_envelope_keys(db_path, ctx):
+    alice_id = ctx.get("alice_device_id")
+    bob_d1_id = ctx.get("bob_d1_device_id")
+    bob_d2_id = ctx.get("bob_d2_device_id")
+    msg_ids = [ctx.get("m2_msg_id"), ctx.get("m3_msg_id"), ctx.get("m4_msg_id")]
+    if not all([alice_id, bob_d1_id, bob_d2_id]) or not all(msg_ids):
+        raise AssertionError(
+            "device ids / message ids missing (an earlier multi-device check must have failed)"
+        )
+    expected = {alice_id, bob_d1_id, bob_d2_id}
+
+    device_rows = query_db(
+        db_path,
+        "SELECT device_id FROM e2ee_device_keys WHERE device_id IN (?, ?, ?)",
+        (alice_id, bob_d1_id, bob_d2_id),
+    )
+    if {r["device_id"] for r in device_rows} != expected:
+        raise AssertionError(
+            f"e2ee_device_keys doesn't contain exactly the 3 expected device rows: {device_rows}"
+        )
+
+    for msg_id in msg_ids:
+        rows = query_db(db_path, "SELECT content FROM messages WHERE id = ?", (msg_id,))
+        if not rows:
+            raise AssertionError(f"message {msg_id} not found in DB")
+        content = json.loads(rows[0]["content"])
+        keys = content.get("keys")
+        if not isinstance(keys, dict) or set(keys.keys()) != expected:
+            got = set(keys) if isinstance(keys, dict) else keys
+            raise AssertionError(
+                f"message {msg_id} keys map {got!r} != expected {expected!r}"
+            )
+
+    return f"messages {msg_ids} each wrap the message key for all 3 devices: {sorted(d[:8] for d in expected)}"
+
+
+def check13_late_device_no_history(browser, base_url, page_a, bob, db_path, ctx, nonce):
+    dm_room_id = ctx.get("dm_room_id")
+    old_msg_id = ctx.get("m2_msg_id")
+    if not dm_room_id or not old_msg_id:
+        raise AssertionError(
+            "dm_room_id/m2_msg_id missing (earlier check must have failed)"
+        )
+
+    ws_frames_a = ctx.get("ws_frames_a", [])
+    frame_start_idx = len(ws_frames_a)
+
+    session_token = create_extra_session(db_path, bob["id"])
+    ctx_bd3, page_bd3, console_errors_bd3, page_errors_bd3 = new_device_context(
+        browser, base_url, session_token, "bob_d3"
+    )
+    ctx["bob_d3_ctx"] = ctx_bd3
+    ctx["bob_d3_page"] = page_bd3
+    ctx["bob_d3_console_errors"] = console_errors_bd3
+    ctx["bob_d3_page_errors"] = page_errors_bd3
+
+    bob_d3_device_id = page_bd3.evaluate("() => E2EE._deviceId")
+    ctx["bob_d3_device_id"] = bob_d3_device_id
+
+    wait_until(
+        lambda: (
+            len(
+                query_db(
+                    db_path,
+                    "SELECT device_id FROM e2ee_device_keys WHERE user_id = ? AND device_id = ?",
+                    (bob["id"], bob_d3_device_id),
+                )
+            )
+            == 1
+        ),
+        timeout=15.0,
+        desc="bob_d3's device key row",
+    )
+    wait_until(
+        lambda: (
+            len(
+                query_db(
+                    db_path,
+                    "SELECT device_id FROM e2ee_device_keys WHERE user_id = ?",
+                    (bob["id"],),
+                )
+            )
+            == 3
+        ),
+        timeout=10.0,
+        desc="bob's device count reaches 3",
+    )
+
+    # bob_d3 predates every message currently in the room -- opening the DM
+    # (join + room_history) must render the no-history sentinel for them.
+    # Spot-check the M2 message rather than every prior message.
+    open_existing_dm(page_bd3, dm_room_id)
+    # History decryption is async (per-message unwrap attempts run before the
+    # rendered content settles): poll for the sentinel instead of a one-shot
+    # count right after open, which races the decrypt pipeline.
+    wait_until(
+        lambda: (
+            page_bd3.locator(
+                f'.msg[data-msg-id="{old_msg_id}"] .msg-text.msg-decrypt-failed'
+            ).count()
+            == 1
+        ),
+        timeout=10.0,
+        desc=f"bob_d3 sentinel for pre-existing message {old_msg_id}",
+    )
+
+    def _alice_saw_key_rotated():
+        for raw in ws_frames_a[frame_start_idx:]:
+            try:
+                data = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if (
+                data.get("event") == "key_rotated"
+                and data.get("user_id") == bob["id"]
+                and data.get("room_id") == dm_room_id
+            ):
+                return True
+        return False
+
+    # Alice must invalidate her cached device list for bob before she sends,
+    # or her next encrypt() would fan out only to the 2 devices it already
+    # knew about and bob_d3 would never get a slot -- this WS event is what
+    # the client's key_rotated handler uses to invalidate that cache.
+    wait_until(
+        _alice_saw_key_rotated,
+        timeout=10.0,
+        desc="alice's WS to receive key_rotated for bob_d3's upload",
+    )
+
+    new_text = f"m6 post-late-join {nonce}"
+    page_a.fill("#msg-input", new_text)
+    page_a.click(".input-bar .send")
+
+    page_bd3.wait_for_selector(f'.msg-text:has-text("{nonce}")', timeout=10000)
+    new_msg_id = wait_for_msg_id(page_bd3, dm_room_id, nonce)
+    failed_new = page_bd3.locator(
+        f'.msg[data-msg-id="{new_msg_id}"] .msg-text.msg-decrypt-failed'
+    ).count()
+    if failed_new:
+        raise AssertionError(
+            "bob_d3 failed to decrypt the message sent after it registered"
+        )
+
+    return (
+        f"bob_d3={bob_d3_device_id[:8]} shows sentinel for pre-existing msg {old_msg_id}, "
+        f"decrypts new msg {new_msg_id} after key_rotated"
+    )
+
+
+def check14_self_decrypt_after_reload(page_a, ctx, nonce1):
+    dm_room_id = ctx.get("dm_room_id")
+    msg1_id = ctx.get("msg1_id")
+    if not dm_room_id or not msg1_id:
+        raise AssertionError("dm_room_id/msg1_id missing (check 2 must have failed)")
+
+    # In-memory keys/caches are gone; the P-256 keypair + device_id in
+    # localStorage are intact, so this is still the same device.
+    page_a.reload(timeout=30000)
+    page_a.wait_for_selector("#messages", timeout=20000)
+    open_existing_dm(page_a, dm_room_id)
+
+    page_a.wait_for_selector(
+        f'.msg[data-msg-id="{msg1_id}"] .msg-text:has-text("{nonce1}")', timeout=10000
+    )
+    failed = page_a.locator(
+        f'.msg[data-msg-id="{msg1_id}"] .msg-text.msg-decrypt-failed'
+    ).count()
+    if failed:
+        raise AssertionError(
+            "alice failed to self-decrypt her own earlier message after reload"
+        )
+
+    return f"alice reloaded; self-decrypted her own message {msg1_id} from history via the self-slot ECDH path"
+
+
+def check15_sender_device_pruned(
+    page_a, page_b, bob, db_path, ctx, nonce, page_errors_a, console_errors_a
+):
+    dm_room_id = ctx.get("dm_room_id")
+    bob_d1_id = ctx.get("bob_d1_device_id")
+    if not dm_room_id or not bob_d1_id:
+        raise AssertionError(
+            "dm_room_id/bob_d1_device_id missing (earlier check must have failed)"
+        )
+
+    known_ids = {
+        r["id"]
+        for r in query_db(
+            db_path, "SELECT id FROM messages WHERE room_id = ?", (dm_room_id,)
+        )
+    }
+
+    exec_db(
+        db_path,
+        "DELETE FROM e2ee_device_keys WHERE user_id = ? AND device_id = ?",
+        (bob["id"], bob_d1_id),
+    )
+    remaining = query_db(
+        db_path,
+        "SELECT device_id FROM e2ee_device_keys WHERE user_id = ? AND device_id = ?",
+        (bob["id"], bob_d1_id),
+    )
+    if remaining:
+        raise AssertionError("failed to delete bob_d1's device row from the DB")
+
+    # Force alice's in-memory device-list cache to drop. There is no
+    # realistic in-app action that invalidates one specific cached device --
+    # key_rotated only fires on upsert, never on deletion -- so a reload is
+    # the deterministic way to make alice's next decrypt see the pruned
+    # truth instead of a stale cache entry that still has bob_d1's (still
+    # valid, unchanged) public key.
+    page_a.reload(timeout=30000)
+    page_a.wait_for_selector("#messages", timeout=20000)
+    open_existing_dm(page_a, dm_room_id)
+
+    before_errors = len(page_errors_a)
+    before_console = len(console_errors_a)
+
+    msg_text = f"m8 pruned sender {nonce}"
+    page_b.fill("#msg-input", msg_text)
+    page_b.click(".input-bar .send")
+
+    def _new_msg_id():
+        rows = query_db(
+            db_path,
+            "SELECT id FROM messages WHERE room_id = ? ORDER BY created_at DESC LIMIT 5",
+            (dm_room_id,),
+        )
+        for r in rows:
+            if r["id"] not in known_ids:
+                return r["id"]
+        return None
+
+    wait_until(
+        lambda: _new_msg_id() is not None,
+        timeout=10.0,
+        desc="bob_d1's post-prune message row in DB",
+    )
+    new_msg_id = _new_msg_id()
+
+    wait_until(
+        lambda: page_a.locator(f'.msg[data-msg-id="{new_msg_id}"]').count() == 1,
+        timeout=10.0,
+        desc="pruned-sender message rendered on alice's page",
+    )
+    failed = page_a.locator(
+        f'.msg[data-msg-id="{new_msg_id}"] .msg-text.msg-decrypt-failed'
+    ).count()
+    if failed != 1:
+        raise AssertionError(
+            f"alice did not render the sentinel for a message from a pruned sender device (count={failed})"
+        )
+
+    if len(page_errors_a) != before_errors:
+        raise AssertionError(
+            f"new page error(s) on alice while decrypting pruned-sender message: "
+            f"{page_errors_a[before_errors:]}"
+        )
+
+    return (
+        f"bob_d1's device row deleted; new message {new_msg_id} rendered as the sentinel "
+        f"for alice ({len(console_errors_a) - before_console} new console lines, 0 page errors)"
+    )
+
+
+def check16_rekey(page_a, page_b, db_path, bob, ctx, nonce4):
+    """v2 re-key semantics: clearing localStorage + reloading does not
+    replace bob's key in place -- it registers a brand-new device. The old
+    device row is never deleted (server-side rows persist across logout per
+    the v1 lifecycle rule, unchanged in v2), so the assertion here is
+    relative (new row count > old row count) rather than a hardcoded total,
+    since earlier multi-device checks may already have changed bob's device
+    count by the time this runs."""
     dm_room_id = ctx.get("dm_room_id")
     msg1_id = ctx.get("msg1_id")
     if not dm_room_id or not msg1_id:
@@ -747,38 +1285,50 @@ def check8_rekey(page_a, page_b, db_path, bob, ctx, nonce4):
             "dm_room_id/msg1_id missing (earlier check must have failed)"
         )
 
-    old_key_rows = query_db(
-        db_path, "SELECT public_key FROM e2ee_keys WHERE user_id = ?", (bob["id"],)
-    )
-    old_key = old_key_rows[0]["public_key"] if old_key_rows else None
+    old_device_ids = {
+        r["device_id"]
+        for r in query_db(
+            db_path,
+            "SELECT device_id FROM e2ee_device_keys WHERE user_id = ?",
+            (bob["id"],),
+        )
+    }
 
-    page_b.evaluate("() => localStorage.removeItem('e2ee_keypair')")
+    page_b.evaluate(
+        "() => { localStorage.removeItem('e2ee_keypair'); localStorage.removeItem('e2ee_device_id'); }"
+    )
     page_b.reload(timeout=30000)
     page_b.wait_for_selector("#messages", timeout=20000)
 
-    def _key_changed():
+    def _new_device_id():
         rows = query_db(
-            db_path, "SELECT public_key FROM e2ee_keys WHERE user_id = ?", (bob["id"],)
+            db_path,
+            "SELECT device_id FROM e2ee_device_keys WHERE user_id = ?",
+            (bob["id"],),
         )
-        return bool(rows) and rows[0]["public_key"] != old_key
+        new_ids = {r["device_id"] for r in rows} - old_device_ids
+        return next(iter(new_ids), None)
 
-    wait_until(_key_changed, timeout=15.0, desc="bob's e2ee_keys row to change")
+    wait_until(
+        lambda: _new_device_id() is not None,
+        timeout=15.0,
+        desc="bob's page to register as a brand-new device",
+    )
+    new_device_id = _new_device_id()
 
     # Small, explicitly-justified settle: the server fires key_rotated via an
     # asyncio.create_task during the PUT /keys request that stored the new
-    # key; give it a moment to reach Alice's already-open WS connection.
+    # device row; give it a moment to reach Alice's already-open WS connection.
     time.sleep(1.0)
 
     post_rekey_text = f"post-rekey {nonce4}"
     page_a.fill("#msg-input", post_rekey_text)
     page_a.click(".input-bar .send")
 
-    # Bob re-opens the DM (fresh page state after reload) via the real UI.
-    page_b.locator(".tabs button", has_text="DMs").click(timeout=10000)
-    page_b.wait_for_selector(
-        f'.member-item[data-room-id="{dm_room_id}"]', timeout=10000
-    )
-    page_b.click(f'.member-item[data-room-id="{dm_room_id}"]')
+    # Bob re-opens the DM (fresh page state after reload) via the real UI --
+    # page_b is now the NEW device (its old identity is gone from
+    # localStorage), so this exercises the new device's decrypt path.
+    open_existing_dm(page_b, dm_room_id)
 
     page_b.wait_for_selector(f'.msg-text:has-text("{nonce4}")', timeout=10000)
     new_msg_id = wait_for_msg_id(page_b, dm_room_id, nonce4)
@@ -786,7 +1336,9 @@ def check8_rekey(page_a, page_b, db_path, bob, ctx, nonce4):
         f'.msg[data-msg-id="{new_msg_id}"] .msg-text.msg-decrypt-failed'
     ).count()
     if failed_new != 0:
-        raise AssertionError("post-rekey message failed to decrypt for bob")
+        raise AssertionError(
+            "post-rekey message failed to decrypt for bob's new device"
+        )
 
     wait_until(
         lambda: (
@@ -796,7 +1348,7 @@ def check8_rekey(page_a, page_b, db_path, bob, ctx, nonce4):
             == 1
         ),
         timeout=10.0,
-        desc="bob's view of msg1 to show decrypt-failed styling",
+        desc="bob's new device to show decrypt-failed styling for the pre-existing message",
     )
     old_text = page_b.text_content(f'.msg[data-msg-id="{msg1_id}"] .msg-text')
     if not old_text or "[Encrypted message]" not in old_text:
@@ -804,10 +1356,13 @@ def check8_rekey(page_a, page_b, db_path, bob, ctx, nonce4):
             f"old message did not render decrypt-failure sentinel: {old_text!r}"
         )
 
-    return "bob re-keyed, alice re-derived, post-rekey message decrypts, old message now fails"
+    return (
+        f"bob registered as a new device ({new_device_id[:8]}), old device row(s) retained; "
+        "post-rekey message decrypts on the new device, pre-existing message now shows the sentinel"
+    )
 
 
-def check9_group_room(page_a, page_b, db_path, nonce5):
+def check17_group_room(page_a, page_b, db_path, nonce5):
     group_text = f"group plaintext {nonce5}"
 
     page_a.locator(".tabs button", has_text="Rooms").click(timeout=10000)
@@ -847,7 +1402,7 @@ def check9_group_room(page_a, page_b, db_path, nonce5):
     return "group message stored as plaintext, visible to bob"
 
 
-def check10_keyless_peer(page_a, db_path, carol, carol_dm_id, ctx, nonce6):
+def check18_keyless_peer(page_a, db_path, carol, carol_dm_id, ctx, nonce6):
     # Alice's sidebar: switch to DMs so loadDMs re-runs and syncs
     # _unencryptedRooms from the server's other_has_key knowledge.
     page_a.locator(".tabs button", has_text="DMs").click(timeout=10000)
@@ -916,8 +1471,8 @@ def check10_keyless_peer(page_a, db_path, carol, carol_dm_id, ctx, nonce6):
     return "no lock (row + header), unavailable banner, message fell back to plaintext"
 
 
-def check11_notifications(browser, base_url, page_b, bob, db_path, ctx, nonce7):
-    # Shared setup for checks 11/12: bring up a fourth user (Dave) who has no
+def check19_notifications(browser, base_url, page_b, bob, db_path, ctx, nonce7):
+    # Shared setup for checks 19/20: bring up a fourth user (Dave) who has no
     # prior DM with Bob, prep Bob's page to look like a backgrounded tab on
     # the DMs list, then have Dave open a DM with Bob through the real UI.
     dave = create_dave_user(ctx["db_path"])
@@ -941,24 +1496,24 @@ def check11_notifications(browser, base_url, page_b, bob, db_path, ctx, nonce7):
         desc="dave WS open",
     )
     # Dave's E2EE keypair uploads asynchronously right after page load (see
-    # E2EE.init().then(uploadPublicKey)); wait for it so check 12's lock-icon
+    # E2EE.init().then(uploadPublicKey)); wait for it so check 20's lock-icon
     # assertion isn't racing dave's own key upload.
     wait_until(
         lambda: (
             len(
                 query_db(
                     db_path,
-                    "SELECT user_id FROM e2ee_keys WHERE user_id = ?",
+                    "SELECT device_id FROM e2ee_device_keys WHERE user_id = ?",
                     (dave["id"],),
                 )
             )
             == 1
         ),
         timeout=15.0,
-        desc="dave's e2ee_keys row",
+        desc="dave's e2ee_device_keys row",
     )
 
-    # Bob: DMs tab must be the active sidebar tab for check 12's live-refresh
+    # Bob: DMs tab must be the active sidebar tab for check 20's live-refresh
     # assertion, and the tab must look hidden/backgrounded for the app to
     # fire a browser Notification instead of just an in-app badge. Spoofing
     # hidden also fires the app's sendBeacon idle signal -- expected and
@@ -1005,10 +1560,10 @@ def check11_notifications(browser, base_url, page_b, bob, db_path, ctx, nonce7):
     )
 
 
-def check12_dm_list_autoupdate(page_b, db_path, dave, ctx):
+def check20_dm_list_autoupdate(page_b, db_path, dave, ctx):
     dave_dm_id_client = ctx.get("dave_dm_id_client")
     if not dave_dm_id_client:
-        raise AssertionError("dave_dm_id_client missing (check 11 must have failed)")
+        raise AssertionError("dave_dm_id_client missing (check 19 must have failed)")
 
     def _dave_dm_row():
         rows = query_db(
@@ -1055,12 +1610,16 @@ def check12_dm_list_autoupdate(page_b, db_path, dave, ctx):
     return f"dave_dm_id={dave_dm_id} appeared live in bob's DM list with lock + unread badge"
 
 
-def check13_console_sweep(
+def check21_console_sweep(
     console_errors_a,
     console_errors_b,
+    console_errors_bd2,
+    console_errors_bd3,
     console_errors_d,
     page_errors_a,
     page_errors_b,
+    page_errors_bd2,
+    page_errors_bd3,
     page_errors_d,
     allowlist,
 ):
@@ -1084,9 +1643,13 @@ def check13_console_sweep(
     remaining = (
         _filter(console_errors_a)
         + _filter(console_errors_b)
+        + _filter(console_errors_bd2)
+        + _filter(console_errors_bd3)
         + _filter(console_errors_d)
         + _filter(page_errors_a)
         + _filter(page_errors_b)
+        + _filter(page_errors_bd2)
+        + _filter(page_errors_bd3)
         + _filter(page_errors_d)
     )
     if remaining:
@@ -1094,8 +1657,10 @@ def check13_console_sweep(
     return (
         f"0 console errors / page errors "
         f"(raw counts: console_a={len(console_errors_a)} console_b={len(console_errors_b)} "
+        f"console_bd2={len(console_errors_bd2)} console_bd3={len(console_errors_bd3)} "
         f"console_d={len(console_errors_d)} pageerror_a={len(page_errors_a)} "
-        f"pageerror_b={len(page_errors_b)} pageerror_d={len(page_errors_d)})"
+        f"pageerror_b={len(page_errors_b)} pageerror_bd2={len(page_errors_bd2)} "
+        f"pageerror_bd3={len(page_errors_bd3)} pageerror_d={len(page_errors_d)})"
     )
 
 
@@ -1130,7 +1695,7 @@ def main():
             try:
                 ctx_a = browser.new_context(viewport={"width": 1280, "height": 900})
                 ctx_b = browser.new_context(viewport={"width": 1280, "height": 900})
-                # Checks 11/12 need Bob to receive a real (spied) browser
+                # Checks 19/20 need Bob to receive a real (spied) browser
                 # Notification while backgrounded -- both the OS permission
                 # grant and the constructor spy must be in place before Bob's
                 # page ever loads, or the app's Notification.permission check
@@ -1165,8 +1730,13 @@ def main():
                 nonce5 = secrets.token_hex(4)
                 nonce6 = secrets.token_hex(4)
                 nonce7 = secrets.token_hex(4)
+                nonce_m2 = secrets.token_hex(4)
+                nonce_m3 = secrets.token_hex(4)
+                nonce_m4 = secrets.token_hex(4)
+                nonce_m6 = secrets.token_hex(4)
+                nonce_m8 = secrets.token_hex(4)
 
-                # Single allowlist entry: check 10 deliberately opens a DM
+                # Single allowlist entry: check 18 deliberately opens a DM
                 # with a keyless peer, whose /chat/api/keys/{id} lookup 404s
                 # by design (that IS the unencrypted-fallback signal), and
                 # Chromium logs every failed fetch as a console error. The
@@ -1181,7 +1751,7 @@ def main():
                 console_allowlist = [
                     (
                         r"the server responded with a status of 404 .*/chat/api/keys/",
-                        "keyless-peer lookup 404s by design (check 10 fallback probe)",
+                        "keyless-peer lookup 404s by design (check 18 fallback probe)",
                     )
                 ]
 
@@ -1212,35 +1782,89 @@ def main():
                     7, lambda: check7_report(page_b, db_path, alice, bob, ctx, nonce3)
                 )
                 run_check(
-                    8, lambda: check8_rekey(page_a, page_b, db_path, bob, ctx, nonce4)
+                    8,
+                    lambda: check8_bob_device2(
+                        browser, base_url, page_a, page_b, alice, bob, db_path, ctx
+                    ),
                 )
-                run_check(9, lambda: check9_group_room(page_a, page_b, db_path, nonce5))
+                run_check(
+                    9,
+                    lambda: check9_multidevice_alice_to_both(
+                        page_a, page_b, ctx, nonce_m2
+                    ),
+                )
                 run_check(
                     10,
-                    lambda: check10_keyless_peer(
-                        page_a, db_path, carol, carol_dm_id, ctx, nonce6
+                    lambda: check10_multidevice_bob1_to_others(
+                        page_a, page_b, ctx, nonce_m3
                     ),
                 )
                 run_check(
                     11,
-                    lambda: check11_notifications(
+                    lambda: check11_multidevice_bob2_to_others(
+                        page_a, page_b, ctx, nonce_m4
+                    ),
+                )
+                run_check(12, lambda: check12_multidevice_envelope_keys(db_path, ctx))
+                run_check(
+                    13,
+                    lambda: check13_late_device_no_history(
+                        browser, base_url, page_a, bob, db_path, ctx, nonce_m6
+                    ),
+                )
+                run_check(
+                    14,
+                    lambda: check14_self_decrypt_after_reload(page_a, ctx, nonce1),
+                )
+                run_check(
+                    15,
+                    lambda: check15_sender_device_pruned(
+                        page_a,
+                        page_b,
+                        bob,
+                        db_path,
+                        ctx,
+                        nonce_m8,
+                        page_errors_a,
+                        console_errors_a,
+                    ),
+                )
+                run_check(
+                    16, lambda: check16_rekey(page_a, page_b, db_path, bob, ctx, nonce4)
+                )
+                run_check(
+                    17, lambda: check17_group_room(page_a, page_b, db_path, nonce5)
+                )
+                run_check(
+                    18,
+                    lambda: check18_keyless_peer(
+                        page_a, db_path, carol, carol_dm_id, ctx, nonce6
+                    ),
+                )
+                run_check(
+                    19,
+                    lambda: check19_notifications(
                         browser, base_url, page_b, bob, db_path, ctx, nonce7
                     ),
                 )
                 run_check(
-                    12,
-                    lambda: check12_dm_list_autoupdate(
+                    20,
+                    lambda: check20_dm_list_autoupdate(
                         page_b, db_path, ctx.get("dave"), ctx
                     ),
                 )
                 run_check(
-                    13,
-                    lambda: check13_console_sweep(
+                    21,
+                    lambda: check21_console_sweep(
                         console_errors_a,
                         console_errors_b,
+                        ctx.get("bob_d2_console_errors", []),
+                        ctx.get("bob_d3_console_errors", []),
                         ctx.get("dave_console_errors", []),
                         page_errors_a,
                         page_errors_b,
+                        ctx.get("bob_d2_page_errors", []),
+                        ctx.get("bob_d3_page_errors", []),
                         ctx.get("dave_page_errors", []),
                         console_allowlist,
                     ),
