@@ -1961,6 +1961,11 @@ async function _verifyDmEncryptionState(roomId) {
   if (!E2EE.available) return;
   const peer = _getDmPeerUserId(roomId);
   if (!peer) { dbg('[E2EE] verify state: peer unresolved for', roomId); return; }
+  // Invalidate the cached device list so the next encrypt() re-fetches the
+  // peer's current devices. Without this, a device the peer registered while
+  // we were offline is never picked up (key_rotated only reaches live
+  // connections), and our messages silently fail to decrypt on it.
+  delete E2EE._deviceLists[peer];
   try {
     const wasUnencrypted = _unencryptedRooms.has(roomId);
     const r = await fetch('/chat/api/keys/' + peer, { credentials: 'same-origin' });
@@ -2510,15 +2515,15 @@ async function sendChatMessage(type, content, replyToId) {
         dbg('[E2EE] message encrypted for room ' + roomId);
       }
     } catch (e) {
-      dbg('[E2EE] encrypt error:', e && e.message);
-      if (_roomEncrypted.has(roomId)) {
-        showToast('Message not sent. Encryption error.');
-        return null;
-      }
-      if (!_unencryptedRooms.has(roomId)) {
-        _unencryptedRooms.add(roomId);
-        showToast('Encryption unavailable for this user');
-      }
+      // A thrown error means the peer's key state is INDETERMINATE (network
+      // failure, timeout, 5xx) -- NOT a confirmed keyless peer, which returns
+      // null above and is the only case where plaintext fallback is valid.
+      // Never fall back to plaintext on an indeterminate error: fail closed and
+      // let the user retry, so a transient failure can't silently downgrade a
+      // real encrypted conversation to plaintext.
+      dbg('[E2EE] encrypt error, could not verify encryption:', e && e.message);
+      showToast('Message not sent — could not verify encryption. Tap send to retry.');
+      return null;
     }
   }
 
@@ -4395,6 +4400,14 @@ const E2EE = {
     };
     await wrapAll(peerUserId, peerDevices);
     await wrapAll(currentUser.id, ownDevices);
+
+    // If every device wrap failed, the envelope would be undecryptable by
+    // anyone (including our own reload) while still looking encrypted. Treat
+    // that as an error so the caller fails closed rather than sending a broken
+    // envelope.
+    if (Object.keys(keys).length === 0) {
+      throw new Error('no device keys could be wrapped');
+    }
 
     return JSON.stringify({ e2ee: true, v: 2, sd: this._deviceId, ct, keys });
   },
