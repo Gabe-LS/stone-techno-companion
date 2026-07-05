@@ -917,9 +917,13 @@ def render_output_html(
     parts.append("    </div>")
     parts.append("  </div>")
 
+    def _safe_href(href: str) -> str:
+        h = (href or "").strip()
+        return h if h.lower().startswith(("http://", "https://", "mailto:")) else "#"
+
     def _link(href: str, svg: str, label: str = "") -> str:
         txt = f"{svg} {esc(label)}" if label else svg
-        return f'<a href="{esc(href)}" target="_blank" rel="noopener noreferrer" title="{esc(label)}">{txt}</a>'
+        return f'<a href="{esc(_safe_href(href))}" target="_blank" rel="noopener noreferrer" title="{esc(label)}">{txt}</a>'
 
     def render_artist_card(
         a: dict, cur_date: str, cur_period: str, loc_id: str | None = None
@@ -2422,8 +2426,11 @@ def render_output_html(
     // Artist popup
     const popup = document.getElementById('tt-popup');
 
+    function _safeHref(u) {
+      return /^(https?:\\/\\/|mailto:)/i.test(u || '') ? u : '#';
+    }
     function _popupLink(href, svg, label) {
-      return '<a href="' + esc(href) + '" target="_blank" rel="noopener noreferrer">' + svg + ' ' + esc(label || '') + '</a>';
+      return '<a href="' + esc(_safeHref(href)) + '" target="_blank" rel="noopener noreferrer">' + svg + ' ' + esc(label || '') + '</a>';
     }
     """)
         parts.append("""

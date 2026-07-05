@@ -66,7 +66,7 @@ def deploy_to_vps(output_dir: Path, output_path: Path) -> None:
             if json_src.exists():
                 shutil.copy2(json_src, staging_path / json_name)
         server_static = Path(__file__).resolve().parent / "server" / "static"
-        for fname in ("manifest.json", "sw.js"):
+        for fname in ("manifest.json", "sw.js", "shared.css", "shared.js"):
             src = server_static / fname
             if src.exists():
                 shutil.copy2(src, staging_path / fname)
@@ -76,16 +76,31 @@ def deploy_to_vps(output_dir: Path, output_path: Path) -> None:
         thumbs_src = output_dir / "thumbs"
         if thumbs_src.is_dir():
             shutil.copytree(thumbs_src, staging_path / "thumbs")
+        # No global --delete: the VPS static dir is the git worktree's
+        # server/static, which also holds tracked assets not staged here —
+        # a mirror sync would delete them and break the next git pull.
         subprocess.run(
             [
                 "rsync",
                 "-avz",
-                "--delete",
                 f"{staging}/",
                 f"{VPS_HOST}:{VPS_STATIC_DIR}",
             ],
             check=True,
         )
+        # Prune stale files only inside the fully regenerated directories.
+        for subdir in ("photos", "thumbs"):
+            if (staging_path / subdir).is_dir():
+                subprocess.run(
+                    [
+                        "rsync",
+                        "-avz",
+                        "--delete",
+                        f"{staging}/{subdir}/",
+                        f"{VPS_HOST}:{VPS_STATIC_DIR}{subdir}/",
+                    ],
+                    check=True,
+                )
     print("Deployed to https://stonetechno.deftlab.dev/")
 
 

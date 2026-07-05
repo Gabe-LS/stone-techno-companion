@@ -27,7 +27,9 @@ run() {
 }
 
 # Vars to sync to production (exclude dev-only: CHAT_BASE_URL, CHAT_ADMIN_TOKEN)
-PROD_VARS="OPENAI_API_KEY MAILEROO_API_KEY VAPID_PRIVATE_KEY VAPID_PUBLIC_KEY VAPID_CLAIMS_EMAIL GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET CHAT_ADMIN_EMAILS"
+PROD_VARS="OPENAI_API_KEY MAILEROO_API_KEY VAPID_PRIVATE_KEY VAPID_PUBLIC_KEY VAPID_CLAIMS_EMAIL GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET"
+# Optional vars: synced when present, never block the deploy
+OPTIONAL_VARS="CHAT_ADMIN_EMAILS CHAT_EMAIL_FROM CHAT_EVENT_ID"
 
 if [ "$DRY_RUN" = true ]; then
     echo "=== Stone Techno Deploy (DRY RUN) ==="
@@ -45,7 +47,7 @@ fi
 
 missing=""
 for var in $PROD_VARS; do
-    val=$(grep "^${var}=" "$LOCAL_ENV" | cut -d= -f2-)
+    val=$(grep "^${var}=" "$LOCAL_ENV" | cut -d= -f2- || true)
     if [ -z "$val" ]; then
         missing="$missing $var"
     fi
@@ -65,29 +67,72 @@ for var in $PROD_VARS; do
     fi
     PROD_ENV="${PROD_ENV}${var}=${val}\n"
 done
-# Add CHAT_EVENT_ID if present
-eid=$(grep "^CHAT_EVENT_ID=" "$LOCAL_ENV" 2>/dev/null | cut -d= -f2- || true)
-if [ -n "$eid" ]; then
-    PROD_ENV="${PROD_ENV}CHAT_EVENT_ID=${eid}\n"
-fi
+# Add optional vars if present
+for var in $OPTIONAL_VARS; do
+    val=$(grep "^${var}=" "$LOCAL_ENV" 2>/dev/null | cut -d= -f2- || true)
+    if [ -n "$val" ]; then
+        PROD_ENV="${PROD_ENV}${var}=${val}\n"
+    fi
+done
 
+NVARS=$(printf "%b" "$PROD_ENV" | grep -c '=' | tr -d ' ')
 if [ "$DRY_RUN" = true ]; then
-    echo "  [DRY RUN] Would sync $(echo $PROD_VARS | wc -w | tr -d ' ') vars to VPS .env"
+    echo "  [DRY RUN] Would sync $NVARS vars to VPS .env"
 else
-    printf "%b" "$PROD_ENV" | ssh "$VPS" "cat > $VPS_DIR/server/.env"
-    echo "  Synced $(echo $PROD_VARS | wc -w | tr -d ' ') vars to VPS"
+    # Atomic write: temp file + size check + mv, so a dropped connection
+    # can never leave a truncated .env in place
+    ENV_BYTES=$(printf "%b" "$PROD_ENV" | wc -c | tr -d ' ')
+    printf "%b" "$PROD_ENV" | ssh "$VPS" \
+        "cat > $VPS_DIR/server/.env.tmp \
+         && [ \$(wc -c < $VPS_DIR/server/.env.tmp) -eq $ENV_BYTES ] \
+         && mv $VPS_DIR/server/.env.tmp $VPS_DIR/server/.env"
+    echo "  Synced $NVARS vars to VPS"
 fi
 
 # --- Step 1: Backup VPS data locally ---
 echo ""
 echo "[1/6] Downloading VPS data backup..."
+# Checkpoint WAL-mode SQLite DBs first so the copied .db files are
+# self-contained and consistent (committed data may otherwise live only
+# in -wal sidecars captured at a different instant)
+if [ "$DRY_RUN" = true ]; then
+    echo "  [DRY RUN] Would checkpoint SQLite WALs on VPS"
+else
+    ssh "$VPS" "python3 - <<'PY'
+import glob, sqlite3
+for db in glob.glob('$VPS_DIR/server/data/*.db'):
+    try:
+        c = sqlite3.connect(db, timeout=10)
+        c.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+        c.close()
+        print('  checkpointed ' + db)
+    except Exception as e:
+        print('  WARN: checkpoint failed for %s: %s' % (db, e))
+PY"
+fi
 run mkdir -p "$LOCAL_BACKUPS"
-run rsync -az --info=progress2 \
+run rsync -az --progress \
     "$VPS:$VPS_DIR/server/data/" \
     "$LOCAL_BACKUPS/$TIMESTAMP/"
 if [ "$DRY_RUN" = false ]; then
     echo "  Saved to $LOCAL_BACKUPS/$TIMESTAMP/"
     ls -lh "$LOCAL_BACKUPS/$TIMESTAMP/"
+    # Verify the downloaded backup is restorable before anything destructive
+    for db in "$LOCAL_BACKUPS/$TIMESTAMP"/*.db; do
+        [ -f "$db" ] || continue
+        CHECK=$(python3 -c "import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute('PRAGMA quick_check').fetchone()[0])" "$db" 2>&1 || echo "error")
+        if [ "$CHECK" = "ok" ]; then
+            echo "  Integrity ok: $(basename "$db")"
+        else
+            echo "  ERROR: backup integrity check failed for $(basename "$db"): $CHECK"
+            echo "  Aborting before any change to the VPS."
+            exit 1
+        fi
+    done
+    # Best-effort: back up live user uploads too (24h TTL of media)
+    rsync -az --progress "$VPS:$VPS_DIR/server/chat-uploads/" \
+        "$LOCAL_BACKUPS/$TIMESTAMP/chat-uploads/" 2>/dev/null || \
+        echo "  (no chat-uploads dir on VPS yet, skipping)"
 fi
 
 # --- Step 2: Backup on VPS (timestamped, keeps previous) ---
@@ -139,7 +184,15 @@ else
 fi
 
 # --- Cleanup old VPS backups (keep last 5) ---
-run ssh "$VPS" "cd $VPS_DIR && ls -dt server/data.bak.* 2>/dev/null | tail -n +6 | xargs rm -rf"
+to_prune=$(ssh "$VPS" "ls -dt $VPS_DIR/server/data.bak.* 2>/dev/null | tail -n +6" || true)
+if [ -n "$to_prune" ]; then
+    if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY RUN] Would prune:"
+        echo "$to_prune"
+    else
+        echo "$to_prune" | ssh "$VPS" "xargs rm -rf"
+    fi
+fi
 
 echo ""
 echo "=== Deploy complete ==="
