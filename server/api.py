@@ -57,6 +57,7 @@ class _RedactTokensFilter(logging.Filter):
     # the session token in the WebSocket URL and the magic-link token in the
     # verify URL. Without this they land in uvicorn's access log in plaintext.
     _PATTERNS = [
+        re.compile(r"(/ws/)(?!chat/)[^/\s?]+"),
         re.compile(r"(/ws/chat/)[^/\s?]+"),
         re.compile(r"(/chat/v/)[^/\s?]+"),
         re.compile(r"([?&](?:token|code|id_token)=)[^&\s]+"),
@@ -373,6 +374,7 @@ async def _push_notification_scheduler() -> None:
                                 "title": f"{artists} starts in 10 min",
                                 "body": f"{slot['floor']}, {slot['start_hhmm']}–{slot['end_hhmm']}",
                                 "url": "/?view=timetable",
+                                "push_id": secrets.token_hex(8),
                             }
                         )
                         vapid_claims = {
@@ -396,6 +398,10 @@ async def _push_notification_scheduler() -> None:
                                     # endpoint), which breaks pushes to any other
                                     # push service in the same loop.
                                     vapid_claims=dict(vapid_claims),
+                                    # pywebpush defaults to TTL=0 (deliver
+                                    # instantly or discard) -- a briefly
+                                    # disconnected browser loses the push.
+                                    ttl=300,
                                     timeout=10,
                                 )
                                 any_sent = True
@@ -1050,7 +1056,11 @@ async def serve_favicon_png():
 async def serve_manifest():
     file_path = STATIC_DIR / "manifest.json"
     if file_path.exists():
-        return FileResponse(file_path, media_type="application/manifest+json")
+        return FileResponse(
+            file_path,
+            media_type="application/manifest+json",
+            headers={"Cache-Control": "no-cache"},
+        )
     raise HTTPException(404, "Not found")
 
 
@@ -1078,7 +1088,9 @@ async def serve_bios():
 async def serve_shared_css():
     file_path = STATIC_DIR / "shared.css"
     if file_path.exists():
-        return FileResponse(file_path, media_type="text/css")
+        return FileResponse(
+            file_path, media_type="text/css", headers={"Cache-Control": "no-cache"}
+        )
     raise HTTPException(404, "Not found")
 
 
@@ -1086,7 +1098,11 @@ async def serve_shared_css():
 async def serve_shared_js():
     file_path = STATIC_DIR / "shared.js"
     if file_path.exists():
-        return FileResponse(file_path, media_type="application/javascript")
+        return FileResponse(
+            file_path,
+            media_type="application/javascript",
+            headers={"Cache-Control": "no-cache"},
+        )
     raise HTTPException(404, "Not found")
 
 

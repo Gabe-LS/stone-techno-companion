@@ -96,13 +96,21 @@ def _check_upload_rate(user_id: str, max_uploads: int = 10, window: int = 60):
     if len(bucket) >= max_uploads:
         raise HTTPException(429, "Upload rate limit exceeded")
     bucket.append(now)
+    if len(_upload_rate) > 1000:
+        stale = [
+            k for k, v in _upload_rate.items() if all(now - t >= window for t in v)
+        ]
+        for k in stale:
+            del _upload_rate[k]
 
 
 _SITE_SHORT = ""
+# Fallback for production, where lineup.db is not inside the container
+_SITE_NAME = "Stone Techno"
 
 
 def _load_site_short() -> None:
-    global _SITE_SHORT
+    global _SITE_SHORT, _SITE_NAME
     lineup_db = Path(__file__).resolve().parent.parent / "lineup.db"
     if not lineup_db.exists():
         return
@@ -110,13 +118,60 @@ def _load_site_short() -> None:
         db = sqlite3.connect(str(lineup_db))
         db.row_factory = sqlite3.Row
         row = db.execute(
-            "SELECT short_name FROM events WHERE id = ?", (DEFAULT_EVENT_ID,)
+            "SELECT name, edition, short_name FROM events WHERE id = ?",
+            (DEFAULT_EVENT_ID,),
         ).fetchone()
         if row and row["short_name"]:
             _SITE_SHORT = row["short_name"]
+        if row and row["name"]:
+            _SITE_NAME = row["name"] + (f" {row['edition']}" if row["edition"] else "")
         db.close()
     except Exception as e:
         logger.warning("site_short lookup failed (lineup.db not reachable): %s", e)
+
+
+def _magic_link_email(site: str, verify_url: str, host: str) -> tuple[str, str, str]:
+    """Build (subject, html, plain) for the sign-in email.
+
+    Deliverability notes: multipart with a real text/plain body, visible link
+    text identical to the href, explanation of why the mail was received, and
+    a plain no-image layout — all of these matter to Outlook's spam filter.
+    """
+    # Colors/radius/font mirror the site design tokens in shared.css
+    # (gray scale, --color-bg white surface, --radius-md 8px, --radius-lg 16px)
+    subject = f"Your sign-in link for {site} Chat"
+    font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<body style="margin:0;padding:0;background-color:#f3f4f6;">
+<div style="max-width:480px;margin:0 auto;padding:32px 16px;font-family:{font};color:#111827;">
+  <div style="background-color:#ffffff;border:1px solid #e5e7eb;border-radius:16px;padding:32px 24px;">
+    <p style="font-size:15px;font-weight:600;margin:0 0 24px;">{site} Companion</p>
+    <p style="font-size:15px;line-height:1.6;margin:0 0 8px;">Here is the sign-in link you requested for the {site} festival chat:</p>
+    <p style="margin:28px 0;"><a href="{verify_url}" style="background-color:#111827;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:600;display:inline-block;">Sign in to the chat</a></p>
+    <p style="font-size:13px;line-height:1.6;margin:0 0 8px;color:#374151;">Or copy and paste this link into your browser:</p>
+    <p style="font-size:13px;line-height:1.6;margin:0 0 24px;"><a href="{verify_url}" style="color:#374151;word-break:break-all;">{verify_url}</a></p>
+    <p style="font-size:13px;line-height:1.6;margin:0 0 8px;color:#374151;">The link expires in 15 minutes and works once. After that, just request a new one.</p>
+    <p style="font-size:13px;line-height:1.6;margin:0 0 24px;color:#6b7280;">Didn't request this email? You can safely ignore it &mdash; no account will be created and you won't hear from us again.</p>
+    <p style="font-size:15px;line-height:1.6;margin:0;">See you on the dancefloor.</p>
+  </div>
+  <p style="font-size:12px;line-height:1.6;color:#9ca3af;margin:16px 8px 0;">{site} Companion &middot; you are receiving this one-time email because this address was entered on {host}.</p>
+</div>
+</body>
+</html>"""
+    plain = (
+        f"Here is the sign-in link you requested for the {site} festival chat:\n\n"
+        f"{verify_url}\n\n"
+        f"The link expires in 15 minutes and works once. "
+        f"After that, just request a new one.\n\n"
+        f"Didn't request this email? You can safely ignore it - "
+        f"no account will be created and you won't hear from us again.\n\n"
+        f"See you on the dancefloor.\n\n"
+        f"--\n"
+        f"{site} Companion - you are receiving this one-time email "
+        f"because this address was entered on {host}.\n"
+    )
+    return subject, html, plain
 
 
 _ADMIN_EMAIL_HASHES: set[str] = set()
@@ -135,7 +190,10 @@ _email_rate: dict[str, list[float]] = {}
 _auth_rate: dict[str, list[float]] = {}
 
 
-def _check_auth_rate(request: Request, max_n: int = 20, window: int = 300) -> None:
+def _check_auth_rate(request: Request, max_n: int = 120, window: int = 300) -> None:
+    # Magic-link tokens are 128-bit and OAuth is validated Google-side, so
+    # brute-force is not the threat this limiter defends against; a shared
+    # public IP at a festival venue hitting this ceiling is the real risk.
     ip = request.client.host if request.client else "unknown"
     now = time.monotonic()
     _auth_rate[ip] = [t for t in _auth_rate.get(ip, []) if now - t < window]
@@ -426,7 +484,7 @@ async def auth_email_start(request: Request):
     try:
         ban = is_banned(db, "email", provider_id)
         if ban:
-            raise HTTPException(403, f"You have been banned: {ban['reason']}")
+            raise HTTPException(403, "This account cannot sign in.")
 
         expires = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
         db.execute(
@@ -449,14 +507,16 @@ async def auth_email_start(request: Request):
             )
             verify_url = f"{base_url}/chat/v/{token}"
             from_addr = os.environ.get("CHAT_EMAIL_FROM", "no-reply@deftlab.dev")
+            host = base_url.split("://", 1)[-1].split("/")[0].split(":")[0]
+            subject, html, plain = _magic_link_email(_SITE_NAME, verify_url, host)
             await asyncio.to_thread(
                 client.send_basic_email,
                 {
-                    "from": EmailAddress(from_addr),
+                    "from": EmailAddress(from_addr, f"{_SITE_NAME} Chat"),
                     "to": [EmailAddress(email)],
-                    "subject": "Sign in to Festival Chat",
-                    "html": f'<p>Click to sign in:</p><p><a href="{verify_url}">{verify_url}</a></p>'
-                    f"<p>This link expires in 15 minutes.</p>",
+                    "subject": subject,
+                    "html": html,
+                    "plain": plain,
                 },
             )
         except Exception as e:
@@ -506,10 +566,19 @@ async def auth_logout(request: Request, response: Response):
     if token:
         db = _get_db()
         try:
+            user = get_user_by_token(db, token)
             db.execute("DELETE FROM sessions WHERE token = ?", (token,))
             db.commit()
         finally:
             db.close()
+        if user:
+            from chat_ws import manager
+
+            for conn_id, ws in list(manager.user_conns.get(user["id"], {}).items()):
+                try:
+                    await ws.close(code=4001, reason="Logged out")
+                except Exception:
+                    pass
     response.delete_cookie("chat_session")
     return {"ok": True}
 
@@ -624,6 +693,8 @@ async def check_username(request: Request, name: str = ""):
 
 @router.get("/check-name")
 async def check_displayname(request: Request, name: str = ""):
+    user, db = _get_user_from_cookie(request)
+    db.close()
     err = _validate_display_name(name)
     return {"available": err is None, "reason": err or ""}
 
@@ -809,6 +880,8 @@ async def join_room_endpoint(room_id: str, request: Request):
         room = get_room(db, room_id)
         if not room:
             raise HTTPException(404, "Room not found")
+        if room["type"] in ("dm", "meetup"):
+            raise HTTPException(403, "This room cannot be joined directly")
         from chat_db import join_room_membership
 
         join_room_membership(db, user["id"], room_id)
@@ -913,6 +986,12 @@ async def room_online(room_id: str, request: Request):
         if room and room["type"] == "dm":
             if not db.execute(
                 "SELECT 1 FROM dm_participants WHERE room_id = ? AND user_id = ?",
+                (room_id, user["id"]),
+            ).fetchone():
+                raise HTTPException(403, "Access denied")
+        elif room and room["type"] == "meetup":
+            if not db.execute(
+                "SELECT 1 FROM meetup_attendees WHERE meetup_id = ? AND user_id = ?",
                 (room_id, user["id"]),
             ).fetchone():
                 raise HTTPException(403, "Access denied")
@@ -1617,18 +1696,43 @@ async def chat_push_idle(request: Request):
     return Response(status_code=204)
 
 
+_swlog_rate: dict[str, list[float]] = {}
+
+
 @router.post("/swlog", status_code=204)
 async def chat_swlog(request: Request):
     # Temporary diagnostic: SW/page push-navigation timeline, see [PUSH] debugging
+    ip = request.client.host if request.client else "?"
+    now = time.time()
+    hits = [t for t in _swlog_rate.get(ip, []) if now - t < 60]
+    if len(hits) >= 30:
+        return Response(status_code=204)
+    hits.append(now)
+    _swlog_rate[ip] = hits
+    if len(_swlog_rate) > 1000:
+        _swlog_rate.clear()
     try:
         body = await request.json()
     except Exception:
         return Response(status_code=204)
     logger.info("[SWLOG] %s", json.dumps(body)[:500])
+    return Response(status_code=204)
+
+
+_push_ack_rate: dict[str, list[float]] = {}
 
 
 @router.post("/push/ack", status_code=204)
 async def chat_push_ack(request: Request):
+    ip = request.client.host if request.client else "?"
+    now = time.time()
+    hits = [t for t in _push_ack_rate.get(ip, []) if now - t < 60]
+    if len(hits) >= 60:
+        return Response(status_code=204)
+    hits.append(now)
+    _push_ack_rate[ip] = hits
+    if len(_push_ack_rate) > 1000:
+        _push_ack_rate.clear()
     body = await request.json()
     endpoint = body.get("endpoint")
     action = body.get("action")
