@@ -689,6 +689,25 @@ async def auth_update_profile(request: Request):
                 db.commit()
             except sqlite3.IntegrityError:
                 raise HTTPException(400, "Username taken")
+            from chat_ws import manager
+
+            fresh = get_user(db, user["id"])
+            if fresh:
+                fk = fresh.keys()
+                await manager.broadcast_profile_update(
+                    user["id"],
+                    {
+                        "display_name": fresh["display_name"],
+                        "username": fresh["username"] if "username" in fk else "",
+                        "color_index": (
+                            fresh["color_index"] if "color_index" in fk else 0
+                        ),
+                        "avatar_url": (
+                            fresh["avatar_url"] if "avatar_url" in fk else ""
+                        ),
+                        "country": fresh["country"] if "country" in fk else "",
+                    },
+                )
         return {"ok": True}
     finally:
         db.close()

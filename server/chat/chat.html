@@ -1377,6 +1377,29 @@ async function handleWSEvent(data) {
       updateSidebarCount(data.room_id);
       if (data.room_id === currentRoom) { updateHeaderCount(); renderMemberItems(); }
       break;
+    case 'profile_updated':
+      // A peer edited their profile: refresh their identity in the online
+      // lists and in already-loaded messages so it updates without a reload.
+      Object.keys(onlineByRoom).forEach(rid => {
+        (onlineByRoom[rid] || []).forEach(u => {
+          if (u.user_id === data.user_id) {
+            u.display_name = data.display_name; u.username = data.username;
+            u.color_index = data.color_index; u.avatar_url = data.avatar_url;
+            u.country = data.country;
+          }
+        });
+      });
+      Object.keys(messagesByRoom).forEach(rid => {
+        (messagesByRoom[rid] || []).forEach(m => {
+          if (m.user_id === data.user_id) {
+            m.display_name = data.display_name; m.username = data.username;
+            m.color_index = data.color_index; m.avatar_url = data.avatar_url;
+          }
+        });
+      });
+      renderMessages();
+      if (currentRoom) renderMemberItems();
+      break;
     case 'rooms_changed':
       dbg('[ROOM] rooms_changed, reloading');
       loadRooms().then(() => {

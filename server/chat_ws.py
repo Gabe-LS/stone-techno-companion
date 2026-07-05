@@ -715,6 +715,21 @@ class ConnectionManager:
         if room:
             await room.broadcast(event, exclude_conn=exclude_conn)
 
+    async def broadcast_profile_update(self, user_id: str, identity: dict) -> None:
+        # Called when a user edits their profile: refresh the cached identity in
+        # every room they're in and tell connected peers so already-rendered
+        # messages and the member list update without a reconnect.
+        for room_id in list(self.user_rooms.get(user_id, set())):
+            room = self.rooms.get(room_id)
+            if room and user_id in room.user_info:
+                room.user_info[user_id].update(identity)
+                if identity.get("display_name"):
+                    room.user_names[user_id] = identity["display_name"]
+            await self.broadcast_to_room(
+                room_id,
+                {"event": "profile_updated", "user_id": user_id, **identity},
+            )
+
     async def send_to_user(self, user_id: str, event: dict) -> None:
         conns = self.user_conns.get(user_id, {})
         payload = json.dumps(event)
@@ -936,6 +951,20 @@ async def _moderate_and_broadcast(
                     },
                 )
             return
+
+        # Re-fetch the sender's identity so a profile edit made after this
+        # connection's handshake is reflected in the live broadcast, not the
+        # frozen handshake values.
+        sender = get_user(db, user_id)
+        if sender:
+            _sk = sender.keys()
+            display_name = sender["display_name"]
+            if "username" in _sk:
+                username = sender["username"]
+            if "color_index" in _sk:
+                color_index = sender["color_index"]
+            if "avatar_url" in _sk:
+                avatar_url = sender["avatar_url"]
 
         event_data = {
             "event": "message",
