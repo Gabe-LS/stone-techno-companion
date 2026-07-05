@@ -1361,13 +1361,16 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 _media_url = None
                 if msg_type in ("image", "video"):
                     _explicit = data.get("media_url")
-                    if isinstance(_explicit, str) and _explicit:
+                    if isinstance(_explicit, str) and _UPLOAD_URL_RE.match(_explicit):
                         _media_url = _explicit
                     else:
                         try:
-                            _media_url = json.loads(content).get("url") or None
+                            _candidate = json.loads(content).get("url") or ""
                         except Exception:
-                            _media_url = None
+                            _candidate = ""
+                        _media_url = (
+                            _candidate if _UPLOAD_URL_RE.match(_candidate) else None
+                        )
 
                 room_ttl = send_room["ttl_minutes"]
                 msg = create_message(
@@ -1690,14 +1693,26 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                                 )
                                 else json.loads(msg_row["content"]).get("url", "")
                             )
-                            filename = url.rsplit("/", 1)[-1]
-                            stem = filename.rsplit(".", 1)[0]
-                            (_UPLOADS_DIR / filename).unlink(missing_ok=True)
-                            (_UPLOADS_DIR / f"{stem}_mod.webp").unlink(missing_ok=True)
-                            for i in range(3):
-                                (_UPLOADS_DIR / f"{stem}_mod{i}.webp").unlink(
+                            # Only unlink the physical file if no OTHER message
+                            # references it. Prevents a crafted media_url pointing
+                            # at another user's file from deleting it on the
+                            # attacker's own message delete.
+                            others = db.execute(
+                                "SELECT COUNT(*) FROM messages "
+                                "WHERE media_url = ? AND id != ?",
+                                (url, message_id),
+                            ).fetchone()[0]
+                            if url and _UPLOAD_URL_RE.match(url) and others == 0:
+                                filename = url.rsplit("/", 1)[-1]
+                                stem = filename.rsplit(".", 1)[0]
+                                (_UPLOADS_DIR / filename).unlink(missing_ok=True)
+                                (_UPLOADS_DIR / f"{stem}_mod.webp").unlink(
                                     missing_ok=True
                                 )
+                                for i in range(3):
+                                    (_UPLOADS_DIR / f"{stem}_mod{i}.webp").unlink(
+                                        missing_ok=True
+                                    )
                         except Exception:
                             pass
                     db.execute("DELETE FROM messages WHERE id = ?", (message_id,))
