@@ -17,11 +17,19 @@ function (_main_browser), never from inside asyncio.run() -- the two suites
 share nothing but the NotifServer *class* (each gets its own instance) and
 never run in the same event loop.
 
+Stage 3 adds a "sw" suite (scenarios/sw.py): the real server/static/sw.js
+source loaded into a mock service-worker environment (sw_harness.SWLab),
+exercising push/notificationclick/notificationclose/pushsubscriptionchange
+handler behavior. Also sync Playwright, launched from its own plain
+synchronous function (_main_sw), for the same reason as the browser suite --
+never from inside asyncio.run().
+
 Usage:
     python tests/notif_e2e/run.py                     # emission suite only (default)
     python tests/notif_e2e/run.py --scenario idle_recipient_push
     python tests/notif_e2e/run.py --browser            # browser (client-behavior) suite only
-    python tests/notif_e2e/run.py --all                # emission suite, then browser suite
+    python tests/notif_e2e/run.py --sw                 # sw (service-worker) suite only
+    python tests/notif_e2e/run.py --all                # emission suite, then browser, then sw
     python tests/notif_e2e/run.py --list
 
 Writes a per-scenario JSON timeline artifact under tests/notif_e2e/_artifacts/,
@@ -295,6 +303,140 @@ def _main_browser(scenario_filter: str | None) -> int:
     return 1 if n_fail else 0
 
 
+def _run_one_sw(
+    swlab, server: NotifServer, name: str, fn, recorder: SignalRecorder
+) -> dict:
+    """Run a single Stage-3 service-worker scenario against the shared
+    swlab/server. Mirrors _run_one_browser's result shape and control flow
+    exactly (status/fails/duration_s/artifact, ScenarioSkip handling, log
+    tail on failure)."""
+    started = time.monotonic()
+    status = "fail"
+    fails: list[str] = []
+
+    print(f"\n{'=' * 70}")
+    print(f"[run:sw] scenario={name}")
+    print(f"{'=' * 70}")
+
+    try:
+        fails = fn(swlab, server, recorder)
+        status = "pass" if not fails else "fail"
+    except ScenarioSkip as e:
+        status = "skip"
+        fails = [str(e)]
+        print(f"[run:sw] {name}: SKIP -- {e}")
+    except Exception:
+        status = "error"
+        tb = traceback.format_exc()
+        fails = [f"unhandled exception:\n{tb}"]
+        print(f"[run:sw] {name}: ERROR\n{tb}")
+
+    duration_s = time.monotonic() - started
+
+    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+    artifact_path = ARTIFACTS_DIR / f"{name}.json"
+    try:
+        recorder.dump(str(artifact_path))
+    except Exception as e:
+        print(f"[run:sw] {name}: failed to write artifact: {e}")
+
+    if status == "pass":
+        print(f"[run:sw] {name}: PASS ({duration_s:.2f}s)")
+    elif status == "skip":
+        print(f"[run:sw] {name}: SKIP ({duration_s:.2f}s)")
+    else:
+        print(f"[run:sw] {name}: {status.upper()} ({duration_s:.2f}s)")
+        for f in fails:
+            print(f"  - {f}")
+        print(f"[run:sw] {name}: server log tail:")
+        for line in server.log_lines[-30:]:
+            print("   ", line)
+
+    return {
+        "name": name,
+        "status": status,
+        "fails": fails,
+        "duration_s": duration_s,
+        "artifact": str(artifact_path),
+    }
+
+
+def _main_sw(scenario_filter: str | None) -> int:
+    """Run the Stage-3 service-worker suite: one Playwright chromium
+    (headless), one NotifServer, /sw.js fetched once via httpx, one SWLab,
+    each scenario gets a fresh SWHarness (new_harness per scenario) and a
+    fresh SignalRecorder. Plain synchronous function -- never called from
+    inside asyncio.run(), same reason as _main_browser."""
+    import httpx
+    from playwright.sync_api import sync_playwright
+
+    from scenarios.sw import SCENARIOS as SW_SCENARIOS
+    from sw_harness import SWLab
+
+    if scenario_filter is not None and scenario_filter not in SW_SCENARIOS:
+        print(f"[run:sw] unknown scenario {scenario_filter!r}")
+        print(f"[run:sw] available scenarios: {', '.join(SW_SCENARIOS.keys())}")
+        return 2
+
+    names = [scenario_filter] if scenario_filter else list(SW_SCENARIOS.keys())
+
+    server = NotifServer()
+    print("[run:sw] starting isolated NotifServer...")
+    server.start()
+    print(f"[run:sw] server ready at {server.base_url}")
+
+    results: list[dict] = []
+    pw = None
+    browser_instance = None
+    try:
+        sw_src = httpx.get(server.base_url + "/sw.js").text
+        pw = sync_playwright().start()
+        browser_instance = pw.chromium.launch(headless=True)
+        swlab = SWLab(server, browser_instance, sw_src)
+        for name in names:
+            recorder = SignalRecorder()
+            result = _run_one_sw(
+                swlab, server, name, SW_SCENARIOS[name]["fn"], recorder
+            )
+            results.append(result)
+    finally:
+        try:
+            if browser_instance is not None:
+                browser_instance.close()
+        except Exception:
+            pass
+        try:
+            if pw is not None:
+                pw.stop()
+        except Exception:
+            pass
+        server.stop()
+
+    print(f"\n{'=' * 70}")
+    print("[run:sw] SUMMARY")
+    print(f"{'=' * 70}")
+    if results:
+        width = max(len(r["name"]) for r in results)
+        for r in results:
+            marker = {"pass": "PASS", "fail": "FAIL", "error": "ERROR", "skip": "SKIP"}[
+                r["status"]
+            ]
+            print(f"  {r['name']:<{width}}  {marker:<6}  {r['duration_s']:6.2f}s")
+            if r["status"] == "skip":
+                print(f"    reason: {r['fails'][0]}")
+
+    n_pass = sum(1 for r in results if r["status"] == "pass")
+    n_fail = sum(1 for r in results if r["status"] in ("fail", "error"))
+    n_skip = sum(1 for r in results if r["status"] == "skip")
+    print(
+        f"\n[run:sw] {n_pass} passed, {n_fail} failed, {n_skip} skipped "
+        f"(of {len(results)})"
+    )
+    print(f"[run:sw] artifacts written under {ARTIFACTS_DIR}")
+
+    return 1 if n_fail else 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="notif_e2e scenario suite")
     parser.add_argument(
@@ -311,18 +453,23 @@ def main() -> int:
         help="run the Stage-2 client-behavior suite (sync Playwright) instead of the emission suite",
     )
     parser.add_argument(
+        "--sw",
+        action="store_true",
+        help="run the Stage-3 service-worker suite (sync Playwright, mock SW) instead of the emission suite",
+    )
+    parser.add_argument(
         "--all",
         action="store_true",
-        help="run the emission suite, then the browser suite",
+        help="run the emission suite, then the browser suite, then the sw suite",
     )
     args = parser.parse_args()
 
     if args.all:
-        run_emission, run_browser = True, True
-    elif args.browser:
-        run_emission, run_browser = False, True
+        run_emission, run_browser, run_sw = True, True, True
+    elif args.browser or args.sw:
+        run_emission, run_browser, run_sw = False, args.browser, args.sw
     else:
-        run_emission, run_browser = True, False
+        run_emission, run_browser, run_sw = True, False, False
 
     if args.list:
         print("[run] emission scenarios:")
@@ -333,6 +480,12 @@ def main() -> int:
 
             print("[run] browser (client-behavior) scenarios:")
             for name in CLIENT_SCENARIOS:
+                print(f"  {name}")
+        if run_sw:
+            from scenarios.sw import SCENARIOS as SW_SCENARIOS
+
+            print("[run] sw (service-worker) scenarios:")
+            for name in SW_SCENARIOS:
                 print(f"  {name}")
         return 0
 
@@ -355,6 +508,16 @@ def main() -> int:
             if browser_filter not in CLIENT_SCENARIOS:
                 browser_filter = None
         exit_code = max(exit_code, _main_browser(browser_filter))
+    if run_sw:
+        sw_filter = args.scenario
+        if args.all and sw_filter is not None:
+            # Same reasoning as the browser suite above: --all must not error
+            # on a --scenario name that belongs to a different suite.
+            from scenarios.sw import SCENARIOS as SW_SCENARIOS
+
+            if sw_filter not in SW_SCENARIOS:
+                sw_filter = None
+        exit_code = max(exit_code, _main_sw(sw_filter))
     return exit_code
 
 
