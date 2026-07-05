@@ -486,6 +486,20 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+# Hard ceiling above the largest legitimate upload (100MB video). Rejects
+# oversized bodies by Content-Length before FastAPI parses/spools them, so a
+# multi-GB body can't exhaust disk/memory. Per-endpoint limits still enforce
+# exact sizes on the actual bytes.
+_MAX_BODY_BYTES = 110 * 1024 * 1024
+
+
+@app.middleware("http")
+async def _limit_body_size(request: Request, call_next):
+    cl = request.headers.get("content-length")
+    if cl and cl.isdigit() and int(cl) > _MAX_BODY_BYTES:
+        return Response("Payload too large", status_code=413)
+    return await call_next(request)
+
 
 @app.post("/api/session", status_code=201)
 def create_session(request: Request, response: Response):

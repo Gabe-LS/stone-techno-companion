@@ -474,6 +474,7 @@ async def auth_email_start(request: Request):
 
 @router.get("/verify")
 async def auth_email_verify(request: Request, token: str = ""):
+    _check_auth_rate(request)
     db = _get_db()
     try:
         row = db.execute(
@@ -524,6 +525,12 @@ async def auth_delete_account(request: Request, response: Response):
         delete_user(db, user["id"])
         response.delete_cookie("chat_session")
         from chat_ws import manager
+
+        for conn_id, ws in list(manager.user_conns.get(user["id"], {}).items()):
+            try:
+                asyncio.create_task(ws.close(code=4003, reason="Account deleted"))
+            except Exception:
+                pass
 
         for batch in removed:
             asyncio.create_task(
@@ -980,6 +987,10 @@ async def get_meetup(meetup_id: str, request: Request):
 async def create_meetup_endpoint(request: Request):
     user, db = _get_user_from_cookie(request)
     try:
+        from chat_ws import manager
+
+        if not manager.check_rate_limit(user["id"]):
+            raise HTTPException(429, "Too many requests. Slow down.")
         body = await request.json()
         title = (body.get("title") or "")[:60]
         meetup_time = body.get("meetup_time")
