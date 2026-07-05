@@ -15,7 +15,7 @@ import time
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -167,6 +167,68 @@ async def _is_safe_preview_url(url: str) -> bool:
     return True
 
 
+async def _resolve_safe_ip(hostname: str) -> str | None:
+    try:
+        infos = await asyncio.to_thread(socket.getaddrinfo, hostname, None)
+    except (socket.gaierror, ValueError):
+        return None
+    safe = []
+    for _family, _, _, _, sockaddr in infos:
+        try:
+            addr = ipaddress.ip_address(sockaddr[0])
+        except ValueError:
+            return None
+        if (
+            addr.is_private
+            or addr.is_loopback
+            or addr.is_link_local
+            or addr.is_reserved
+            or addr.is_multicast
+            or addr.is_unspecified
+        ):
+            return None
+        safe.append(sockaddr[0])
+    return safe[0] if safe else None
+
+
+async def _pinned_preview_get(client, url: str, headers: dict):
+    # Resolve + validate the host, then connect to the validated IP literal with
+    # Host header + TLS SNI preserved. The OS never re-resolves, so the address
+    # can't be rebound to an internal/metadata target between check and connect
+    # (SSRF DNS-rebinding TOCTOU).
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return None
+    host = parsed.hostname
+    if (
+        not host
+        or host == "localhost"
+        or host.endswith(".local")
+        or host.endswith(".internal")
+    ):
+        return None
+    ip = await _resolve_safe_ip(host)
+    if not ip:
+        return None
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    ip_host = f"[{ip}]" if ":" in ip else ip
+    path = parsed.path or "/"
+    if parsed.query:
+        path += "?" + parsed.query
+    pinned_url = f"{parsed.scheme}://{ip_host}:{port}{path}"
+    req_headers = dict(headers)
+    req_headers["Host"] = host if port in (80, 443) else f"{host}:{port}"
+    return await asyncio.wait_for(
+        client.get(
+            pinned_url,
+            headers=req_headers,
+            follow_redirects=False,
+            extensions={"sni_hostname": host},
+        ),
+        timeout=3.0,
+    )
+
+
 async def _fetch_link_preview(url: str) -> dict | None:
     if not await _is_safe_preview_url(url):
         return None
@@ -214,18 +276,17 @@ async def _fetch_og_preview(client, url: str) -> dict | None:
         "User-Agent": "Mozilla/5.0 (compatible; StoneCompanionBot/1.0)",
         "Accept": "text/html",
     }
-    resp = await asyncio.wait_for(
-        client.get(url, headers=_og_headers, follow_redirects=False),
-        timeout=3.0,
-    )
+    resp = await _pinned_preview_get(client, url, _og_headers)
+    if resp is None:
+        return None
     if resp.is_redirect:
         location = resp.headers.get("location", "")
-        if not location or not await _is_safe_preview_url(location):
+        if not location:
             return None
-        resp = await asyncio.wait_for(
-            client.get(location, headers=_og_headers, follow_redirects=False),
-            timeout=3.0,
-        )
+        location = urljoin(url, location)
+        resp = await _pinned_preview_get(client, location, _og_headers)
+        if resp is None:
+            return None
     if resp.status_code != 200:
         return None
     cl = resp.headers.get("content-length")
