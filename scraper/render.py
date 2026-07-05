@@ -194,6 +194,9 @@ def render_output_html(
     def esc(text: str | None) -> str:
         return html.escape(text or "")
 
+    def json_for_script(obj) -> str:
+        return _json.dumps(obj, separators=(",", ":")).replace("<", "\\u003c")
+
     parts: list[str] = []
     parts.append("<!DOCTYPE html>")
     parts.append('<html lang="en">')
@@ -1515,7 +1518,7 @@ def render_output_html(
         parts.append("  </div>")
 
         parts.append(
-            f"  <script>var TT_ARTISTS={_json.dumps(artist_lookup, separators=(',', ':'))};</script>"
+            f"  <script>var TT_ARTISTS={json_for_script(artist_lookup)};</script>"
         )
         parts.append("  </div>")  # end #timetable-view
 
@@ -1526,7 +1529,7 @@ def render_output_html(
     parts.append("    setDbgTag('lineup');")
     parts.append("    document.querySelector('.hamburger').innerHTML = ICON_HAMBURGER;")
     parts.append("    document.querySelector('.chat-nav-icon').innerHTML = ICON_CHAT;")
-    parts.append(f"    var siteShort = {_json.dumps(site_short)};")
+    parts.append(f"    var siteShort = {json_for_script(site_short)};")
     if has_timetable:
         parts.append("""
     // Immediate view restore before anything renders
@@ -1560,14 +1563,14 @@ def render_output_html(
 
     # Emit timetable section data for JS (when timetable is present)
     if has_timetable:
-        sections_json = _json.dumps(
+        sections_json = json_for_script(
             [
                 {"date": td["date"], "period": td["period"], "key": td["key"]}
                 for td in timetable_data
             ]
         )
         parts.append(f"    const TT_SECTIONS = {sections_json};")
-        parts.append(f"    const TT_DATES = {_json.dumps(dates_seen)};")
+        parts.append(f"    const TT_DATES = {json_for_script(dates_seen)};")
         parts.append("    const HAS_TIMETABLE = true;")
     else:
         parts.append("    const HAS_TIMETABLE = false;")
@@ -2108,7 +2111,7 @@ def render_output_html(
       const data = bios[oid] || { name: fallbackName || '', photo: '', bio: '' };
       const photoEl = document.getElementById('bio-photo');
       if (data.photo) {
-        photoEl.outerHTML = '<img class="bio-photo" id="bio-photo" src="' + data.photo + '" alt="' + data.name + '">';
+        photoEl.outerHTML = '<img class="bio-photo" id="bio-photo" src="' + esc(data.photo) + '" alt="' + esc(data.name) + '">';
       } else {
         photoEl.outerHTML = '<div class="bio-photo-placeholder" id="bio-photo"></div>';
       }
@@ -2420,7 +2423,7 @@ def render_output_html(
     const popup = document.getElementById('tt-popup');
 
     function _popupLink(href, svg, label) {
-      return '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + svg + ' ' + (label || '') + '</a>';
+      return '<a href="' + esc(href) + '" target="_blank" rel="noopener noreferrer">' + svg + ' ' + esc(label || '') + '</a>';
     }
     """)
         parts.append("""
@@ -2446,6 +2449,14 @@ def render_output_html(
       });
     });
 
+    document.getElementById('popup-artists').addEventListener('click', function(e) {
+      const t = e.target.closest('[data-bioclick]');
+      if (!t) return;
+      e.stopPropagation();
+      closePopup();
+      openBioById(t.dataset.oid, t.dataset.name);
+    });
+
     function openBlockPopup(block, px, py) {
         _popupJustOpened = true;
         const d = block.dataset;
@@ -2454,16 +2465,16 @@ def render_output_html(
           document.getElementById('popup-meta').textContent = d.time + ' \\u00b7 ' + d.floor;
           let artistsHtml = '';
           artists.forEach(a => {
-            const bioClick = 'event.stopPropagation(); closePopup(); openBioById(\\'' + a.oid + '\\', \\'' + a.name.replace(/'/g, "\\\\'") + '\\')';
+            const bioAttrs = ' data-bioclick="1" data-oid="' + esc(a.oid) + '" data-name="' + esc(a.name) + '"';
             const photo = a.photo
-              ? '<img class="popup-photo" src="' + a.photo + '" alt="' + a.name + '" onclick="' + bioClick + '">'
+              ? '<img class="popup-photo" src="' + esc(a.photo) + '" alt="' + esc(a.name) + '"' + bioAttrs + '>'
               : '<div class="popup-photo-placeholder"></div>';
             let links = '';
             (a.links || []).forEach(function(l) {
               var svg = PLATFORM_SVG[l.p] || '';
               if (svg) links += _popupLink(l.u, svg, l.f || '');
             });
-            artistsHtml += '<div class="popup-artist">' + photo + '<div><div class="popup-name" onclick="' + bioClick + '">' + a.name + '</div><div class="links">' + links + '</div></div></div>';
+            artistsHtml += '<div class="popup-artist">' + photo + '<div><div class="popup-name"' + bioAttrs + '>' + esc(a.name) + '</div><div class="links">' + links + '</div></div></div>';
           });
           document.getElementById('popup-artists').innerHTML = artistsHtml;
           popup.style.left = '-9999px';
