@@ -132,6 +132,21 @@ def _load_admin_emails() -> None:
 
 
 _email_rate: dict[str, list[float]] = {}
+_auth_rate: dict[str, list[float]] = {}
+
+
+def _check_auth_rate(request: Request, max_n: int = 20, window: int = 300) -> None:
+    ip = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    _auth_rate[ip] = [t for t in _auth_rate.get(ip, []) if now - t < window]
+    if len(_auth_rate[ip]) >= max_n:
+        raise HTTPException(429, "Too many requests. Try again later.")
+    _auth_rate[ip].append(now)
+    if len(_auth_rate) > 1000:
+        stale = [k for k, v in _auth_rate.items() if all(now - t >= window for t in v)]
+        for k in stale:
+            del _auth_rate[k]
+
 
 DISPOSABLE_DOMAINS: set[str] = set()
 _DISPOSABLE_PATH = Path(__file__).resolve().parent / "chat" / "disposable_domains.txt"
@@ -258,6 +273,7 @@ async def get_config():
 
 @router.post("/auth/google")
 async def auth_google(request: Request, response: Response):
+    _check_auth_rate(request)
     body = await request.json()
     id_token = body.get("id_token")
     fingerprint = body.get("device_fingerprint")
@@ -272,8 +288,11 @@ async def auth_google(request: Request, response: Response):
         from google.oauth2 import id_token as google_id_token
         from google.auth.transport import requests as google_requests
 
-        info = google_id_token.verify_oauth2_token(
-            id_token, google_requests.Request(), client_id
+        info = await asyncio.to_thread(
+            google_id_token.verify_oauth2_token,
+            id_token,
+            google_requests.Request(),
+            client_id,
         )
         provider_id = info["sub"]
         email = info.get("email", "")
@@ -304,6 +323,7 @@ async def auth_google(request: Request, response: Response):
 
 @router.post("/auth/google/code")
 async def auth_google_code(request: Request, response: Response):
+    _check_auth_rate(request)
     body = await request.json()
     code = body.get("code")
     fingerprint = body.get("device_fingerprint")
@@ -318,7 +338,8 @@ async def auth_google_code(request: Request, response: Response):
     try:
         import httpx
 
-        token_resp = httpx.post(
+        token_resp = await asyncio.to_thread(
+            httpx.post,
             "https://oauth2.googleapis.com/token",
             data={
                 "code": code,
@@ -327,6 +348,7 @@ async def auth_google_code(request: Request, response: Response):
                 "redirect_uri": "postmessage",
                 "grant_type": "authorization_code",
             },
+            timeout=10,
         )
         token_data = token_resp.json()
         id_token_str = token_data.get("id_token")
@@ -336,8 +358,11 @@ async def auth_google_code(request: Request, response: Response):
         from google.oauth2 import id_token as google_id_token
         from google.auth.transport import requests as google_requests
 
-        info = google_id_token.verify_oauth2_token(
-            id_token_str, google_requests.Request(), client_id
+        info = await asyncio.to_thread(
+            google_id_token.verify_oauth2_token,
+            id_token_str,
+            google_requests.Request(),
+            client_id,
         )
         provider_id = info["sub"]
         email = info.get("email", "")
