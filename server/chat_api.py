@@ -276,7 +276,6 @@ async def auth_google(request: Request, response: Response):
     _check_auth_rate(request)
     body = await request.json()
     id_token = body.get("id_token")
-    fingerprint = body.get("device_fingerprint")
     if not id_token:
         raise HTTPException(400, "id_token required")
 
@@ -313,7 +312,7 @@ async def auth_google(request: Request, response: Response):
             if user:
                 add_user_provider(db, user["id"], "google", provider_id)
                 logger.info("Linked google provider to existing user %s", user["id"])
-        result = _authenticate(db, "google", provider_id, name, fingerprint, response)
+        result = _authenticate(db, "google", provider_id, name, None, response)
         if email:
             add_user_provider(db, result["id"], "email", hash_email(email))
         return result
@@ -326,7 +325,6 @@ async def auth_google_code(request: Request, response: Response):
     _check_auth_rate(request)
     body = await request.json()
     code = body.get("code")
-    fingerprint = body.get("device_fingerprint")
     if not code:
         raise HTTPException(400, "code required")
 
@@ -383,7 +381,7 @@ async def auth_google_code(request: Request, response: Response):
             if user:
                 add_user_provider(db, user["id"], "google", provider_id)
                 logger.info("Linked google provider to existing user %s", user["id"])
-        result = _authenticate(db, "google", provider_id, name, fingerprint, response)
+        result = _authenticate(db, "google", provider_id, name, None, response)
         if email:
             add_user_provider(db, result["id"], "email", hash_email(email))
         return result
@@ -405,7 +403,6 @@ async def auth_email_start(request: Request):
             del _email_rate[k]
     body = await request.json()
     email = (body.get("email") or "").strip().lower()
-    fingerprint = body.get("device_fingerprint")
     try:
         from email_validator import validate_email
 
@@ -427,7 +424,7 @@ async def auth_email_start(request: Request):
 
     db = _get_db()
     try:
-        ban = is_banned(db, "email", provider_id, fingerprint)
+        ban = is_banned(db, "email", provider_id)
         if ban:
             raise HTTPException(403, f"You have been banned: {ban['reason']}")
 
@@ -435,7 +432,7 @@ async def auth_email_start(request: Request):
         db.execute(
             "INSERT OR REPLACE INTO email_tokens (token, email, provider_id, fingerprint, expires_at) "
             "VALUES (?, ?, ?, ?, ?)",
-            (token, email, provider_id, fingerprint, expires),
+            (token, email, provider_id, None, expires),
         )
         db.commit()
     finally:

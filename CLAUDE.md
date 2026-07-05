@@ -368,7 +368,7 @@ e2ee_device_keys   — user_id + device_id (PK), public_key, created_at, last_se
 
 ### Auth
 
-Two passwordless providers: Google OAuth and Email magic link (via Maileroo, 3,000/mo free). Disposable domains blocked via 7,860-domain blocklist (`chat/disposable_domains.txt`). Email validation via `email-validator` library (RFC 5322 + DNS MX check). Device fingerprinting for ban enforcement. Session cookies (non-httpOnly for WS access, Secure in production, SameSite=Strict in production / Lax in dev, path=/). Email tokens stored in DB (not memory) — survive server restarts.
+Two passwordless providers: Google OAuth and Email magic link (via Maileroo, 3,000/mo free). Disposable domains blocked via 7,860-domain blocklist (`chat/disposable_domains.txt`). Email validation via `email-validator` library (RFC 5322 + DNS MX check). Ban enforcement is provider-based and covers every linked provider of a user (Google + email); the `bans.device_fingerprint` column exists and the matching logic works, but clients do not currently submit a fingerprint, so it is unused (bans by a new account are possible — mitigated by moderation, not fingerprinting). Session cookies (non-httpOnly for WS access, Secure in production, SameSite=Strict in production / Lax in dev, path=/). Email tokens stored in DB (not memory) — survive server restarts.
 
 ### Profile Setup
 
@@ -398,7 +398,7 @@ Layers 2 and 3 run in parallel via `asyncio.gather`. Word filter blocks before A
 
 **Moderation logging**: OpenAI scores logged via `logger.info` — top 5 categories above 0.1 threshold, FLAGGED line with threshold comparison. `logging.basicConfig(level=INFO)` configured at startup.
 
-**Strike system**: 4-step escalation with expiring strikes (4h TTL, reset on new violation). 1st = warning, 2nd = warning, 3rd = 30-min mute, 4th = permanent ban. Lifetime mute counter: 3 total mutes across the event = permanent ban (prevents cycling). Same escalation for all content types including drugs. Bans stored by provider_id + device fingerprint. Admin ban covers ALL of a user's linked `user_providers` (not just the frozen `users.provider/provider_id`, so a second provider can't evade it) and closes the user's live WebSocket connections immediately (a still-connected user can't keep sending — DMs included). `secure_delete=ON` zeros deleted data on disk.
+**Strike system**: 4-step escalation with expiring strikes (4h TTL, reset on new violation). 1st = warning, 2nd = warning, 3rd = 30-min mute, 4th = permanent ban. Lifetime mute counter: 3 total mutes across the event = permanent ban (prevents cycling). Same escalation for all content types including drugs. Bans stored by provider_id (per linked provider); the device-fingerprint column is unused (clients do not submit one). Automatic bans (strike/mute/AI) and admin ban both cover ALL of a user's linked `user_providers` (not just the frozen `users.provider/provider_id`, so a second provider can't evade it) and closes the user's live WebSocket connections immediately (a still-connected user can't keep sending — DMs included). `secure_delete=ON` zeros deleted data on disk.
 
 ### End-to-End Encryption (DMs)
 
