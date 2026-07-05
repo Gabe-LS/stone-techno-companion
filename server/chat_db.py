@@ -116,6 +116,7 @@ def init_chat_db(db: sqlite3.Connection) -> None:
             PRIMARY KEY (user_id, room_id)
         );
         CREATE INDEX IF NOT EXISTS idx_memberships_user ON room_memberships(user_id);
+        CREATE INDEX IF NOT EXISTS idx_memberships_room ON room_memberships(room_id);
 
         CREATE TABLE IF NOT EXISTS messages (
             id           TEXT PRIMARY KEY,
@@ -481,6 +482,23 @@ def update_last_active(db: sqlite3.Connection, user_id: str) -> None:
 
 
 def delete_user(db: sqlite3.Connection, user_id: str) -> None:
+    # Tear down this user's meetup rooms BEFORE the users row is deleted:
+    # meetups.creator_id cascades on user delete, but rooms has no FK to
+    # meetups (joined only by matching UUID in app code), so once the
+    # meetups row is gone there is no way to find and purge its room again.
+    meetup_ids = [
+        row["id"]
+        for row in db.execute(
+            "SELECT id FROM meetups WHERE creator_id = ?", (user_id,)
+        ).fetchall()
+    ]
+    for meetup_id in meetup_ids:
+        delete_room(db, meetup_id)
+        db.execute("DELETE FROM meetup_attendees WHERE meetup_id = ?", (meetup_id,))
+        db.execute("DELETE FROM meetups WHERE id = ?", (meetup_id,))
+    if meetup_ids:
+        db.commit()
+
     db.execute("DELETE FROM users WHERE id = ?", (user_id,))
     db.commit()
 

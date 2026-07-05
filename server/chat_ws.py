@@ -20,6 +20,7 @@ from urllib.parse import urljoin, urlparse
 from fastapi import WebSocket, WebSocketDisconnect
 
 from chat_db import (
+    DEFAULT_MESSAGE_TTL_MIN,
     get_chat_db,
     get_user,
     get_user_by_token,
@@ -1736,8 +1737,19 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                             "meetup_time": meetup_time,
                         }
                     )
+                    invite_room = get_room(db, stage_id)
+                    invite_ttl = (
+                        invite_room["ttl_minutes"]
+                        if invite_room is not None
+                        else DEFAULT_MESSAGE_TTL_MIN
+                    )
                     invite_msg = create_message(
-                        db, stage_id, user_id, "meetup_invite", invite_content
+                        db,
+                        stage_id,
+                        user_id,
+                        "meetup_invite",
+                        invite_content,
+                        ttl_minutes=invite_ttl,
                     )
                     # Re-fetch the sender's identity so a profile edit made
                     # after the WS handshake is reflected in the invite
