@@ -371,6 +371,7 @@ async def _push_notification_scheduler() -> None:
                                     # endpoint), which breaks pushes to any other
                                     # push service in the same loop.
                                     vapid_claims=dict(vapid_claims),
+                                    timeout=10,
                                 )
                                 any_sent = True
                             except WebPushException as e:
@@ -382,6 +383,14 @@ async def _push_notification_scheduler() -> None:
                                     db.commit()
                                 logger.warning(
                                     "Push failed for %s: %s", endpoint[:60], e
+                                )
+                            except Exception as e:
+                                # Raw network errors (timeout, ConnectionError) are
+                                # not wrapped in WebPushException. Swallow per-endpoint
+                                # so one endpoint's failure can't abort the block and
+                                # skip the dedup INSERT below (causing re-sends).
+                                logger.warning(
+                                    "Push error for %s: %s", endpoint[:60], e
                                 )
 
                         if any_sent:
