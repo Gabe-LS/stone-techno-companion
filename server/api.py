@@ -365,7 +365,11 @@ async def _push_notification_scheduler() -> None:
                                 },
                                 data=payload,
                                 vapid_private_key=os.environ["VAPID_PRIVATE_KEY"],
-                                vapid_claims=vapid_claims,
+                                # Fresh copy per endpoint: pywebpush mutates
+                                # the claims dict (sets aud from the first
+                                # endpoint), which breaks pushes to any other
+                                # push service in the same loop.
+                                vapid_claims=dict(vapid_claims),
                             )
                             any_sent = True
                         except WebPushException as e:
@@ -392,9 +396,47 @@ async def _push_notification_scheduler() -> None:
             logger.exception("Push notification scheduler error")
 
 
+def _check_vapid_key_consistency() -> None:
+    # FCM rejects pushes (403) when the signing key differs from the
+    # applicationServerKey clients subscribed with; Apple does not enforce the
+    # binding, so a mismatch breaks Chromium-family push while iOS keeps
+    # working -- invisible unless checked here.
+    private = os.environ.get("VAPID_PRIVATE_KEY")
+    public = os.environ.get("VAPID_PUBLIC_KEY")
+    if not private or not public:
+        return
+    try:
+        from py_vapid import Vapid
+        from py_vapid.utils import b64urlencode
+        from cryptography.hazmat.primitives import serialization
+
+        v = (
+            Vapid.from_file(private)
+            if os.path.isfile(private)
+            else Vapid.from_pem(private.encode())
+        )
+        raw = v.public_key.public_bytes(
+            serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint
+        )
+        derived = b64urlencode(raw)
+        if derived != public.strip().rstrip("="):
+            logger.error(
+                "VAPID key mismatch: VAPID_PRIVATE_KEY does not pair with "
+                "VAPID_PUBLIC_KEY (derived %s..., configured %s...). Push to "
+                "FCM endpoints will fail with 403.",
+                derived[:16],
+                public[:16],
+            )
+        else:
+            logger.info("VAPID key pair verified: private key matches public key")
+    except Exception:
+        logger.exception("VAPID key consistency check failed")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _init_db()
+    _check_vapid_key_consistency()
     task = asyncio.create_task(_prune_rate_limits())
     prune_task = asyncio.create_task(_prune_expired_sessions())
     push_task = asyncio.create_task(_push_notification_scheduler())

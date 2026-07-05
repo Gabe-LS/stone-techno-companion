@@ -1,7 +1,7 @@
 self.addEventListener('install', function () { self.skipWaiting(); });
 self.addEventListener('activate', function (event) { event.waitUntil(self.clients.claim()); });
 
-var SW_VERSION = 'v9';
+var SW_VERSION = 'v10';
 
 function swlog(step, detail) {
   return fetch('/chat/api/swlog', {
@@ -29,7 +29,10 @@ self.addEventListener('push', function (event) {
 
   var title = data.title || 'Stone Techno Companion';
   var body = data.body || '';
-  var tag = 'stc-' + (data.room_id || '') + '-' + (data.push_index || Math.random().toString(36).slice(2));
+  // push_index resets to 0 on every server restart -- data.push_id is a
+  // fresh random value per push so restarts can never reuse a still-visible
+  // notification's tag (iOS silently drops notificationclick on replaced ones).
+  var tag = 'stc-' + (data.room_id || '') + '-' + (data.push_id || data.push_index || Math.random().toString(36).slice(2));
   var options = {
     body: body,
     icon: '/favicon.png',

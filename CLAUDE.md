@@ -298,6 +298,14 @@ Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DBs at `server/d
 
 ## Push Notifications
 
+### Hard-won invariants (violating any of these silently breaks a subset of browsers)
+- **pywebpush mutates `vapid_claims`**: it stamps the FIRST endpoint's origin as `aud` into the dict you pass. Never share one claims dict across a subscription loop — pass `dict(vapid_claims)` per call (both `chat_ws._do_send_push` and the lineup scheduler in `api.py` do this). A shared dict poisons every later push to a *different* push service: FCM rejects an apple `aud` with 403, so a user with Apple + FCM subscriptions only ever reached the first service. Cost a full afternoon in July 2026 because Apple and Mozilla don't enforce the binding — iOS and Firefox kept working while Brave/Chrome got nothing.
+- **Push services enforce VAPID asymmetrically**: FCM (all Chromium) strictly validates both the `aud` claim and that the signing key matches the subscription's `applicationServerKey`; Apple and Mozilla accept any self-consistent JWT. **Any push change must be tested against a Chromium-family browser** — Zen/Firefox and iOS passing proves nothing about Chrome/Brave.
+- **VAPID key pair consistency is checked at startup** (`_check_vapid_key_consistency` in `api.py`): logs `VAPID key pair verified` or a loud mismatch error. Check this line after touching keys or `.env`.
+- **Notification tags must be unique across server restarts**: the payload carries a random `push_id` (`secrets.token_hex(8)`) and sw.js prefers it for the tag. `push_index` alone resets with the process and re-collides with notifications still in iOS Notification Center (see "tag uniqueness" below).
+- **Brave subscriptions can silently die**: revoking site notification permission or Brave's "Forget me when I close this site" unsubscribes at the FCM level (next push → 410, row auto-pruned). The client repairs on load (`_repairPushSubscription`, gated by the `push_enabled` localStorage flag so an explicit disable is never overridden), and `_enableAllNotifications` only reports success when subscribe + server POST both succeeded.
+- **Regression net**: `tests/test_chat_ws.py::TestVapidClaimsIsolation` (claims-dict isolation), `tests/notif_badge_browser_check.py` (badges, truthful enable, gated repair — multi-context Playwright), `tests/test_notifications.py` (SW tag/version assertions).
+
 ### Lineup push
 - **Scheduler**: background task runs every 60s, matches `timetable.json` slots against sessions' schedule, sends via `pywebpush`
 - **Dedup**: `sent_notifications` table, pruned after 7 days. Dead subscriptions auto-removed.

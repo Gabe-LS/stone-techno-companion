@@ -445,6 +445,10 @@ async def _do_send_push(
             "url": url,
             "silent": silent,
             "push_index": push_index,
+            # push_index resets to 0 on every server restart, so it alone can
+            # collide with a still-visible notification's tag and cause iOS to
+            # silently drop notificationclick on the replaced notification.
+            "push_id": secrets.token_hex(8),
         }
     )
 
@@ -466,7 +470,12 @@ async def _do_send_push(
                 },
                 data=payload,
                 vapid_private_key=vapid_private_key,
-                vapid_claims=vapid_claims,
+                # Fresh copy per endpoint: pywebpush mutates the claims dict,
+                # stamping the FIRST endpoint's origin as `aud` -- a shared
+                # dict poisons every later push to a different push service
+                # (FCM rejects an apple aud with 403; mixed-service users
+                # only ever reached the first service).
+                vapid_claims=dict(vapid_claims),
             )
         except WebPushException as e:
             if (
@@ -889,10 +898,14 @@ async def _moderate_and_broadcast(
         if meta.get("type") == "dm":
             _, text_preview = _dm_preview(display_name)
 
-        room_obj = mgr.rooms.get(room_id)
-        active_viewers = set(room_obj.conn_users.values()) if room_obj else set()
+        # badge_update goes to EVERY member except the sender, including users
+        # with a connection currently viewing this room: viewing is a
+        # per-CONNECTION state the server cannot attribute (a second device in
+        # another room must still get its badge), so the foreground viewer's
+        # client ignores updates for its open room and mark_read broadcasts
+        # the cross-device clear.
         for uid, badge_rooms in list(mgr.user_badge_rooms.items()):
-            if room_id not in badge_rooms or uid in active_viewers or uid == user_id:
+            if room_id not in badge_rooms or uid == user_id:
                 continue
             unread = mgr.user_unread.setdefault(uid, {})
             unread[room_id] = unread.get(room_id, 0) + 1

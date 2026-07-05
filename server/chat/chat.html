@@ -355,7 +355,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
   .menu-items .room-item .room-count { display: none; }
   .menu-items .room-item .room-desc { display: block; font-size: var(--font-xs); color: var(--gray-400); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .menu-items .room-member-icon { display: flex; align-items: center; gap: var(--space-xs); font-size: var(--font-xs); color: #fff; flex-shrink: 0; order: 3; }
-  .menu-items .room-badge { order: 2; }
+  .menu-items .room-item .room-badge { order: 2; }
   .menu-items .room-bell { order: 4; }
   .menu-items .room-bell.active { color: #fff; }
   .menu-member { display: flex; align-items: center; gap: var(--space-sm); padding: 0 var(--space-xl); height: 40px; cursor: pointer; background: var(--gray-800); }
@@ -1480,6 +1480,16 @@ async function handleWSEvent(data) {
       break;
     case 'badge_update':
       dbg('[BADGE] update:', data.room_id, data.count);
+      if (data.count > 0 && data.room_id === currentRoom && !document.hidden) {
+        // The server now badges every member including active viewers (it
+        // cannot know which CONNECTION is looking at the room -- a second
+        // device elsewhere must still get its badge). This foreground client
+        // is reading the room right now: the message event renders it and
+        // the read-observer's mark_read broadcasts the cross-device clear,
+        // so applying the badge here would only flash it on the open room.
+        dbg('[BADGE] ignoring update for foreground current room', data.room_id);
+        break;
+      }
       roomTypeLookup[data.room_id] = {type: data.type, name: data.name};
       if (data.count === 0) {
         delete unreadByRoom[data.room_id];
@@ -1548,12 +1558,21 @@ async function loadRooms() {
   dbg('[ROOM] loadRooms');
   try { rooms = await api('/rooms'); } catch { rooms = []; }
   verify('loadRooms', rooms.length > 0, rooms.length + ' rooms loaded');
-  roomTypeLookup = {};
+  // GET /rooms only ever returns stage/general rooms -- merge instead of
+  // replacing roomTypeLookup, and only prune stage/general entries that
+  // disappeared, or DM/meetup unread state and types get wiped every load.
   rooms.forEach(r => { roomTypeLookup[r.id] = { type: r.type, name: r.name }; });
   const validIds = new Set(rooms.map(r => r.id));
-  for (const rid of Object.keys(unreadByRoom)) {
-    if (!validIds.has(rid)) delete unreadByRoom[rid];
+  const pruned = [];
+  for (const rid of Object.keys(roomTypeLookup)) {
+    if (validIds.has(rid)) continue;
+    const t = roomTypeLookup[rid].type;
+    if (t !== 'stage' && t !== 'general') continue;
+    delete roomTypeLookup[rid];
+    if (unreadByRoom[rid] !== undefined) delete unreadByRoom[rid];
+    pruned.push(rid);
   }
+  if (pruned.length) dbg('[BADGE] loadRooms pruned stale stage/general entries:', pruned.join(','));
   updateTabBadges();
 }
 
@@ -1622,8 +1641,8 @@ function _renderRoomItemsHtml() {
     const desc = r.description || '';
     return `<li class="room-item${currentRoom === r.id ? ' active' : ''}" data-room-id="${r.id}" onclick="closeChatMenu();openRoom('${r.id}','${jss(r.name)}','${r.type}')">
       <div class="room-info"><div class="room-name">${esc(r.name)}</div><div class="room-count">${mc} ${mc === 1 ? 'member' : 'members'}</div>${desc ? `<div class="room-desc">${esc(desc)}</div>` : ''}</div>
-      <span class="room-member-icon" onclick="event.stopPropagation()">${mc} ${USER_ICON}</span>
       <span class="room-badge" onclick="event.stopPropagation()">${badgeHtml}</span>
+      <span class="room-member-icon" onclick="event.stopPropagation()">${mc} ${USER_ICON}</span>
       ${bellHtml}
     </li>`;
   }).join('');
@@ -1746,7 +1765,7 @@ function updateBadge(roomId) {
 }
 
 function refreshAllBadges() {
-  document.querySelectorAll('.room-item[data-room-id]').forEach(item => updateBadge(item.dataset.roomId));
+  document.querySelectorAll('.room-item[data-room-id], .member-item[data-room-id]').forEach(item => updateBadge(item.dataset.roomId));
   updateTabBadges();
 }
 
@@ -1856,8 +1875,8 @@ async function loadDMs() {
       return `<div class="member-item${currentRoom === dm.room_id ? ' member-item-self' : ''}" data-room-id="${dm.room_id}" onclick="openRoom('${dm.room_id}','${jss(dm.other_name)}','dm')">
         ${av}
         <span class="member-name">${lockHtml}${esc(dm.other_name)}</span>
-        ${flag ? `<span class="member-flag">${flag}</span>` : ''}
         <span class="room-badge">${badgeHtml}</span>
+        ${flag ? `<span class="member-flag">${flag}</span>` : ''}
       </div>`;
     }).join('');
     dbg('[E2EE] loadDMs: rendered lock icons for ' + dms.filter(dm => !_unencryptedRooms.has(dm.room_id)).length + '/' + dms.length + ' DMs');
@@ -2677,8 +2696,8 @@ async function _loadMenuSection(section, container) {
         return `<div class="menu-member" data-room-id="${dm.room_id}" onclick="closeChatMenu();openRoom('${dm.room_id}','${jss(dm.other_name)}','dm')">
           ${av}
           <span class="menu-member-name">${lockHtml}${esc(dm.other_name)}</span>
-          ${flag ? `<span class="menu-member-flag">${flag}</span>` : ''}
           <span class="room-badge">${badgeHtml}</span>
+          ${flag ? `<span class="menu-member-flag">${flag}</span>` : ''}
         </div>`;
       }).join('');
     } catch { container.innerHTML = '<div class="empty">Could not load DMs</div>'; }
@@ -3817,6 +3836,63 @@ async function _checkPushStatus() {
   } catch { _pushSubscribed = false; }
 }
 
+// Shared by _enableAllNotifications() (user-initiated, shows toasts) and
+// _repairPushSubscription() (silent, on load) so the two paths cannot drift.
+// Returns true only when the browser subscription AND the server POST both
+// succeeded -- a rejected subscribe() (e.g. Brave with Google push services
+// disabled) or a non-ok POST must both count as failure.
+async function _subscribePush() {
+  if (!('serviceWorker' in navigator && 'PushManager' in window)) return false;
+  try {
+    dbg('[NOTIFY] fetching vapid key');
+    const vapidRes = await api('/push/vapid-key?_=' + Date.now());
+    dbg('[NOTIFY] vapid key ok:', vapidRes.public_key?.slice(0, 20));
+    const keyBytes = _urlBase64ToUint8Array(vapidRes.public_key);
+    const reg = await navigator.serviceWorker.ready;
+    dbg('[NOTIFY] sw ready');
+    let sub = await reg.pushManager.getSubscription();
+    if (sub) await sub.unsubscribe();
+    sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes });
+    dbg('[NOTIFY] push manager subscribed');
+    const subJson = sub.toJSON();
+    const postRes = await fetch(API + '/push/subscribe', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: subJson.endpoint, keys: subJson.keys }),
+    });
+    dbg('[NOTIFY] subscribe POST', postRes.status);
+    if (!postRes.ok) {
+      dbg('[NOTIFY] subscribe POST failed, treating subscription as failed');
+      return false;
+    }
+    dbg('[NOTIFY] push subscribed');
+    return true;
+  } catch (e) {
+    dbg('[NOTIFY] push subscribe failed', e);
+    return false;
+  }
+}
+
+let _pushRepairAttempted = false;
+async function _repairPushSubscription() {
+  if (_pushRepairAttempted) return;
+  _pushRepairAttempted = true;
+  // Repair only restores a subscription the user explicitly enabled on this
+  // device and never turned off -- without the flag gate, a user who disabled
+  // notifications (permission stays granted) would be silently re-subscribed
+  // on the next load.
+  if (storageGet('push_enabled') !== '1') return;
+  if (Notification.permission !== 'granted' || _pushSubscribed) return;
+  dbg('[NOTIFY] repairing push subscription: permission granted, no active subscription');
+  const subscribed = await _subscribePush();
+  if (subscribed) {
+    _pushSubscribed = true;
+    dbg('[NOTIFY] push subscription repaired');
+  } else {
+    dbg('[NOTIFY] push subscription repair failed');
+  }
+}
+
 function openNotificationsModal() {
   dbg('[NOTIFY] openNotificationsModal');
   const browserEnabled = Notification.permission === 'granted';
@@ -3862,32 +3938,15 @@ async function _enableAllNotifications() {
     closeNotificationsModal();
     return;
   }
-  if ('serviceWorker' in navigator && 'PushManager' in window) {
-    try {
-      dbg('[NOTIFY] fetching vapid key');
-      const vapidRes = await api('/push/vapid-key?_=' + Date.now());
-      dbg('[NOTIFY] vapid key ok:', vapidRes.public_key?.slice(0, 20));
-      const keyBytes = _urlBase64ToUint8Array(vapidRes.public_key);
-      const reg = await navigator.serviceWorker.ready;
-      dbg('[NOTIFY] sw ready');
-      let sub = await reg.pushManager.getSubscription();
-      if (sub) await sub.unsubscribe();
-      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes });
-      dbg('[NOTIFY] push manager subscribed');
-      const subJson = sub.toJSON();
-      const postRes = await fetch(API + '/push/subscribe', {
-        method: 'POST', credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ endpoint: subJson.endpoint, keys: subJson.keys }),
-      });
-      dbg('[NOTIFY] subscribe POST', postRes.status);
-      _pushSubscribed = true;
-      dbg('[NOTIFY] push subscribed');
-    } catch (e) {
-      dbg('[NOTIFY] push subscribe failed', e);
-    }
+  const subscribed = await _subscribePush();
+  _pushSubscribed = subscribed;
+  if (subscribed) {
+    storageSet('push_enabled', '1');
+    showToast('Notifications enabled');
+  } else {
+    dbg('[NOTIFY] push subscribe failed, falling back to in-app-only');
+    showToast('In-app alerts enabled. Push registration failed - if you use Brave, enable "Use Google services for push messaging" in brave://settings/privacy and try again.');
   }
-  showToast('Notifications enabled');
   closeNotificationsModal();
 }
 
@@ -3912,6 +3971,7 @@ async function _disableAllNotifications() {
     }
   }
   _pushSubscribed = false;
+  storageRemove('push_enabled');
   showToast('Notifications disabled. Disable in-app alerts in browser settings.');
   closeNotificationsModal();
 }
@@ -4370,6 +4430,7 @@ async function route() {
   if (!authed) { await renderAuth(); return; }
   if (!currentUser.username || !currentUser.country || !currentUser.avatar_url) { renderProfilePrompt(); return; }
   await _checkPushStatus();
+  await _repairPushSubscription();
   if (!ws || ws.readyState !== 1) await connectWS();
   if (!E2EE._initialized && currentUser) {
     E2EE._initialized = true;

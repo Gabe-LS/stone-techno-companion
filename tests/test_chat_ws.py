@@ -845,6 +845,81 @@ class TestDmBadgeRegistration:
             await asyncio.gather(a_task, b_task, return_exceptions=True)
 
     @pytest.mark.asyncio
+    async def test_badge_update_reaches_user_whose_other_device_views_the_room(
+        self, db, user1, user2, session1, session2, event_id
+    ):
+        """badge_update must go to every member except the sender, even when
+        one of the recipient's OTHER connections is joined to the room:
+        viewing is per-connection state the server cannot attribute, so a
+        second device sitting in a different room still needs its badge (the
+        foreground viewer's client ignores updates for its open room). The
+        old per-user active-viewer skip silently starved multi-device users."""
+        from chat_db import create_session
+
+        with patch("chat_ws.get_chat_db", return_value=_UnclosableConnection(db)):
+            room_id = find_or_create_dm(db, event_id, user1["id"], user2["id"])
+            global_manager.user_badge_rooms.setdefault(user1["id"], set()).add(room_id)
+            global_manager.user_badge_rooms.setdefault(user2["id"], set()).add(room_id)
+
+            # user2, device 1: joined to (viewing) the DM room.
+            ws_viewer = BlockingWS()
+            viewer_task = asyncio.create_task(
+                handle_chat_ws(ws_viewer, session2["token"], event_id)
+            )
+            await asyncio.sleep(0.2)
+            await ws_viewer.queue.put(
+                json.dumps({"event": "join_room", "room_id": room_id})
+            )
+
+            # user2, device 2: connected but in no room (e.g. PWA in another
+            # room) -- this is the device the old skip starved.
+            session2b = create_session(db, user2["id"])
+            ws_other = BlockingWS()
+            other_task = asyncio.create_task(
+                handle_chat_ws(ws_other, session2b["token"], event_id)
+            )
+            await asyncio.sleep(0.2)
+
+            ws_a = BlockingWS()
+            a_task = asyncio.create_task(
+                handle_chat_ws(ws_a, session1["token"], event_id)
+            )
+            await asyncio.sleep(0.2)
+            await ws_a.queue.put(json.dumps({"event": "join_room", "room_id": room_id}))
+            await ws_a.queue.put(
+                json.dumps(
+                    {
+                        "event": "send_message",
+                        "room_id": room_id,
+                        "type": "text",
+                        "content": json.dumps({"text": "hello"}),
+                        "temp_id": "tmp_md",
+                    }
+                )
+            )
+            await asyncio.sleep(0.3)
+
+            # send_to_user fans out to all of user2's connections: both the
+            # viewing device and the elsewhere device must see the event.
+            for ws in (ws_other, ws_viewer):
+                badge_events = ws.get_events_by_type("badge_update")
+                assert len(badge_events) == 1, (
+                    "badge_update missing on one of the user's devices"
+                )
+                assert badge_events[0]["room_id"] == room_id
+                assert badge_events[0]["count"] == 1
+
+            for ws, task in (
+                (ws_a, a_task),
+                (ws_viewer, viewer_task),
+                (ws_other, other_task),
+            ):
+                await ws.queue.put(None)
+            await asyncio.gather(
+                a_task, viewer_task, other_task, return_exceptions=True
+            )
+
+    @pytest.mark.asyncio
     async def test_join_room_registers_dm_badge_for_participant_who_never_sent(
         self, db, user1, user2, session2, event_id
     ):
@@ -1067,3 +1142,59 @@ class TestDmPushPreview:
         parsed = json.loads(wp.call_args.kwargs["data"])
         assert parsed["title"] == "#Grand Hall"
         assert "hello there" in parsed["body"]
+
+
+class TestVapidClaimsIsolation:
+    """pywebpush mutates the vapid_claims dict it receives, stamping the first
+    endpoint's origin as `aud`. A dict shared across a user's subscription loop
+    poisons every later push to a different push service (FCM 403s an apple
+    aud). Each webpush call must get a fresh claims dict."""
+
+    @pytest.mark.asyncio
+    async def test_claims_dict_fresh_per_endpoint(
+        self, db, user1, user2, event_id, monkeypatch
+    ):
+        room_id = find_or_create_dm(db, event_id, user1["id"], user2["id"])
+        msg = create_message(
+            db, room_id, user1["id"], "text", json.dumps({"text": "hi"})
+        )
+        save_push_subscription(
+            db, user2["id"], "https://web.push.apple.com/ep1", "p256", "auth"
+        )
+        save_push_subscription(
+            db, user2["id"], "https://fcm.googleapis.com/fcm/send/ep2", "p256", "auth"
+        )
+        monkeypatch.setenv("VAPID_PRIVATE_KEY", "BEGIN test key")
+
+        seen = []
+
+        def fake_webpush(subscription_info, data, vapid_private_key, vapid_claims):
+            endpoint = subscription_info["endpoint"]
+            seen.append((endpoint, vapid_claims.get("aud")))
+            # Replicate pywebpush's in-place mutation of the caller's dict.
+            if not vapid_claims.get("aud"):
+                from urllib.parse import urlparse
+
+                url = urlparse(endpoint)
+                vapid_claims["aud"] = f"{url.scheme}://{url.netloc}"
+
+        with patch("chat_ws.get_chat_db", return_value=_UnclosableConnection(db)):
+            with patch("pywebpush.webpush", side_effect=fake_webpush):
+                await chat_ws._do_send_push(
+                    user2["id"],
+                    room_id,
+                    "dm",
+                    "DM",
+                    "",
+                    "",
+                    msg["id"],
+                    silent=False,
+                    push_index=1,
+                )
+
+        assert len(seen) == 2
+        for endpoint, aud_at_entry in seen:
+            assert aud_at_entry is None, (
+                f"claims dict for {endpoint} arrived with aud={aud_at_entry} "
+                "already set -- shared dict leaked another service's audience"
+            )

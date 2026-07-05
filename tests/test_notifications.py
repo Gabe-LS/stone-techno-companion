@@ -1392,7 +1392,7 @@ class TestServiceWorker:
         assert "n.close()" in sw_source
 
     def test_sw_uses_unique_tag(self, chat_page):
-        """SW builds unique tag from room_id + push_index."""
+        """SW builds unique tag from room_id + push_id (falls back to push_index)."""
         sw_source = chat_page.evaluate("""
             (async () => {
                 const reg = await navigator.serviceWorker.getRegistration('/');
@@ -1402,6 +1402,7 @@ class TestServiceWorker:
             })()
         """)
         assert "data.room_id" in sw_source
+        assert "data.push_id" in sw_source
         assert "data.push_index" in sw_source
 
     def test_sw_sets_app_badge(self, chat_page):
@@ -1429,8 +1430,8 @@ class TestServiceWorker:
         """)
         assert "data.silent" in sw_source
 
-    def test_sw_version_v9(self, chat_page):
-        """SW version is v9."""
+    def test_sw_version_v10(self, chat_page):
+        """SW version is v10."""
         sw_source = chat_page.evaluate("""
             (async () => {
                 const reg = await navigator.serviceWorker.getRegistration('/');
@@ -1439,7 +1440,7 @@ class TestServiceWorker:
                 return await resp.text();
             })()
         """)
-        assert "SW_VERSION = 'v9'" in sw_source
+        assert "SW_VERSION = 'v10'" in sw_source
 
     def test_sw_click_handler_cache_first(self, chat_page):
         """SW click handler writes to cache before network calls."""
