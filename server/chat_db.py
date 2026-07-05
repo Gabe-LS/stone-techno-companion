@@ -1447,7 +1447,7 @@ def get_user_admin_detail(db: sqlite3.Connection, user_id: str) -> dict | None:
 
     reports = db.execute(
         "SELECT r.id, u.display_name AS reporter_name, r.reason, "
-        "r.message_snapshot, r.status, r.created_at "
+        "r.message_snapshot, r.status, r.unverified, r.created_at "
         "FROM reports r JOIN users u ON u.id = r.reporter_id "
         "WHERE r.reported_user_id = ? ORDER BY r.created_at DESC",
         (user_id,),
