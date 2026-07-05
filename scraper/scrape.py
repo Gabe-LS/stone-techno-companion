@@ -185,6 +185,8 @@ def scrape_lineup(ctx: BrowserContext, url: str) -> dict:
     assignments: list[dict] = []
     for li in soup.select("li.tab-list__list-item.lineup-name[data-timestamp]"):
         overlay_id = (li.get("data-overlay-identifier") or "").strip()
+        if not overlay_id or overlay_id not in overlay_details:
+            continue
         ts_list = [
             t.strip() for t in (li.get("data-timestamp") or "").split(",") if t.strip()
         ]
