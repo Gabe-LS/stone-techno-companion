@@ -42,8 +42,12 @@ def generate_timetable_json(db: sqlite3.Connection, event_id: str) -> str:
 
     slots = {}
     for (date, period, fid, start_time, end_time), artists in groups.items():
+        # Include start/end time so two slots for the same artist(s) on the
+        # same floor/date/period get distinct UUIDs (one-time push-dedup
+        # reset, harmless pre-event).
         card_key = ":".join(
-            [a["id"] for a in artists] + [date, period or "", fid or ""]
+            [a["id"] for a in artists]
+            + [date, period or "", fid or "", start_time, end_time]
         )
         slot_id = str(uuid.uuid5(uuid.NAMESPACE_URL, card_key))
         s_hhmm = start_time.split("T")[1] if "T" in start_time else start_time

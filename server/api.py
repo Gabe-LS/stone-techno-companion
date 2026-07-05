@@ -11,7 +11,7 @@ import threading
 import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -950,6 +950,12 @@ def generate_ics(slot_id: str):
     start = slot["start"]
     end = slot["end"]
 
+    tz_name = timetable.get("timezone") or "Europe/Berlin"
+    try:
+        event_tz = ZoneInfo(tz_name)
+    except Exception:
+        event_tz = ZoneInfo("Europe/Berlin")
+
     def _ics_esc(s: str) -> str:
         return (
             s.replace("\\", "\\\\")
@@ -960,17 +966,22 @@ def generate_ics(slot_id: str):
             .replace("\n", "\\n")
         )
 
-    def to_ics_dt(iso: str) -> str:
+    def to_utc_ics_dt(iso: str) -> str:
+        # Parse the naive local wall-clock slot time, attach the event's
+        # configured timezone, and convert to UTC — avoids hardcoding a
+        # VTIMEZONE that only covers Europe/Berlin.
         clean = iso.replace("-", "").replace(":", "")
-        # Strip timezone offset — TZID parameter specifies the timezone
         clean = re.sub(r"[+-]\d{4}$", "", clean).rstrip("Z")
         t_idx = clean.find("T")
-        if t_idx >= 0 and len(clean) - t_idx - 1 >= 6:
-            return clean
-        return clean + "00"
+        if not (t_idx >= 0 and len(clean) - t_idx - 1 >= 6):
+            clean = clean + "00"
+        naive = datetime.strptime(clean, "%Y%m%dT%H%M%S")
+        local_dt = naive.replace(tzinfo=event_tz)
+        utc_dt = local_dt.astimezone(timezone.utc)
+        return utc_dt.strftime("%Y%m%dT%H%M%SZ")
 
-    dt_start = to_ics_dt(start)
-    dt_end = to_ics_dt(end)
+    dt_start = to_utc_ics_dt(start)
+    dt_end = to_utc_ics_dt(end)
     uid = (
         dt_start + "-" + re.sub(r"[^a-zA-Z0-9]", "", name) + "@stonetechno.deftlab.dev"
     )
@@ -983,26 +994,9 @@ def generate_ics(slot_id: str):
             "PRODID:-//Stone Techno Companion//EN",
             "CALSCALE:GREGORIAN",
             "METHOD:PUBLISH",
-            "BEGIN:VTIMEZONE",
-            "TZID:Europe/Berlin",
-            "BEGIN:DAYLIGHT",
-            "TZOFFSETFROM:+0100",
-            "TZOFFSETTO:+0200",
-            "TZNAME:CEST",
-            "DTSTART:19700329T020000",
-            "RRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=3",
-            "END:DAYLIGHT",
-            "BEGIN:STANDARD",
-            "TZOFFSETFROM:+0200",
-            "TZOFFSETTO:+0100",
-            "TZNAME:CET",
-            "DTSTART:19701025T030000",
-            "RRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=10",
-            "END:STANDARD",
-            "END:VTIMEZONE",
             "BEGIN:VEVENT",
-            f"DTSTART;TZID=Europe/Berlin:{dt_start}",
-            f"DTEND;TZID=Europe/Berlin:{dt_end}",
+            f"DTSTART:{dt_start}",
+            f"DTEND:{dt_end}",
             f"DTSTAMP:{stamp}",
             f"UID:{uid}",
             f"SUMMARY:{_ics_esc(name)}",
