@@ -921,7 +921,7 @@ def get_reactions_for_messages(
 def purge_expired_messages(db: sqlite3.Connection) -> list[dict]:
     now = _now()
     expired = db.execute(
-        "SELECT id, room_id, type, content FROM messages WHERE expires_at <= ?",
+        "SELECT id, room_id, type, content, media_url FROM messages WHERE expires_at <= ?",
         (now,),
     ).fetchall()
 
@@ -930,14 +930,17 @@ def purge_expired_messages(db: sqlite3.Connection) -> list[dict]:
     for msg in expired:
         by_room.setdefault(msg["room_id"], []).append(msg["id"])
         if msg["type"] in ("image", "video"):
-            import json
+            if msg["media_url"]:
+                image_paths.append(msg["media_url"])
+            else:
+                import json
 
-            try:
-                content = json.loads(msg["content"])
-                if "url" in content:
-                    image_paths.append(content["url"])
-            except (json.JSONDecodeError, TypeError):
-                pass
+                try:
+                    content = json.loads(msg["content"])
+                    if "url" in content:
+                        image_paths.append(content["url"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
 
     if expired:
         db.execute("DELETE FROM messages WHERE expires_at <= ?", (now,))
@@ -1291,26 +1294,31 @@ def get_reachable_member_counts(
 def delete_user_messages(db: sqlite3.Connection, user_id: str) -> list[dict]:
     now = _now()
     msgs = db.execute(
-        "SELECT id, room_id, type, content FROM messages "
+        "SELECT id, room_id, type, content, media_url FROM messages "
         "WHERE user_id = ? AND expires_at > ?",
         (user_id, now),
     ).fetchall()
 
     by_room: dict[str, list[str]] = {}
+    uploads = Path(__file__).resolve().parent / "chat" / "uploads"
     for msg in msgs:
         by_room.setdefault(msg["room_id"], []).append(msg["id"])
         if msg["type"] in ("image", "video"):
-            import json
+            url = msg["media_url"] or ""
+            if not url:
+                import json
 
-            try:
-                content = json.loads(msg["content"])
-                url = content.get("url", "")
-                if url:
-                    uploads = Path(__file__).resolve().parent / "chat" / "uploads"
-                    filename = url.rsplit("/", 1)[-1]
-                    (uploads / filename).unlink(missing_ok=True)
-            except (json.JSONDecodeError, TypeError):
-                pass
+                try:
+                    url = json.loads(msg["content"]).get("url", "")
+                except (json.JSONDecodeError, TypeError):
+                    url = ""
+            if url:
+                filename = url.rsplit("/", 1)[-1]
+                (uploads / filename).unlink(missing_ok=True)
+                stem = filename.rsplit(".", 1)[0]
+                (uploads / f"{stem}_mod.webp").unlink(missing_ok=True)
+                for i in range(3):
+                    (uploads / f"{stem}_mod{i}.webp").unlink(missing_ok=True)
 
     if msgs:
         db.execute(
