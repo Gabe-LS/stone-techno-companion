@@ -1168,7 +1168,9 @@ class TestVapidClaimsIsolation:
 
         seen = []
 
-        def fake_webpush(subscription_info, data, vapid_private_key, vapid_claims):
+        def fake_webpush(
+            subscription_info, data, vapid_private_key, vapid_claims, **kwargs
+        ):
             endpoint = subscription_info["endpoint"]
             seen.append((endpoint, vapid_claims.get("aud")))
             # Replicate pywebpush's in-place mutation of the caller's dict.

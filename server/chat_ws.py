@@ -537,6 +537,7 @@ async def _do_send_push(
                 # (FCM rejects an apple aud with 403; mixed-service users
                 # only ever reached the first service).
                 vapid_claims=dict(vapid_claims),
+                timeout=10,
             )
         except WebPushException as e:
             if (
@@ -585,6 +586,7 @@ class ConnectionManager:
         self.conn_user: dict[str, str] = {}
         self.user_rooms: dict[str, set[str]] = {}
         self._rate_buckets: dict[str, list[float]] = {}
+        self._broadcast_buckets: dict[str, list[float]] = {}
         self.user_badge_rooms: dict[str, set[str]] = {}
         self.user_unread: dict[str, dict[str, int]] = {}
         self._room_meta: dict[str, dict] = {}
@@ -628,6 +630,7 @@ class ConnectionManager:
             self.user_badge_rooms.pop(user_id, None)
             self.user_unread.pop(user_id, None)
             self._rate_buckets.pop(user_id, None)
+            self._broadcast_buckets.pop(user_id, None)
             self._recent_msgs.pop(user_id, None)
             self._last_active_ts.pop(user_id, None)
             for room_id in rooms:
@@ -746,6 +749,20 @@ class ConnectionManager:
         bucket = self._rate_buckets.setdefault(user_id, [])
         bucket[:] = [t for t in bucket if now - t < window_secs]
         if len(bucket) >= max_msgs:
+            return False
+        bucket.append(now)
+        return True
+
+    def check_broadcast_rate(
+        self, user_id: str, max_events: int = 30, window_secs: int = 10
+    ) -> bool:
+        # Separate, lenient bucket for high-frequency room fan-out events
+        # (typing, reactions, join/leave) so they can't be spammed into a
+        # broadcast-storm DoS, without consuming the send-message budget.
+        now = time.monotonic()
+        bucket = self._broadcast_buckets.setdefault(user_id, [])
+        bucket[:] = [t for t in bucket if now - t < window_secs]
+        if len(bucket) >= max_events:
             return False
         bucket.append(now)
         return True
@@ -1166,6 +1183,8 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 manager._last_ws_activity[user_id] = time.monotonic()
 
             if event == "join_room":
+                if not manager.check_broadcast_rate(user_id):
+                    continue
                 room_id = data.get("room_id")
                 room_row = get_room(db, room_id) if room_id else None
                 if room_id and room_row:
@@ -1225,6 +1244,8 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     )
 
             elif event == "leave_room":
+                if not manager.check_broadcast_rate(user_id):
+                    continue
                 room_id = data.get("room_id")
                 if room_id:
                     await manager.leave_room(room_id, conn_id)
@@ -1506,6 +1527,8 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 )
 
             elif event == "typing":
+                if not manager.check_broadcast_rate(user_id):
+                    continue
                 room_id = data.get("room_id")
                 active = data.get("active", False)
                 if room_id:
@@ -1663,6 +1686,8 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     unblock_user(db, user_id, target)
 
             elif event == "add_reaction":
+                if not manager.check_broadcast_rate(user_id):
+                    continue
                 message_id = data.get("message_id")
                 emoji = data.get("emoji")
                 if not message_id or not emoji or emoji not in ALLOWED_REACTIONS:
@@ -1696,6 +1721,8 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     )
 
             elif event == "remove_reaction":
+                if not manager.check_broadcast_rate(user_id):
+                    continue
                 message_id = data.get("message_id")
                 emoji = data.get("emoji")
                 if not message_id or not emoji:
@@ -1788,11 +1815,17 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     )
 
             elif event == "report_message":
+                if not manager.check_rate_limit(user_id):
+                    continue
                 message_id = data.get("message_id")
                 reason = data.get("reason")
                 client_content = data.get("message_content")
                 if not message_id or not reason:
                     continue
+                if isinstance(reason, str):
+                    reason = reason[:500]
+                if isinstance(client_content, str):
+                    client_content = client_content[:2000]
                 msg_row = db.execute(
                     "SELECT * FROM messages WHERE id = ?", (message_id,)
                 ).fetchone()
