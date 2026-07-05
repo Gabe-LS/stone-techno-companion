@@ -89,7 +89,7 @@ Key design decisions:
 - **artist_links** normalizes all social platforms — adding a new platform is just an INSERT, no schema change
 - **artist_sets** normalizes all media sources — `platform` column distinguishes YouTube, SoundCloud, etc.
 - **`period`** is a free-text tag (day, night, afterhours, etc.), nullable for events without period splits
-- **`set_type`** supports dj, live, hybrid, b2b, talk, or NULL
+- **`set_type`** supports dj, live, hybrid, b2b, talk, or NULL — reserved, no writer populates it yet
 - **`edition`** on events separates the event name ("Stone Techno") from the instance ("2026", "XV"). Page title derived as `"{name} {edition} Companion"`
 - **Stage colors** stored as RGB channels in `event_stages.color` (e.g. `"198, 249, 197"`), CSS generated dynamically at build time. Per-event — same stage can be green at one festival, blue at another
 - **Stage notes** hold per-day annotations (curators, hosts) shown below floor pills
@@ -110,21 +110,23 @@ Key design decisions:
 | `seed_timetable.py` | Seeds fake timetable data (floors + time slots) for development |
 | `migrate_db.py` | One-time migration from any old schema version to current. Creates backup, migrates artists + links + sets + locations + notes. |
 | `server/api.py` | FastAPI app — favorites + schedule API + WebSocket sync + push scheduler + ICS export + static file routes. Mounts chat module at startup. |
-| `server/chat_db.py` | Chat SQLite schema (chat.db) — users, sessions, bans, rooms, messages, meetups, reactions, blocks, reports, strikes |
+| `server/chat_db.py` | Chat SQLite schema (chat.db) — users, sessions, bans, rooms, messages, meetups, reactions, blocks, reports, strikes, E2EE device key store |
 | `server/chat_moderation.py` | Three-layer moderation: word filter + OpenAI omni-moderation + GPT-5.4-nano drug detection. All via raw httpx. |
-| `server/chat_ws.py` | Chat WebSocket server — rooms, optimistic messaging, presence, typing, reactions, replies, meetups, DMs, purge loop |
-| `server/chat_api.py` | Chat REST API — auth (Google/Email), rooms, meetups, DMs, media upload, admin page. Mounts routes + WS into FastAPI. |
-| `server/chat/chat.html` | Chat frontend — single HTML file with inline CSS/JS. WhatsApp-style bubbles, reactions, replies, action menus. |
+| `server/chat_ws.py` | Chat WebSocket server — rooms, optimistic messaging, presence, typing, reactions, replies, meetups, DMs, purge loop, E2EE content gating (DM-only envelopes, generic previews, snippet redaction) |
+| `server/chat_api.py` | Chat REST API — auth (Google/Email), rooms, meetups, DMs, media upload, admin page, E2EE key endpoints. Mounts routes + WS into FastAPI. |
+| `server/chat/chat.html` | Chat frontend — single HTML file with inline CSS/JS. WhatsApp-style bubbles, reactions, replies, action menus, client-side E2EE (per-device keys, encrypt/decrypt, key rotation). |
 | `server/chat/admin.html` | Admin dashboard — dark-themed SPA with tabs: Rooms, Users, Reports, Banned, Logs. Room management (create/edit/delete/reorder), user moderation (strike/mute/ban/clear), moderation log. |
 | `server/chat/blocklist.txt` | Word filter blocklist (drug terms, slurs). Editable without deploy. |
 | `server/static/shared.css` | Unified design tokens and shared CSS components (loaded by all pages) |
 | `server/static/shared.js` | Shared JS utilities: escapeHtml, dbg, showToast, storageGet/Set, icon constants (loaded by all pages) |
 | `server/static/sw.js` | Service worker — push ack (delivered/clicked/dismissed), notification click, pushsubscriptionchange auto-resubscribe |
 | `server/static/manifest.json` | PWA manifest — enables Add to Home Screen and push on iOS |
-| `tests/test_chat_db.py` | 45 tests — users, sessions, bans, rooms, messages, meetups, DMs, blocks, reports, strikes |
+| `tests/test_chat_db.py` | 59 tests — users, sessions, bans, rooms, messages, meetups, DMs, blocks, reports, strikes |
 | `tests/test_chat_moderation.py` | 39 tests — word filter, strike system (expiry, reset, mute cycling), AI moderation pipeline |
-| `tests/test_chat_ws.py` | 17 tests — WebSocket rooms, messaging, presence, moderation flow |
-| `tests/test_chat_api.py` | 31 tests — REST endpoints, auth, rooms, meetups, DMs, admin |
+| `tests/test_chat_ws.py` | 42 tests — WebSocket rooms, messaging, presence, moderation flow |
+| `tests/test_chat_api.py` | 55 tests — REST endpoints, auth, rooms, meetups, DMs, admin |
+| `tests/test_notifications.py` | 54 tests — push debounce, payload, badge, clearing. Requires Playwright infra. |
+| `tests/e2ee_browser_check.py` | Standalone Playwright verification (not part of the pytest suite) — 21 checks across 5 browser contexts, see "End-to-End Encryption (DMs)" below |
 | `stress_test/run.py` | Chat stress test — 200 concurrent WS users, multi-room + DMs, burst testing, media uploads, latency/throughput/resource metrics, moderation cost estimation |
 
 ### Deploy
@@ -251,7 +253,7 @@ cd output && python3 -m http.server 8321
 
 FastAPI (`server/api.py`). Sessions via 128-bit URL-safe tokens. Cross-device sync via ephemeral 6-digit PINs (5-min TTL). Real-time sync via WebSocket. Atomic pick/schedule operations via `json_group_array`/`json_each`.
 
-Static file routes (`/bios.json`, `/timetable.json`, `/manifest.json`, `/sw.js`, `/favicon.*`) are explicit endpoints before the catch-all `/{path:path}` (which serves `index.html`). New static files need an explicit route in `api.py`.
+Static file routes (`/bios.json`, `/manifest.json`, `/sw.js`, `/favicon.*`) are explicit endpoints before the catch-all `/{path:path}` (which serves `index.html`). New static files need an explicit route in `api.py`. `timetable.json` has no HTTP route — it's read server-side by the push scheduler and ICS export only.
 
 The catch-all `/{path:path}` serves `index.html` with `Cache-Control: no-store` and explicitly rejects `/chat*` paths (returns 404). Chat module import is **required** — if `chat_api.py` fails to import, the server crashes at startup (fail-fast, no silent degradation).
 
@@ -273,6 +275,7 @@ Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DBs at `server/d
 | `CHAT_ADMIN_EMAILS` | No | Comma-separated admin emails for cookie-based admin auth |
 | `CHAT_ADMIN_TOKEN` | No | Admin token for header-based admin auth (fallback) |
 | `CHAT_EVENT_ID` | No | Event ID (default: `stone-techno-2026`) |
+| `CHAT_DB_PATH` | No | Test/dev override for chat.db location. Used by the browser verification harness (`tests/e2ee_browser_check.py`) to point at an isolated scratch DB. |
 
 ### DNS for Email (deftlab.dev)
 
@@ -313,8 +316,8 @@ Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DBs at `server/d
 - **Subscriptions**: stored in `chat_push_subscriptions` table. Old/expired subscriptions auto-removed on 410 Gone response from push service.
 
 ### PWA standalone mode
-- **Keyboard handling**: `visualViewport` API constrains app height when keyboard opens, `body.kb-open` class removes safe area padding. Required — iOS doesn't auto-reposition input bars in PWA standalone.
-- **Safe area**: no `viewport-fit=cover` (caused inconsistent `env()` values). Bottom padding for home indicator via JS class `pwa-standalone` (detected in `<head>` script before render). 20px fixed padding, zeroed when keyboard opens.
+- **Keyboard handling**: `visualViewport` resize handler sets the `#app` element's height directly to the visible viewport when the keyboard opens. Required — iOS doesn't auto-reposition input bars in PWA standalone.
+- **Safe area**: no `viewport-fit=cover` (caused inconsistent `env()` values). Bottom padding for home indicator via JS class `pwa-standalone` (detected in `<head>` script before render). 20px fixed padding via static CSS — not zeroed when the keyboard opens.
 - **Keyboard accessory bar** (prev/next/done): cannot be hidden in PWA — iOS platform limitation, only native apps (Capacitor) can control it.
 
 ## Multi-Event Support
@@ -347,9 +350,10 @@ meetups            — id, creator_id, stage_id, title, location_lat, location_l
 meetup_attendees   — meetup_id + user_id (PK), joined_at
 dm_participants    — room_id + user_id (PK)
 blocks             — blocker_id + blocked_id (PK), created_at
-reports            — id, reporter_id, reported_user_id, message_snapshot, room_id, reason, status, created_at, reviewed_at
+reports            — id, reporter_id, reported_user_id, message_snapshot, room_id, reason, status, unverified, created_at, reviewed_at
 strikes            — id, user_id, reason, detail, created_at, expires_at (4h TTL, reset on new strike)
 chat_push_subscriptions — id, user_id, endpoint, p256dh, auth, created_at
+e2ee_device_keys   — user_id + device_id (PK), public_key, created_at, last_seen
 ```
 
 ### Auth
@@ -360,21 +364,23 @@ Two passwordless providers: Google OAuth and Email magic link (via Maileroo, 3,0
 
 Mandatory before entering chat: username, avatar photo, country. Optional display name. Profile prompt shown on first login.
 
-- **Username**: unique, `a-z 0-9 . _ -`, 2-20 chars, case-insensitive uniqueness via `username_lower`. Live availability check (400ms debounce). Shown in bubbles when no display name set.
+- **Username**: unique, case-insensitive alphanumerics (`a-z A-Z 0-9 . _ -`), 2-20 chars, stored lowercase in `username_lower` for uniqueness checks. Live availability check (400ms debounce). Shown in bubbles when no display name set.
 - **Display name**: optional, Latin Unicode letters + digits + spaces + `. _ -`, 2-30 chars. Replaces username in bubbles when set. Live validation.
 - **Avatar**: circular 128px pan+zoom editor. Click to select image (min 128x128), drag to pan, custom friction slider to zoom. Client crops to 128x128 via `createImageBitmap` with `resizeQuality: 'high'`. Stored as WebP blob in `avatars` table. Served via `/chat/api/avatar/{user_id}?v=timestamp` (version stamp for cache busting). Large images (>2000px) downscaled in browser for smooth editor, full-res used for final crop.
-- **Country**: searchable dropdown with 195 countries + local name aliases (Deutschland, Italia, Espana, etc.). Search matches from start of word only, exact match for 2-char codes, 3+ chars for aliases. Arrow key navigation, Enter to select, first result highlighted.
+- **Country**: searchable dropdown with 196 countries + local name aliases (Deutschland, Italia, Espana, etc.). Search matches from start of word only, exact match for 2-char codes, 3+ chars for aliases. Arrow key navigation, Enter to select, first result highlighted.
 - **User colors**: 12 vivid+pastel color pairs assigned randomly at registration (stored as `color_index`). 13th "self" color for own messages. Others see your assigned color.
 - **Name moderation**: OpenAI omni-moderation on submit (no word filter for names — too many false positives).
 - **Profile edit**: settings menu via avatar in header. Edit display name, avatar (full pan+zoom editor), country. Live preview bubble.
 
 ### Moderation Pipeline
 
-Every message passes through three layers before broadcast:
+Every message in a moderated (group) room passes through three layers before broadcast:
 
 1. **Word filter** (instant) — in-memory set from `chat/blocklist.txt`. Drug terms, slurs, spam. Character substitution normalization (@→a, 0→o, etc.).
 2. **OpenAI omni-moderation-latest** (free) — harassment, hate, violence, sexual content. Supports images (WebP data URI) and video (3 frames at 25/50/75% extracted by ffmpeg). Via raw httpx.
 3. **GPT-5.4-nano content detection** (Responses API, reasoning=none) — catches drugs, spam/scams, payment links, external platform links (Telegram, WhatsApp, Discord). Explicit safe list for festival conversation.
+
+**DMs are exempt**: DMs are created with `is_moderated=False` and are end-to-end encrypted, so the server cannot run these layers on their content. Moderation is replaced by user reporting — see "End-to-End Encryption (DMs)" below.
 
 Layers 2 and 3 run in parallel via `asyncio.gather`. Word filter blocks before AI calls (saves API round-trips).
 
@@ -384,11 +390,24 @@ Layers 2 and 3 run in parallel via `asyncio.gather`. Word filter blocks before A
 
 **Strike system**: 4-step escalation with expiring strikes (4h TTL, reset on new violation). 1st = warning, 2nd = warning, 3rd = 30-min mute, 4th = permanent ban. Lifetime mute counter: 3 total mutes across the event = permanent ban (prevents cycling). Same escalation for all content types including drugs. Bans stored by provider_id + device fingerprint. `secure_delete=ON` zeros deleted data on disk.
 
+### End-to-End Encryption (DMs)
+
+DMs — and only DMs — are end-to-end encrypted; group rooms stay unencrypted and moderated as above.
+
+- **v2 multi-device design**: each browser profile is a device — a 32-hex `device_id` + a P-256 ECDH key pair generated and kept in localStorage. Content is encrypted once per message with a random per-message key, then that key is wrapped separately for every device of BOTH participants, including the sender's own other devices.
+- **Envelope** (stored in the existing `content` TEXT field): `{e2ee, v: 2, sd: <sender_device_id>, ct: <encrypted content>, keys: {<device_id>: <wrapped key>, ...}}`.
+- **Server storage**: `e2ee_device_keys` table (capped at 6 devices/user, pruned after 7 days of inactivity). `PUT`/`GET /chat/api/keys` register/fetch device keys with device_id + JWK validation. `key_rotated` WS event notifies DM peers per room plus a self-notification (room_id null) when a device re-keys.
+- **Server cannot read DM content**: moderation is skipped, push previews are generic ("Sent you a message"), reply snippets are blanked server-side and rebuilt client-side, link previews are skipped. Reports carry reporter-provided plaintext, flagged `unverified`.
+- **Fallback**: keyless peers (no registered devices) fall back to plaintext, with lock-icon/banner UI suppressed accordingly.
+- **No history sync**: a newly registered device cannot decrypt messages sent before it existed; the 60-minute message TTL bounds how long that gap is visible.
+- **Specs**: `docs/e2ee-dev.md` (v1 design + server adaptations) and `docs/e2ee-multidevice.md` (v2 multi-device design, current).
+- **Verification**: `python tests/e2ee_browser_check.py` — 21 checks across 5 browser contexts, isolated server + scratch DB via `CHAT_DB_PATH`.
+
 ### Room Properties
 
 Rooms have configurable properties set via the admin page:
 - `description` — what the room is for
-- `ttl_minutes` — per-room message TTL, defaults from `chat_settings`: DMs 24h (`dm_ttl_minutes: 1440`), rooms 6h (`room_ttl_minutes: 360`), meetups 1h after meetup time (`meetup_ttl_minutes: 60`). Meetup expiry destroys messages + room + meetup record. DM rooms persist after messages expire (conversation thread stays).
+- `ttl_minutes` — per-room message TTL, defaults from `chat_settings`: DMs 24h (`dm_ttl_minutes: 1440`), rooms 24h (`room_ttl_minutes: 1440`; code falls back to 360 only if the settings row is missing), meetups 1h after meetup time (`meetup_ttl_minutes: 60`). Meetup expiry destroys messages + room + meetup record. DM rooms persist after messages expire (conversation thread stays).
 - `is_moderated` — toggles word filter + AI moderation for the room
 - `is_read_only` — only admins can post
 - `auto_join` — new users automatically become members on WS connect (always on for main room)
@@ -412,6 +431,8 @@ Mute/delete user → all their messages deleted from DB + `messages_expired` bro
 
 Dark-themed SPA at `/chat/admin` (shortcut) or `/chat/api/admin`. Auth via chat session cookie (matching `CHAT_ADMIN_EMAILS`) or `X-Admin-Token` header. Tabs: Rooms (create/edit/delete/reorder/set main/auto-join, manual/auto sort toggle), Users (search, strike/mute/ban/unban/delete, view history, status/warnings columns), Reports (ban/strike/dismiss), Banned (unban), Logs (moderation timeline with search). Stats footer with auto-refresh. Room sort modes: Auto (main first, bell-on by activity, bell-off by activity) or Manual (by position, drag-to-reorder).
 
+Reports from E2EE DMs carry reporter-provided plaintext the server never independently verified — flagged `unverified` in the `reports` table, shown with a warning banner in the admin UI alongside the reporter/reported user history.
+
 ### Chat UI
 
 Main room auto-opens on login. Path-based routing (`/chat`, `/chat/r/{id}`, `/chat/d/{user}`, `/chat/m/{id}`, `/chat/msg/{id}`). Single HTML file (`server/chat/chat.html`).
@@ -432,6 +453,7 @@ Main room auto-opens on login. Path-based routing (`/chat`, `/chat/r/{id}`, `/ch
 - **Message permalinks**: `/chat/msg/{id}` resolves to room, opens it, scrolls to and highlights message. Graceful fallback for deleted messages.
 - **Upload security** (OWASP File Upload Cheat Sheet): all images re-processed through pyvips (strips metadata/payloads). Videos validated in temp file before moving to served directory. Uploads served via secure endpoint with filename allowlist (`[a-f0-9]{32}.(webp|mp4)`), `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'`. No directory listing. Moderation intermediate files (`_mod*.webp`) not served. Upload rate limit: 10/min per user. Moderation files deleted after use; startup sweeps `chat/tmp/`.
 - **Unread badges**: red pill badges on room items and tab headers. `room_memberships` table tracks joined rooms + `last_read_at`. Server sends `badge_counts` on connect and `badge_update` on new messages for offline members. `mark_read` clears on room open. Duplicate message detection (2-min window, 5+ chars).
+- **DM list**: `GET /chat/api/dms` returns `other_avatar_url`, `other_color_index`, `other_country`, `other_has_key` per conversation. The list live-refreshes when a `badge_update` arrives for a DM room not currently open.
 - **User menu**: action sheet (Send Message, Block, Cancel). Block hides all messages from that user client-side (filtered in renderMessages + appendMessage). Blocked users dimmed in member list (40% opacity, sorted to bottom). Unblock via user menu or Settings → Blocked Users list. Blocked user never knows they're blocked.
 - **Message context menu**: right-click (desktop) or long-press (mobile) → Reply, Report, Cancel. Report submits message snapshot to admin. Report & Block also blocks the user immediately.
 - **Reports**: stored with human-readable snapshot (`[timestamp] Name: text`), survive message TTL. Admin actions: ban, strike, or dismiss.
@@ -442,15 +464,17 @@ Main room auto-opens on login. Path-based routing (`/chat`, `/chat/r/{id}`, `/ch
 - **Page titles**: `Line-up · ST26`, `Timetable · ST26`, `Chat · ST26` — short name from `events.short_name` in lineup DB, loaded at server startup
 - **Mobile navigation**: chat icon (dialog bubbles) on lineup/timetable header left, calendar icon on chat header left. Both `position: absolute; left: 4px`, matching hamburger at `right: 4px`. SVG viewBox scaled to match hamburger visual weight.
 - **Toast**: word-based duration (1.5s + 300ms/word, min 4s), balanced text, max 360px
-- **Debug**: 181 `dbg()` calls with timecodes across all functions, `verify()` checks DOM state
+- **Debug**: 236 `dbg()` calls with timecodes across all functions, `verify()` checks DOM state
 
 ### Chat Tests
 
-132 tests total: `python -m pytest tests/ -v`
-- `test_chat_db.py` (45) — all CRUD, cascade deletes, purge, wipe
+195 tests total: `python -m pytest tests/ -v`
+- `test_chat_db.py` (59) — all CRUD, cascade deletes, purge, wipe
 - `test_chat_moderation.py` (39) — word filter, AI mocks, strike escalation (expiry, reset, mute cycling)
-- `test_chat_ws.py` (17) — WebSocket rooms, messaging, presence, moderation flow
-- `test_chat_api.py` (31) — REST endpoints, auth, rooms, meetups, DMs, admin
+- `test_chat_ws.py` (42) — WebSocket rooms, messaging, presence, moderation flow
+- `test_chat_api.py` (55) — REST endpoints, auth, rooms, meetups, DMs, admin
+
+Two suites run outside pytest: `test_notifications.py` (54 tests — push debounce, payload, badge, clearing; requires Playwright infra, run separately) and `tests/e2ee_browser_check.py` (standalone Playwright verification, 21 checks — see "End-to-End Encryption (DMs)" below).
 
 ### Stress Test
 
