@@ -80,12 +80,16 @@ if [ "$DRY_RUN" = true ]; then
     echo "  [DRY RUN] Would sync $NVARS vars to VPS .env"
 else
     # Atomic write: temp file + size check + mv, so a dropped connection
-    # can never leave a truncated .env in place
+    # can never leave a truncated .env in place. Back up the existing .env
+    # before overwriting (rollback point), and chmod 600 the result so
+    # secrets aren't group/world-readable.
     ENV_BYTES=$(printf "%b" "$PROD_ENV" | wc -c | tr -d ' ')
     printf "%b" "$PROD_ENV" | ssh "$VPS" \
         "cat > $VPS_DIR/server/.env.tmp \
          && [ \$(wc -c < $VPS_DIR/server/.env.tmp) -eq $ENV_BYTES ] \
-         && mv $VPS_DIR/server/.env.tmp $VPS_DIR/server/.env"
+         && ([ ! -f $VPS_DIR/server/.env ] || cp $VPS_DIR/server/.env $VPS_DIR/server/.env.bak.$TIMESTAMP) \
+         && mv $VPS_DIR/server/.env.tmp $VPS_DIR/server/.env \
+         && chmod 600 $VPS_DIR/server/.env"
     echo "  Synced $NVARS vars to VPS"
 fi
 
