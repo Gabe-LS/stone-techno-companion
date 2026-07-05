@@ -52,6 +52,31 @@ SESSION_COOKIE_MAX_AGE = 7776000
 logger = logging.getLogger(__name__)
 
 
+class _RedactTokensFilter(logging.Filter):
+    # Keep access logs but strip secret tokens that ride in the request path:
+    # the session token in the WebSocket URL and the magic-link token in the
+    # verify URL. Without this they land in uvicorn's access log in plaintext.
+    _PATTERNS = [
+        re.compile(r"(/ws/chat/)[^/\s?]+"),
+        re.compile(r"(/chat/v/)[^/\s?]+"),
+        re.compile(r"([?&](?:token|code|id_token)=)[^&\s]+"),
+    ]
+
+    def _redact(self, value):
+        if isinstance(value, str):
+            for pat in self._PATTERNS:
+                value = pat.sub(r"\1[REDACTED]", value)
+        return value
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.args:
+            record.args = tuple(self._redact(a) for a in record.args)
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_RedactTokensFilter())
+
+
 def _set_session_cookie(response: Response, session_id: str) -> None:
     response.set_cookie(
         key=SESSION_COOKIE,
