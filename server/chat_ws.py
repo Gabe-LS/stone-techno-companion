@@ -952,6 +952,15 @@ async def _moderate_and_broadcast(
                 )
             return
 
+        # Moderation passed: mark the message approved so room history serves
+        # it (moderated messages start 'pending'; unmoderated are already
+        # 'approved', so this is a no-op for them).
+        db.execute(
+            "UPDATE messages SET moderation_status = 'approved' WHERE id = ?",
+            (msg["id"],),
+        )
+        db.commit()
+
         # Re-fetch the sender's identity so a profile edit made after this
         # connection's handshake is reflected in the live broadcast, not the
         # frozen handshake values.
@@ -1484,6 +1493,13 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                         )
 
                 room_ttl = send_room["ttl_minutes"]
+                # Moderated messages are held 'pending' so room history never
+                # serves them before moderation clears them (and a
+                # moderation task killed mid-flight leaves them unservable
+                # rather than silently un-moderated).
+                _mod_status = (
+                    "pending" if bool(send_room["is_moderated"]) else "approved"
+                )
                 msg = create_message(
                     db,
                     room_id,
@@ -1493,6 +1509,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     ttl_minutes=room_ttl,
                     reply_to_id=reply_to_id,
                     media_url=_media_url,
+                    moderation_status=_mod_status,
                 )
 
                 try:

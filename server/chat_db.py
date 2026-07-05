@@ -127,7 +127,8 @@ def init_chat_db(db: sqlite3.Connection) -> None:
             reply_to_id  TEXT REFERENCES messages(id) ON DELETE SET NULL,
             media_url    TEXT,
             expires_at   TEXT NOT NULL,
-            created_at   TEXT NOT NULL
+            created_at   TEXT NOT NULL,
+            moderation_status TEXT NOT NULL DEFAULT 'approved'
         );
         CREATE INDEX IF NOT EXISTS idx_messages_expires ON messages(expires_at);
         CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room_id, created_at);
@@ -257,6 +258,12 @@ def _migrate_chat_db(db: sqlite3.Connection) -> None:
         db.commit()
     if "media_url" not in cols:
         db.execute("ALTER TABLE messages ADD COLUMN media_url TEXT")
+        db.commit()
+    if "moderation_status" not in cols:
+        db.execute(
+            "ALTER TABLE messages ADD COLUMN moderation_status "
+            "TEXT NOT NULL DEFAULT 'approved'"
+        )
         db.commit()
 
     db.execute(
@@ -837,6 +844,7 @@ def create_message(
     ttl_minutes: int | None = DEFAULT_MESSAGE_TTL_MIN,
     reply_to_id: str | None = None,
     media_url: str | None = None,
+    moderation_status: str = "approved",
 ) -> dict:
     msg_id = _uuid()
     now = _now()
@@ -846,8 +854,8 @@ def create_message(
         else "9999-12-31T23:59:59+00:00"
     )
     db.execute(
-        "INSERT INTO messages (id, room_id, user_id, type, content, reply_to_id, media_url, expires_at, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO messages (id, room_id, user_id, type, content, reply_to_id, media_url, expires_at, created_at, moderation_status) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             msg_id,
             room_id,
@@ -858,6 +866,7 @@ def create_message(
             media_url,
             expires,
             now,
+            moderation_status,
         ),
     )
     db.execute("UPDATE rooms SET last_message_at = ? WHERE id = ?", (now, room_id))
@@ -887,6 +896,7 @@ def get_room_messages(
         "LEFT JOIN messages rm ON rm.id = m.reply_to_id "
         "LEFT JOIN users ru ON ru.id = rm.user_id "
         "WHERE m.room_id = ? AND m.expires_at > ? "
+        "AND m.moderation_status != 'pending' "
         "ORDER BY m.created_at DESC LIMIT ?",
         (room_id, _now(), limit),
     ).fetchall()
