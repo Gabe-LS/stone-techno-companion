@@ -1311,7 +1311,8 @@ async function handleWSEvent(data) {
       break;
     }
     case 'message_acked': {
-      const msgs = messagesByRoom[currentRoom] || [];
+      const _ackRoom = data.room_id || currentRoom;
+      const msgs = messagesByRoom[_ackRoom] || [];
       const idx = msgs.findIndex(m => m.temp_id === data.temp_id);
       if (idx !== -1) {
         msgs[idx].id = data.id;
@@ -1320,10 +1321,10 @@ async function handleWSEvent(data) {
         const el = document.querySelector(`[data-msg-id="${data.temp_id}"]`);
         if (el) { el.setAttribute('data-msg-id', data.id); el.classList.remove('msg-pending'); }
         verify('message_acked', el, 'pending→confirmed temp_id=' + data.temp_id + ' → id=' + data.id);
-        const room = rooms.find(r => r.id === currentRoom);
+        const room = rooms.find(r => r.id === _ackRoom);
         if (room && !room.is_member) {
           room.is_member = true;
-          const bell = document.querySelector(`.room-item[data-room-id="${currentRoom}"] .room-bell`);
+          const bell = document.querySelector(`.room-item[data-room-id="${_ackRoom}"] .room-bell`);
           if (bell) { bell.classList.add('active'); bell.querySelector('svg')?.setAttribute('fill', 'currentColor'); }
         }
       } else {
@@ -2543,6 +2544,12 @@ async function sendChatMessage(type, content, replyToId) {
 
   const payload = { room_id: roomId, type, content: outgoingContent, temp_id: tempId };
   if (replyToId) payload.reply_to_id = replyToId;
+  if (type === 'image' || type === 'video') {
+    try {
+      const _mediaUrl = JSON.parse(content).url;
+      if (_mediaUrl) payload.media_url = _mediaUrl;
+    } catch (e) {}
+  }
   wsSend('send_message', payload);
   dbg('sendChatMessage:', type, 'temp_id=' + tempId);
   setTimeout(() => {
@@ -3852,8 +3859,9 @@ async function _subscribePush() {
     const reg = await navigator.serviceWorker.ready;
     dbg('[NOTIFY] sw ready');
     let sub = await reg.pushManager.getSubscription();
-    if (sub) await sub.unsubscribe();
-    sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes });
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes });
+    }
     dbg('[NOTIFY] push manager subscribed');
     const subJson = sub.toJSON();
     const postRes = await fetch(API + '/push/subscribe', {
@@ -3883,14 +3891,35 @@ async function _repairPushSubscription() {
   // notifications (permission stays granted) would be silently re-subscribed
   // on the next load.
   if (storageGet('push_enabled') !== '1') return;
-  if (Notification.permission !== 'granted' || _pushSubscribed) return;
-  dbg('[NOTIFY] repairing push subscription: permission granted, no active subscription');
-  const subscribed = await _subscribePush();
-  if (subscribed) {
-    _pushSubscribed = true;
-    dbg('[NOTIFY] push subscription repaired');
-  } else {
-    dbg('[NOTIFY] push subscription repair failed');
+  if (Notification.permission !== 'granted') return;
+  if (!_pushSubscribed) {
+    dbg('[NOTIFY] repairing push subscription: permission granted, no active subscription');
+    const subscribed = await _subscribePush();
+    if (subscribed) {
+      _pushSubscribed = true;
+      dbg('[NOTIFY] push subscription repaired');
+    } else {
+      dbg('[NOTIFY] push subscription repair failed');
+    }
+    return;
+  }
+  // Subscription already exists -- resync its endpoint with the chat backend,
+  // since the lineup page's enable-flow shares the same root-scope subscription
+  // and may have rotated it without the chat server ever finding out.
+  try {
+    if (!('serviceWorker' in navigator && 'PushManager' in window)) return;
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (!sub) return;
+    const subJson = sub.toJSON();
+    await fetch(API + '/push/subscribe', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: subJson.endpoint, keys: subJson.keys }),
+    });
+    dbg('[NOTIFY] push subscription resynced with chat backend');
+  } catch (e) {
+    dbg('[NOTIFY] push resync failed', e);
   }
 }
 

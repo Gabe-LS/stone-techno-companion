@@ -104,7 +104,8 @@ def init_chat_db(db: sqlite3.Connection) -> None:
             allows_media  INTEGER NOT NULL DEFAULT 1,
             ttl_minutes   INTEGER DEFAULT 60,
             position      INTEGER NOT NULL DEFAULT 0,
-            created_at    TEXT NOT NULL
+            created_at    TEXT NOT NULL,
+            last_message_at TEXT
         );
 
         CREATE TABLE IF NOT EXISTS room_memberships (
@@ -124,6 +125,7 @@ def init_chat_db(db: sqlite3.Connection) -> None:
             content      TEXT NOT NULL,
             link_preview TEXT,
             reply_to_id  TEXT REFERENCES messages(id) ON DELETE SET NULL,
+            media_url    TEXT,
             expires_at   TEXT NOT NULL,
             created_at   TEXT NOT NULL
         );
@@ -253,6 +255,9 @@ def _migrate_chat_db(db: sqlite3.Connection) -> None:
     if "link_preview" not in cols:
         db.execute("ALTER TABLE messages ADD COLUMN link_preview TEXT")
         db.commit()
+    if "media_url" not in cols:
+        db.execute("ALTER TABLE messages ADD COLUMN media_url TEXT")
+        db.commit()
 
     db.execute(
         "INSERT OR IGNORE INTO user_providers (user_id, provider, provider_id, created_at) "
@@ -286,6 +291,16 @@ def _migrate_chat_db(db: sqlite3.Connection) -> None:
         if col not in room_cols:
             db.execute(f"ALTER TABLE rooms ADD COLUMN {col} {defn}")
     db.commit()
+
+    if "last_message_at" not in room_cols:
+        db.execute("ALTER TABLE rooms ADD COLUMN last_message_at TEXT")
+        # backfill so existing DMs with history are not wrongly purged
+        db.execute(
+            "UPDATE rooms SET last_message_at = ("
+            "  SELECT MAX(created_at) FROM messages WHERE messages.room_id = rooms.id"
+            ") WHERE EXISTS (SELECT 1 FROM messages WHERE messages.room_id = rooms.id)"
+        )
+        db.commit()
 
     report_cols = {r[1] for r in db.execute("PRAGMA table_info(reports)").fetchall()}
     if "unverified" not in report_cols:
@@ -753,6 +768,7 @@ def create_message(
     content: str,
     ttl_minutes: int | None = DEFAULT_MESSAGE_TTL_MIN,
     reply_to_id: str | None = None,
+    media_url: str | None = None,
 ) -> dict:
     msg_id = _uuid()
     now = _now()
@@ -762,10 +778,21 @@ def create_message(
         else "9999-12-31T23:59:59+00:00"
     )
     db.execute(
-        "INSERT INTO messages (id, room_id, user_id, type, content, reply_to_id, expires_at, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (msg_id, room_id, user_id, msg_type, content, reply_to_id, expires, now),
+        "INSERT INTO messages (id, room_id, user_id, type, content, reply_to_id, media_url, expires_at, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            msg_id,
+            room_id,
+            user_id,
+            msg_type,
+            content,
+            reply_to_id,
+            media_url,
+            expires,
+            now,
+        ),
     )
+    db.execute("UPDATE rooms SET last_message_at = ? WHERE id = ?", (now, room_id))
     db.commit()
     return {
         "id": msg_id,
@@ -774,6 +801,7 @@ def create_message(
         "type": msg_type,
         "content": content,
         "reply_to_id": reply_to_id,
+        "media_url": media_url,
         "expires_at": expires,
         "created_at": now,
     }

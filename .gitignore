@@ -17,6 +17,19 @@ lineup.db
 # Server runtime data (databases, VAPID keys)
 server/data/
 
+# Chat runtime data (ephemeral DB + user uploads — must never be committed)
+server/chat.db
+server/chat.db-shm
+server/chat.db-wal
+server/chat/uploads/
+server/chat/tmp/
+server/static/bios.json
+server/static/index.html
+server/static/photos/
+server/static/timetable.json
+lineup.db.bak
+lineup.db.bak-shm
+
 # Deploy backups (downloaded from VPS)
 backups/
 

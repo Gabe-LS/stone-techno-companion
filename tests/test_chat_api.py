@@ -170,12 +170,29 @@ class TestAuth:
 
     def test_email_start_valid(self, client, monkeypatch):
         monkeypatch.setattr("chat_api.DISPOSABLE_DOMAINS", set())
+        monkeypatch.setenv("MAILEROO_API_KEY", "test-key")
+        monkeypatch.setattr(
+            "maileroo.MailerooClient.send_basic_email",
+            lambda self, payload: None,
+        )
         r = client.post(
             "/chat/api/login",
             json={"email": "test@gmail.com"},
         )
         assert r.status_code == 200
         assert r.json()["sent"] is True
+
+    def test_email_start_no_delivery_config(self, client, monkeypatch):
+        # Magic-link must fail loudly (not report success) when email delivery
+        # is unconfigured, so a missing MAILEROO_API_KEY in production can't
+        # silently take out the only email auth path.
+        monkeypatch.setattr("chat_api.DISPOSABLE_DOMAINS", set())
+        monkeypatch.delenv("MAILEROO_API_KEY", raising=False)
+        r = client.post(
+            "/chat/api/login",
+            json={"email": "test@gmail.com"},
+        )
+        assert r.status_code == 500
 
     def test_banned_user_rejected(self, client):
         user = create_user(_test_db, "email", "hash-123", "Banned")

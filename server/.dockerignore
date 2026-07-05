@@ -1,0 +1,9 @@
+chat/uploads/
+chat/tmp/
+data/
+*.env
+.env
+*.pem
+__pycache__/
+*.pyc
+.DS_Store

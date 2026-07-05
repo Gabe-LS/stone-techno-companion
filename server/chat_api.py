@@ -115,8 +115,8 @@ def _load_site_short() -> None:
         if row and row["short_name"]:
             _SITE_SHORT = row["short_name"]
         db.close()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("site_short lookup failed (lineup.db not reachable): %s", e)
 
 
 _ADMIN_EMAIL_HASHES: set[str] = set()
@@ -285,7 +285,10 @@ async def auth_google(request: Request, response: Response):
     db = _get_db()
     try:
         user = find_user_by_provider(db, "google", provider_id)
-        if not user and email:
+        email_verified = (
+            info.get("email_verified") is True or info.get("email_verified") == "true"
+        )
+        if not user and email and email_verified:
             email_hash = hash_email(email)
             user = find_user_by_provider(db, "email", email_hash)
             if user:
@@ -346,7 +349,10 @@ async def auth_google_code(request: Request, response: Response):
     db = _get_db()
     try:
         user = find_user_by_provider(db, "google", provider_id)
-        if not user and email:
+        email_verified = (
+            info.get("email_verified") is True or info.get("email_verified") == "true"
+        )
+        if not user and email and email_verified:
             email_hash = hash_email(email)
             user = find_user_by_provider(db, "email", email_hash)
             if user:
@@ -435,7 +441,8 @@ async def auth_email_start(request: Request):
             logger.error("Failed to send email: %s", e)
             raise HTTPException(500, "Failed to send email")
     else:
-        logger.warning("MAILEROO_API_KEY not set — email not sent")
+        logger.error("MAILEROO_API_KEY not set — cannot send magic link")
+        raise HTTPException(500, "Email delivery is not configured")
 
     return {"sent": True}
 
@@ -1122,6 +1129,7 @@ async def unblock_user_endpoint(user_id: str, request: Request):
 async def upload_avatar(request: Request, file: UploadFile = File(...)):
     user, db = _get_user_from_cookie(request)
     try:
+        _check_upload_rate(user["id"])
         if not file.content_type or not file.content_type.startswith("image/"):
             raise HTTPException(400, "Only image files allowed")
 
@@ -1136,6 +1144,24 @@ async def upload_avatar(request: Request, file: UploadFile = File(...)):
                 img = pyvips.Image.new_from_buffer(data, "")
             except pyvips.Error:
                 img = pyvips.Image.new_from_buffer(data, "", unlimited=True)
+            loader = ""
+            try:
+                loader = img.get("vips-loader")
+            except Exception:
+                loader = ""
+            if loader not in (
+                "jpegload",
+                "pngload",
+                "webpload",
+                "heifload",
+                "gifload",
+                "jpegload_buffer",
+                "pngload_buffer",
+                "webpload_buffer",
+                "heifload_buffer",
+                "gifload_buffer",
+            ):
+                raise HTTPException(400, "Unsupported image format")
             if img.width * img.height > 10_000_000:
                 raise HTTPException(400, "Image too large")
             data = img.webpsave_buffer(Q=80)
@@ -1143,6 +1169,13 @@ async def upload_avatar(request: Request, file: UploadFile = File(...)):
             raise
         except Exception:
             raise HTTPException(400, "Invalid image file")
+
+        from chat_moderation import check_openai_moderation
+
+        data_uri = "data:image/webp;base64," + base64.b64encode(data).decode()
+        mod = await check_openai_moderation("", data_uri)
+        if mod is not None:
+            raise HTTPException(400, "Image rejected by moderation")
 
         import time
 
@@ -1217,6 +1250,24 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
         except pyvips.Error:
             img = pyvips.Image.new_from_buffer(data, "", unlimited=True)
         t_decode = time.monotonic()
+        loader = ""
+        try:
+            loader = img.get("vips-loader")
+        except Exception:
+            loader = ""
+        if loader not in (
+            "jpegload",
+            "pngload",
+            "webpload",
+            "heifload",
+            "gifload",
+            "jpegload_buffer",
+            "pngload_buffer",
+            "webpload_buffer",
+            "heifload_buffer",
+            "gifload_buffer",
+        ):
+            raise ValueError("Unsupported image format")
         w, h = img.width, img.height
         if w * h > 40_000_000:
             raise ValueError("Image too large")
@@ -1695,14 +1746,42 @@ async def admin_ban(user_id: str, request: Request):
         user = get_user(db, user_id)
         if not user:
             raise HTTPException(404, "User not found")
-        db_ban_user(
-            db,
-            user_id,
-            user["provider"],
-            user["provider_id"],
-            reason,
-            user["device_fingerprint"],
-        )
+        providers = db.execute(
+            "SELECT provider, provider_id FROM user_providers WHERE user_id = ?",
+            (user_id,),
+        ).fetchall()
+        seen = set()
+        for p in providers:
+            key = (p["provider"], p["provider_id"])
+            if key in seen:
+                continue
+            seen.add(key)
+            db_ban_user(
+                db,
+                user_id,
+                p["provider"],
+                p["provider_id"],
+                reason,
+                user["device_fingerprint"],
+            )
+        # ensure the base users-row identity is covered too
+        if (user["provider"], user["provider_id"]) not in seen:
+            db_ban_user(
+                db,
+                user_id,
+                user["provider"],
+                user["provider_id"],
+                reason,
+                user["device_fingerprint"],
+            )
+
+        from chat_ws import manager
+
+        for conn_id, ws in list(manager.user_conns.get(user_id, {}).items()):
+            try:
+                asyncio.create_task(ws.close(code=4003, reason="Account banned"))
+            except Exception:
+                pass
         return {"ok": True}
     finally:
         db.close()

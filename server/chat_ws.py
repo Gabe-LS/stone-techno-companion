@@ -705,13 +705,15 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-def _build_reply_snippet(db, reply_to_id: str | None) -> dict | None:
+def _build_reply_snippet(
+    db, reply_to_id: str | None, room_id: str | None = None
+) -> dict | None:
     if not reply_to_id:
         return None
     orig = db.execute(
         "SELECT m.content, m.type, u.display_name FROM messages m "
-        "JOIN users u ON u.id = m.user_id WHERE m.id = ?",
-        (reply_to_id,),
+        "JOIN users u ON u.id = m.user_id WHERE m.id = ? AND (? IS NULL OR m.room_id = ?)",
+        (reply_to_id, room_id, room_id),
     ).fetchone()
     if not orig:
         return None
@@ -783,7 +785,7 @@ async def _moderate_and_broadcast(
     ws,
     is_moderated=True,
 ):
-    logger.info("[MOD] text=%r is_moderated=%s", text[:50], is_moderated)
+    logger.info("[MOD] len=%d is_moderated=%s", len(text or ""), is_moderated)
     db = get_chat_db()
     try:
         if is_moderated:
@@ -793,6 +795,20 @@ async def _moderate_and_broadcast(
             mod_result = {"allowed": True}
 
         if not mod_result["allowed"]:
+            if msg_type in ("image", "video"):
+                try:
+                    _u = msg.get("media_url") or json.loads(content).get("url", "")
+                    if _u:
+                        _fn = _u.rsplit("/", 1)[-1]
+                        _stem = _fn.rsplit(".", 1)[0]
+                        (_UPLOADS_DIR / _fn).unlink(missing_ok=True)
+                        (_UPLOADS_DIR / f"{_stem}_mod.webp").unlink(missing_ok=True)
+                        for _i in range(3):
+                            (_UPLOADS_DIR / f"{_stem}_mod{_i}.webp").unlink(
+                                missing_ok=True
+                            )
+                except Exception:
+                    pass
             db.execute("DELETE FROM messages WHERE id = ?", (msg["id"],))
             db.commit()
             await mgr.send_to_user(
@@ -856,7 +872,7 @@ async def _moderate_and_broadcast(
             "content": content,
             "created_at": msg["created_at"],
         }
-        reply_snippet = _build_reply_snippet(db, reply_to_id)
+        reply_snippet = _build_reply_snippet(db, reply_to_id, room_id)
         if reply_snippet:
             event_data["reply_to"] = reply_snippet
         await mgr.broadcast_to_room(room_id, event_data, exclude_conn=conn_id)
@@ -1190,6 +1206,19 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 if not room_id or not content:
                     continue
 
+                if not isinstance(content, str) or not isinstance(room_id, str):
+                    continue
+                if reply_to_id is not None:
+                    if not isinstance(reply_to_id, str):
+                        reply_to_id = None
+                    else:
+                        _rt = db.execute(
+                            "SELECT 1 FROM messages WHERE id = ? AND room_id = ?",
+                            (reply_to_id, room_id),
+                        ).fetchone()
+                        if not _rt:
+                            reply_to_id = None
+
                 if msg_type not in SENDABLE_MSG_TYPES:
                     continue
 
@@ -1329,6 +1358,17 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                         )
                         continue
 
+                _media_url = None
+                if msg_type in ("image", "video"):
+                    _explicit = data.get("media_url")
+                    if isinstance(_explicit, str) and _explicit:
+                        _media_url = _explicit
+                    else:
+                        try:
+                            _media_url = json.loads(content).get("url") or None
+                        except Exception:
+                            _media_url = None
+
                 room_ttl = send_room["ttl_minutes"]
                 msg = create_message(
                     db,
@@ -1338,6 +1378,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     content,
                     ttl_minutes=room_ttl,
                     reply_to_id=reply_to_id,
+                    media_url=_media_url,
                 )
 
                 try:
@@ -1346,6 +1387,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                             {
                                 "event": "message_acked",
                                 "temp_id": temp_id,
+                                "room_id": room_id,
                                 "id": msg["id"],
                                 "created_at": msg["created_at"],
                             }
@@ -1572,6 +1614,12 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                             (msg_row["room_id"], user_id),
                         ).fetchone():
                             continue
+                    if r_room and r_room["type"] == "meetup":
+                        if not db.execute(
+                            "SELECT 1 FROM meetup_attendees WHERE meetup_id = ? AND user_id = ?",
+                            (msg_row["room_id"], user_id),
+                        ).fetchone():
+                            continue
                     add_reaction(db, message_id, user_id, emoji)
                     reactions = get_message_reactions(db, message_id)
                     await manager.broadcast_to_room(
@@ -1599,6 +1647,12 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                             (msg_row["room_id"], user_id),
                         ).fetchone():
                             continue
+                    if r_room and r_room["type"] == "meetup":
+                        if not db.execute(
+                            "SELECT 1 FROM meetup_attendees WHERE meetup_id = ? AND user_id = ?",
+                            (msg_row["room_id"], user_id),
+                        ).fetchone():
+                            continue
                     remove_reaction(db, message_id, user_id, emoji)
                     reactions = get_message_reactions(db, message_id)
                     await manager.broadcast_to_room(
@@ -1615,7 +1669,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 if not message_id:
                     continue
                 msg_row = db.execute(
-                    "SELECT id, room_id, user_id, type, content, created_at FROM messages WHERE id = ?",
+                    "SELECT id, room_id, user_id, type, content, media_url, created_at FROM messages WHERE id = ?",
                     (message_id,),
                 ).fetchone()
                 if msg_row and msg_row["user_id"] == user_id:
@@ -1628,7 +1682,14 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     room_id_del = msg_row["room_id"]
                     if msg_row["type"] in ("image", "video"):
                         try:
-                            url = json.loads(msg_row["content"]).get("url", "")
+                            url = (
+                                msg_row["media_url"]
+                                if (
+                                    "media_url" in msg_row.keys()
+                                    and msg_row["media_url"]
+                                )
+                                else json.loads(msg_row["content"]).get("url", "")
+                            )
                             filename = url.rsplit("/", 1)[-1]
                             stem = filename.rsplit(".", 1)[0]
                             (_UPLOADS_DIR / filename).unlink(missing_ok=True)
@@ -1664,6 +1725,12 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     if report_room and report_room["type"] == "dm":
                         if not db.execute(
                             "SELECT 1 FROM dm_participants WHERE room_id = ? AND user_id = ?",
+                            (msg_row["room_id"], user_id),
+                        ).fetchone():
+                            continue
+                    if report_room and report_room["type"] == "meetup":
+                        if not db.execute(
+                            "SELECT 1 FROM meetup_attendees WHERE meetup_id = ? AND user_id = ?",
                             (msg_row["room_id"], user_id),
                         ).fetchone():
                             continue
@@ -1774,7 +1841,7 @@ async def purge_loop() -> None:
 
             empty_dms = db.execute(
                 "SELECT r.id FROM rooms r "
-                "WHERE r.type = 'dm' AND NOT EXISTS ("
+                "WHERE r.type = 'dm' AND r.last_message_at IS NULL AND NOT EXISTS ("
                 "  SELECT 1 FROM messages m WHERE m.room_id = r.id"
                 ")"
             ).fetchall()

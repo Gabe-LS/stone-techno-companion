@@ -40,6 +40,7 @@ RATE_LIMITS = {
     "pick": (600, 3600),
     "schedule": (600, 3600),
     "load": (600, 3600),
+    "sync_pin": (12, 3600),
 }
 
 _sync_pins: dict[str, tuple[str, float]] = {}
@@ -332,64 +333,73 @@ async def _push_notification_scheduler() -> None:
 
                 slot_map = dict(due_slots)
                 for session_id, slot_id in to_send:
-                    subs = db.execute(
-                        "SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE session_id = ?",
-                        (session_id,),
-                    ).fetchall()
-                    if not subs:
-                        continue
+                    try:
+                        subs = db.execute(
+                            "SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE session_id = ?",
+                            (session_id,),
+                        ).fetchall()
+                        if not subs:
+                            continue
 
-                    slot = slot_map[slot_id]
-                    artists = " b2b ".join(slot["artists"])
-                    payload = json.dumps(
-                        {
-                            "title": f"{artists} starts in 10 min",
-                            "body": f"{slot['floor']}, {slot['start_hhmm']}–{slot['end_hhmm']}",
-                            "tag": f"stc-{slot_id}",
-                            "url": "/?view=timetable",
-                        }
-                    )
-                    vapid_claims = {
-                        "sub": os.environ.get(
-                            "VAPID_CLAIMS_EMAIL", "mailto:noreply@example.com"
+                        slot = slot_map[slot_id]
+                        artists = " b2b ".join(slot["artists"])
+                        payload = json.dumps(
+                            {
+                                "title": f"{artists} starts in 10 min",
+                                "body": f"{slot['floor']}, {slot['start_hhmm']}–{slot['end_hhmm']}",
+                                "url": "/?view=timetable",
+                            }
                         )
-                    }
-                    any_sent = False
-                    for endpoint, p256dh, auth in subs:
-                        try:
-                            await asyncio.to_thread(
-                                webpush,
-                                subscription_info={
-                                    "endpoint": endpoint,
-                                    "keys": {"p256dh": p256dh, "auth": auth},
-                                },
-                                data=payload,
-                                vapid_private_key=os.environ["VAPID_PRIVATE_KEY"],
-                                # Fresh copy per endpoint: pywebpush mutates
-                                # the claims dict (sets aud from the first
-                                # endpoint), which breaks pushes to any other
-                                # push service in the same loop.
-                                vapid_claims=dict(vapid_claims),
+                        vapid_claims = {
+                            "sub": os.environ.get(
+                                "VAPID_CLAIMS_EMAIL", "mailto:noreply@example.com"
                             )
-                            any_sent = True
-                        except WebPushException as e:
-                            if e.response and e.response.status_code in (404, 410):
-                                db.execute(
-                                    "DELETE FROM push_subscriptions WHERE endpoint = ?",
-                                    (endpoint,),
+                        }
+                        any_sent = False
+                        for endpoint, p256dh, auth in subs:
+                            try:
+                                await asyncio.to_thread(
+                                    webpush,
+                                    subscription_info={
+                                        "endpoint": endpoint,
+                                        "keys": {"p256dh": p256dh, "auth": auth},
+                                    },
+                                    data=payload,
+                                    vapid_private_key=os.environ["VAPID_PRIVATE_KEY"],
+                                    # Fresh copy per endpoint: pywebpush mutates
+                                    # the claims dict (sets aud from the first
+                                    # endpoint), which breaks pushes to any other
+                                    # push service in the same loop.
+                                    vapid_claims=dict(vapid_claims),
                                 )
-                                db.commit()
-                            logger.warning("Push failed for %s: %s", endpoint[:60], e)
+                                any_sent = True
+                            except WebPushException as e:
+                                if e.response and e.response.status_code in (404, 410):
+                                    db.execute(
+                                        "DELETE FROM push_subscriptions WHERE endpoint = ?",
+                                        (endpoint,),
+                                    )
+                                    db.commit()
+                                logger.warning(
+                                    "Push failed for %s: %s", endpoint[:60], e
+                                )
 
-                    if any_sent:
-                        db.execute(
-                            "INSERT OR IGNORE INTO sent_notifications (session_id, slot_id) VALUES (?, ?)",
-                            (session_id, slot_id),
+                        if any_sent:
+                            db.execute(
+                                "INSERT OR IGNORE INTO sent_notifications (session_id, slot_id) VALUES (?, ?)",
+                                (session_id, slot_id),
+                            )
+                            db.commit()
+                            logger.info(
+                                "Sent push for %s to session %s",
+                                artists,
+                                session_id[:8],
+                            )
+                    except Exception:
+                        logger.exception(
+                            "push: failed for session %s slot %s", session_id, slot_id
                         )
-                        db.commit()
-                        logger.info(
-                            "Sent push for %s to session %s", artists, session_id[:8]
-                        )
+                        continue
             finally:
                 db.close()
         except Exception:
@@ -437,6 +447,13 @@ def _check_vapid_key_consistency() -> None:
 async def lifespan(app: FastAPI):
     _init_db()
     _check_vapid_key_consistency()
+    if not os.environ.get("OPENAI_API_KEY"):
+        logger.warning(
+            "OPENAI_API_KEY not set — AI moderation layers 2 and 3 are DISABLED; "
+            "only the local word filter is active for moderated rooms"
+        )
+    else:
+        logger.info("OPENAI_API_KEY present — AI moderation enabled")
     task = asyncio.create_task(_prune_rate_limits())
     prune_task = asyncio.create_task(_prune_expired_sessions())
     push_task = asyncio.create_task(_push_notification_scheduler())
@@ -512,7 +529,7 @@ def exchange_sync_pin(
 ):
     if not PIN_RE.match(pin):
         raise HTTPException(422, "Invalid PIN format")
-    _check_rate(_get_client_ip(request), "load")
+    _check_rate(_get_client_ip(request), "sync_pin")
     with _sync_lock:
         entry = _sync_pins.pop(pin, None)
     if not entry:
