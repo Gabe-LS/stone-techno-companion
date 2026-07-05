@@ -1458,6 +1458,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                             {
                                 "event": "message_rejected",
                                 "temp_id": temp_id,
+                                "room_id": room_id,
                                 "reason": "Encrypted messages are only supported in direct messages",
                             },
                         )
@@ -1481,6 +1482,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                         {
                             "event": "message_rejected",
                             "temp_id": temp_id,
+                            "room_id": room_id,
                             "reason": "Message too long.",
                         },
                     )
@@ -1497,6 +1499,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                             {
                                 "event": "message_rejected",
                                 "temp_id": temp_id,
+                                "room_id": room_id,
                                 "reason": "Invalid media URL.",
                             },
                         )
@@ -1511,6 +1514,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                         {
                             "event": "message_rejected",
                             "temp_id": temp_id,
+                            "room_id": room_id,
                             "reason": "This room is read-only.",
                         },
                     )
@@ -1521,6 +1525,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                         {
                             "event": "message_rejected",
                             "temp_id": temp_id,
+                            "room_id": room_id,
                             "reason": "Media is not allowed in this room.",
                         },
                     )
@@ -1543,6 +1548,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                             {
                                 "event": "message_rejected",
                                 "temp_id": temp_id,
+                                "room_id": room_id,
                                 "reason": "Cannot message this user.",
                             },
                         )
@@ -1564,6 +1570,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                         {
                             "event": "message_rejected",
                             "temp_id": temp_id,
+                            "room_id": room_id,
                             "reason": "Slow down — too many messages.",
                         },
                     )
@@ -1580,6 +1587,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                             {
                                 "event": "message_rejected",
                                 "temp_id": temp_id,
+                                "room_id": room_id,
                                 "reason": "Duplicate message.",
                             },
                         )

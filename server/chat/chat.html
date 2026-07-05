@@ -1445,7 +1445,8 @@ async function handleWSEvent(data) {
     case 'message_rejected':
       showToast(data.reason);
       if (data.temp_id) {
-        const msgs = messagesByRoom[currentRoom] || [];
+        const _rejRoom = data.room_id || currentRoom;
+        const msgs = messagesByRoom[_rejRoom] || [];
         const idx = msgs.findIndex(m => m.temp_id === data.temp_id || m.id === data.temp_id);
         if (idx !== -1) msgs.splice(idx, 1);
         const el = document.querySelector(`[data-msg-id="${data.temp_id}"]`);
@@ -2188,6 +2189,12 @@ function renderMessage(m) {
       } else {
         contentHtml = `<div class="msg-text${failedCls}">${_linkify(rawText)}</div>`;
       }
+    } else if ((m.type === 'image' || m.type === 'video') && (m._decryptFailed || !c.url)) {
+      // A decrypt-failed (or otherwise urlless) media message must not fall
+      // into the media branch below -- there is no c.url to render, so it
+      // would emit a broken <img>/<video> with no indication of failure.
+      const failedCls = m._decryptFailed ? ' msg-decrypt-failed' : '';
+      contentHtml = `<div class="msg-text${failedCls}">${_linkify(c.text || '')}</div>`;
     } else if (m.type === 'image') {
       contentHtml = `<img class="msg-image" src="${esc(c.url)}" loading="lazy" onclick="event.stopPropagation();openImageViewer('${esc(c.url).replace(/'/g, "&#39;")}')">`;
     } else if (m.type === 'video') {
@@ -4512,6 +4519,17 @@ const E2EE = {
       }
     };
     await wrapAll(peerUserId, peerDevices);
+
+    // If the peer has registered devices but none of them could be wrapped,
+    // the recipient can never decrypt this message even though the sender's
+    // own device (a live CryptoKey, not fetched over the network) almost
+    // always wraps successfully. Fail closed here instead of relying on the
+    // envelope-wide emptiness check below, which this case would never trip.
+    const peerWrapped = peerDevices.filter(d => keys[d.device_id]).length;
+    if (peerDevices.length > 0 && peerWrapped === 0) {
+      throw new Error('could not wrap message key for any of the recipient devices');
+    }
+
     await wrapAll(currentUser.id, ownDevices);
 
     // If every device wrap failed, the envelope would be undecryptable by
