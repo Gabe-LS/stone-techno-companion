@@ -594,7 +594,7 @@ async def auth_delete_account(request: Request, response: Response):
 
         for conn_id, ws in list(manager.user_conns.get(user["id"], {}).items()):
             try:
-                asyncio.create_task(ws.close(code=4003, reason="Account deleted"))
+                await ws.close(code=4003, reason="Account deleted")
             except Exception:
                 pass
 
@@ -1958,7 +1958,7 @@ async def admin_ban(user_id: str, request: Request):
 
         for conn_id, ws in list(manager.user_conns.get(user_id, {}).items()):
             try:
-                asyncio.create_task(ws.close(code=4003, reason="Account banned"))
+                await ws.close(code=4003, reason="Account banned")
             except Exception:
                 pass
         return {"ok": True}
@@ -2153,6 +2153,40 @@ async def admin_strike_user(user_id: str, request: Request):
         from chat_moderation import process_strike
 
         result = process_strike(db, user_id, reason, detail)
+
+        if result["action"] in ("mute", "ban"):
+            from chat_ws import manager
+
+            removed = delete_user_messages(db, user_id)
+            for batch in removed:
+                await manager.broadcast_to_room(
+                    batch["room_id"],
+                    {
+                        "event": "messages_expired",
+                        "room_id": batch["room_id"],
+                        "message_ids": batch["message_ids"],
+                    },
+                )
+
+            if result["action"] == "ban":
+                await manager.send_to_user(
+                    user_id, {"event": "banned", "reason": result["reason"]}
+                )
+                for conn_id, ws in list(manager.user_conns.get(user_id, {}).items()):
+                    try:
+                        await ws.close(code=4003, reason="Banned")
+                    except Exception:
+                        pass
+            else:
+                await manager.send_to_user(
+                    user_id,
+                    {
+                        "event": "muted",
+                        "reason": result["reason"],
+                        "message": result.get("message", ""),
+                    },
+                )
+
         return result
     finally:
         db.close()
@@ -2209,7 +2243,7 @@ async def admin_delete_user(user_id: str, request: Request):
             )
         for conn_id, ws in list(manager.user_conns.get(user_id, {}).items()):
             try:
-                asyncio.create_task(ws.close(code=4003, reason="Account deleted"))
+                await ws.close(code=4003, reason="Account deleted")
             except Exception:
                 pass
         return {"ok": True}
