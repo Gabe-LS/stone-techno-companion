@@ -1101,12 +1101,17 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                         avatar_url,
                         country,
                     )
-                    is_member = db.execute(
-                        "SELECT 1 FROM room_memberships WHERE user_id = ? AND room_id = ?",
-                        (user_id, room_id),
-                    ).fetchone()
-                    if is_member:
+                    if room_row["type"] in ("dm", "meetup"):
                         manager.user_badge_rooms.setdefault(user_id, set()).add(room_id)
+                    else:
+                        is_member = db.execute(
+                            "SELECT 1 FROM room_memberships WHERE user_id = ? AND room_id = ?",
+                            (user_id, room_id),
+                        ).fetchone()
+                        if is_member:
+                            manager.user_badge_rooms.setdefault(user_id, set()).add(
+                                room_id
+                            )
                     manager._room_meta[room_id] = {
                         "type": room_row["type"],
                         "name": room_row["name"],

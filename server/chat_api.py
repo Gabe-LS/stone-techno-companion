@@ -1057,6 +1057,10 @@ async def create_dm(request: Request):
             room_id = find_or_create_dm(db, DEFAULT_EVENT_ID, user["id"], target_id)
         except ValueError:
             raise HTTPException(404, "User not found")
+        from chat_ws import manager
+
+        manager.user_badge_rooms.setdefault(user["id"], set()).add(room_id)
+        manager.user_badge_rooms.setdefault(target_id, set()).add(room_id)
         return {"room_id": room_id}
     finally:
         db.close()

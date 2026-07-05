@@ -137,6 +137,22 @@ class FakeWebSocket:
         return [e for e in self.get_events() if e.get("event") == event_type]
 
 
+class BlockingWS(FakeWebSocket):
+    """A FakeWebSocket that stays connected until a sentinel is queued, so a
+    test can run two overlapping live connections (e.g. a recipient who must
+    remain connected while a DM is created and a message is sent)."""
+
+    def __init__(self):
+        super().__init__()
+        self.queue = asyncio.Queue()
+
+    async def receive_text(self) -> str:
+        item = await self.queue.get()
+        if item is None:
+            raise Exception("WebSocketDisconnect")
+        return item
+
+
 # --- ConnectionManager ---
 
 
@@ -634,6 +650,116 @@ class TestDmModerationSkipped:
 
         assert len(get_room_messages(db, room_id)) == 1
         assert ws.get_events_by_type("message_removed") == []
+
+
+class TestDmBadgeRegistration:
+    """A DM created mid-session must badge-register both participants, even
+    one who connected before the room existed and never sent a message.
+
+    These drive handle_chat_ws directly (not via the _run_ws helper) because
+    two connections need to stay alive concurrently, and _run_ws's
+    all-tasks drain loop would otherwise deadlock against the outer task
+    awaiting a create_task-wrapped _run_ws call."""
+
+    @pytest.mark.asyncio
+    async def test_recipient_connected_before_dm_creation_gets_badge_update(
+        self, db, user1, user2, session1, session2, event_id
+    ):
+        with patch("chat_ws.get_chat_db", return_value=_UnclosableConnection(db)):
+            ws_b = BlockingWS()
+            b_task = asyncio.create_task(
+                handle_chat_ws(ws_b, session2["token"], event_id)
+            )
+            await asyncio.sleep(0.2)
+
+            room_id = find_or_create_dm(db, event_id, user1["id"], user2["id"])
+            # Mirrors the badge registration POST /dms now performs (see
+            # chat_api.create_dm) for both participants at room-creation time.
+            global_manager.user_badge_rooms.setdefault(user1["id"], set()).add(room_id)
+            global_manager.user_badge_rooms.setdefault(user2["id"], set()).add(room_id)
+
+            ws_a = BlockingWS()
+            a_task = asyncio.create_task(
+                handle_chat_ws(ws_a, session1["token"], event_id)
+            )
+            await asyncio.sleep(0.2)
+
+            envelope = json.dumps({"e2ee": True, "v": 1, "ct": "Zm9vYmFyYmF6cXV4"})
+            await ws_a.queue.put(json.dumps({"event": "join_room", "room_id": room_id}))
+            await ws_a.queue.put(
+                json.dumps(
+                    {
+                        "event": "send_message",
+                        "room_id": room_id,
+                        "type": "text",
+                        "content": envelope,
+                        "temp_id": "tmp_x",
+                    }
+                )
+            )
+            await asyncio.sleep(0.3)
+
+            badge_events = ws_b.get_events_by_type("badge_update")
+            assert len(badge_events) == 1
+            assert badge_events[0]["room_id"] == room_id
+            assert badge_events[0]["type"] == "dm"
+
+            await ws_a.queue.put(None)
+            await ws_b.queue.put(None)
+            await asyncio.gather(a_task, b_task, return_exceptions=True)
+
+    @pytest.mark.asyncio
+    async def test_join_room_registers_dm_badge_for_participant_who_never_sent(
+        self, db, user1, user2, session2, event_id
+    ):
+        with patch("chat_ws.get_chat_db", return_value=_UnclosableConnection(db)):
+            ws = BlockingWS()
+            task = asyncio.create_task(handle_chat_ws(ws, session2["token"], event_id))
+            await asyncio.sleep(0.2)
+
+            room_id = find_or_create_dm(db, event_id, user1["id"], user2["id"])
+            assert room_id not in global_manager.user_badge_rooms.get(
+                user2["id"], set()
+            )
+
+            await ws.queue.put(json.dumps({"event": "join_room", "room_id": room_id}))
+            await asyncio.sleep(0.2)
+
+            assert room_id in global_manager.user_badge_rooms.get(user2["id"], set())
+
+            await ws.queue.put(None)
+            await task
+
+    @pytest.mark.asyncio
+    async def test_join_room_registers_meetup_badge_for_attendee_who_never_sent(
+        self, db, user1, user2, session1, event_id
+    ):
+        from chat_db import create_meetup, join_meetup
+
+        meetup = create_meetup(
+            db, user2["id"], event_id, None, "Sunrise set", "2026-07-11T06:00:00"
+        )
+        join_meetup(db, meetup["id"], user1["id"])
+        assert meetup["id"] not in global_manager.user_badge_rooms.get(
+            user1["id"], set()
+        )
+
+        with patch("chat_ws.get_chat_db", return_value=_UnclosableConnection(db)):
+            ws = BlockingWS()
+            task = asyncio.create_task(handle_chat_ws(ws, session1["token"], event_id))
+            await asyncio.sleep(0.2)
+
+            await ws.queue.put(
+                json.dumps({"event": "join_room", "room_id": meetup["id"]})
+            )
+            await asyncio.sleep(0.2)
+
+            assert meetup["id"] in global_manager.user_badge_rooms.get(
+                user1["id"], set()
+            )
+
+            await ws.queue.put(None)
+            await task
 
 
 class TestE2eeReplySnippet:

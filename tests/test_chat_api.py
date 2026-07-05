@@ -345,6 +345,23 @@ class TestDMs:
         )
         assert r.status_code == 404
 
+    def test_create_dm_registers_badge_rooms(self, auth_client, user1, user2):
+        from chat_ws import manager as ws_manager
+
+        ws_manager.user_badge_rooms.pop(user1["id"], None)
+        ws_manager.user_badge_rooms.pop(user2["id"], None)
+        try:
+            r = auth_client.post(
+                "/chat/api/dms",
+                json={"target_user_id": user2["id"]},
+            )
+            room_id = r.json()["room_id"]
+            assert room_id in ws_manager.user_badge_rooms.get(user1["id"], set())
+            assert room_id in ws_manager.user_badge_rooms.get(user2["id"], set())
+        finally:
+            ws_manager.user_badge_rooms.pop(user1["id"], None)
+            ws_manager.user_badge_rooms.pop(user2["id"], None)
+
 
 # --- Users (block/unblock) ---
 
