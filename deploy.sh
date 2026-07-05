@@ -122,12 +122,19 @@ else
         STATUS=$(ssh "$VPS" "docker inspect stone-techno --format '{{.State.Health.Status}}' 2>/dev/null || echo 'unknown'")
         echo "  Container: $STATUS"
     fi
+    if [ "$STATUS" != "healthy" ]; then
+        echo "  ERROR: container not healthy after deploy ($STATUS)."
+        echo "  Previous data backup is at $LOCAL_BACKUPS/$TIMESTAMP/ and on the VPS."
+        echo "  Investigate (docker logs stone-techno) or roll back before retrying."
+        exit 1
+    fi
 
     CHAT_OK=$(ssh "$VPS" "docker exec stone-techno curl -sf http://localhost:8080/chat/api/config | python3 -c 'import json,sys; d=json.load(sys.stdin); print(\"ok\" if d.get(\"msg_char_limit\") else \"fail\")' 2>/dev/null || echo 'fail'")
     if [ "$CHAT_OK" = "ok" ]; then
         echo "  Chat API: responding"
     else
-        echo "  WARNING: Chat API not responding!"
+        echo "  ERROR: Chat API not responding after deploy!"
+        exit 1
     fi
 fi
 
