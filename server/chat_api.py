@@ -37,6 +37,7 @@ from chat_db import (
     create_session,
     ban_user as db_ban_user,
     is_banned,
+    is_user_banned,
     create_room,
     get_room,
     get_rooms_by_event,
@@ -187,6 +188,7 @@ def _load_admin_emails() -> None:
 
 
 _email_rate: dict[str, list[float]] = {}
+_email_dest_rate: dict[str, list[float]] = {}
 _auth_rate: dict[str, list[float]] = {}
 
 
@@ -293,6 +295,13 @@ def _authenticate(
 
     user = find_user_by_provider(db, provider, provider_id)
     if user:
+        # Existing account: check bans across every identity linked to it,
+        # not just the (provider, provider_id) pair used for this login —
+        # otherwise a ban on one linked provider is evaded by signing in
+        # through another already-linked provider.
+        ban = is_user_banned(db, user["id"])
+        if ban:
+            raise HTTPException(403, "This account has been banned.")
         user_dict = dict(user)
     else:
         user_dict = create_user(
@@ -367,7 +376,7 @@ async def auth_google(request: Request, response: Response):
         if not user and email and email_verified:
             email_hash = hash_email(email)
             user = find_user_by_provider(db, "email", email_hash)
-            if user:
+            if user and not is_user_banned(db, user["id"]):
                 add_user_provider(db, user["id"], "google", provider_id)
                 logger.info("Linked google provider to existing user %s", user["id"])
         result = _authenticate(db, "google", provider_id, name, None, response)
@@ -436,7 +445,7 @@ async def auth_google_code(request: Request, response: Response):
         if not user and email and email_verified:
             email_hash = hash_email(email)
             user = find_user_by_provider(db, "email", email_hash)
-            if user:
+            if user and not is_user_banned(db, user["id"]):
                 add_user_provider(db, user["id"], "google", provider_id)
                 logger.info("Linked google provider to existing user %s", user["id"])
         result = _authenticate(db, "google", provider_id, name, None, response)
@@ -479,6 +488,22 @@ async def auth_email_start(request: Request):
 
     token = secrets.token_urlsafe(32)
     provider_id = hash_email(email)
+
+    # Per-destination limit (in addition to per-IP above): keyed by the
+    # target email so rotating source IPs can't mail-bomb one inbox or
+    # burn the Maileroo quota against a single victim.
+    _email_dest_rate[provider_id] = [
+        t for t in _email_dest_rate.get(provider_id, []) if now - t < 3600
+    ]
+    if len(_email_dest_rate[provider_id]) >= 3:
+        raise HTTPException(429, "Too many requests. Try again later.")
+    _email_dest_rate[provider_id].append(now)
+    if len(_email_dest_rate) > 5000:
+        stale = [
+            k for k, v in _email_dest_rate.items() if all(now - t >= 3600 for t in v)
+        ]
+        for k in stale:
+            del _email_dest_rate[k]
 
     db = _get_db()
     try:

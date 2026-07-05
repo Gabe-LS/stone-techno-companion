@@ -601,6 +601,31 @@ def is_banned(
     return None
 
 
+def is_user_banned(db: sqlite3.Connection, user_id: str) -> sqlite3.Row | None:
+    """Check bans against every identity currently linked to this user.
+
+    Unlike is_banned (which checks one provider/provider_id pair), this
+    catches a user banned under one provider who later links a fresh
+    provider to the same account — the frozen users.provider/provider_id
+    plus every row in user_providers are all checked.
+    """
+    user = get_user(db, user_id)
+    if not user:
+        return None
+    ban = db.execute(
+        "SELECT * FROM bans WHERE provider = ? AND provider_id = ?",
+        (user["provider"], user["provider_id"]),
+    ).fetchone()
+    if ban:
+        return ban
+    return db.execute(
+        "SELECT b.* FROM bans b "
+        "JOIN user_providers up ON up.provider = b.provider AND up.provider_id = b.provider_id "
+        "WHERE up.user_id = ?",
+        (user_id,),
+    ).fetchone()
+
+
 # --- Rooms ---
 
 
