@@ -1662,7 +1662,7 @@ function updateSidebarCount(roomId) {
 
 function updateHeaderCount() {
   dbg('[ROOM] updateHeaderCount');
-  if (!currentRoom) return;
+  if (!currentRoom || currentRoomType === 'dm') return;
   const room = rooms.find(r => r.id === currentRoom);
   const members = room ? (room.member_count || 0) : 0;
   const countEl = document.querySelector('.header-count');
@@ -1867,7 +1867,8 @@ async function loadDMs() {
 // --- Chat View ---
 async function openRoom(roomId, roomName, roomType) {
   dbg('openRoom:', roomId, roomName, roomType);
-  if (currentRoom && currentRoom !== roomId) {
+  if (roomId === currentRoom) return;
+  if (currentRoom) {
     wsSend('leave_room', { room_id: currentRoom });
   }
   _decryptRetried.clear();
@@ -1961,7 +1962,7 @@ function renderChatView(roomName) {
   dbg('[CHAT] renderChatView', roomName);
   const onlineCount = (onlineByRoom[currentRoom] || []).length;
   const currentRoomObj = rooms.find(r => r.id === currentRoom);
-  const memberCount = currentRoomObj ? (currentRoomObj.member_count || 0) : 0;
+  const memberCount = currentRoomType === 'dm' ? 2 : (currentRoomObj ? (currentRoomObj.member_count || 0) : 0);
   const countText = memberCount + (memberCount === 1 ? ' member' : ' members');
   const isMeetup = currentRoomType === 'meetup';
   const showMeetupBtn = !isMeetup;
@@ -2003,7 +2004,7 @@ function renderChatView(roomName) {
           <span class="title">${esc(roomName)}</span>
           ${roomDesc ? `<span class="online">${esc(roomDesc)}</span>` : ''}
         </div>
-        <span class="header-count">${memberCount} ${USER_ICON}</span>
+        ${currentRoomType !== 'dm' ? `<span class="header-count">${memberCount} ${USER_ICON}</span>` : ''}
         <button class="hamburger" onclick="toggleChatMenu()">${ICON_HAMBURGER}<span class="hamburger-dot"></span></button>
       </div>
       <div class="content" id="msg-scroll">
@@ -2019,7 +2020,7 @@ function renderChatView(roomName) {
         <div class="header">
           <div class="header-info">
             <span class="title">${esc(roomName)}</span>
-            <span class="online">${countText}</span>
+            ${currentRoomType !== 'dm' ? `<span class="online">${countText}</span>` : ''}
           </div>
           ${headerAvatar}
         </div>
