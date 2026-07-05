@@ -123,10 +123,11 @@ Key design decisions:
 | `server/static/manifest.json` | PWA manifest — enables Add to Home Screen and push on iOS |
 | `tests/test_chat_db.py` | 59 tests — users, sessions, bans, rooms, messages, meetups, DMs, blocks, reports, strikes |
 | `tests/test_chat_moderation.py` | 39 tests — word filter, strike system (expiry, reset, mute cycling), AI moderation pipeline |
-| `tests/test_chat_ws.py` | 42 tests — WebSocket rooms, messaging, presence, moderation flow |
-| `tests/test_chat_api.py` | 55 tests — REST endpoints, auth, rooms, meetups, DMs, admin |
+| `tests/test_chat_ws.py` | 44 tests — WebSocket rooms, messaging, presence, moderation flow |
+| `tests/test_chat_api.py` | 56 tests — REST endpoints, auth, rooms, meetups, DMs, admin |
 | `tests/test_notifications.py` | 54 tests — push debounce, payload, badge, clearing. Requires Playwright infra. |
 | `tests/e2ee_browser_check.py` | Standalone Playwright verification (not part of the pytest suite) — 21 checks across 5 browser contexts, see "End-to-End Encryption (DMs)" below |
+| `server/verify_push_both.py` | Standalone push check — after enabling notifications on both lineup and chat in one Chromium profile, fires a real WebPush at each stored subscription and asserts both surfaces share one LIVE endpoint (see push "Hard-won invariants") |
 | `stress_test/run.py` | Chat stress test — 200 concurrent WS users, multi-room + DMs, burst testing, media uploads, latency/throughput/resource metrics, moderation cost estimation |
 
 ### Deploy
@@ -263,8 +264,8 @@ Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DBs at `server/d
 
 | Variable | Required | Description |
 |---|---|---|
-| `OPENAI_API_KEY` | Yes | Chat moderation (omni-moderation + GPT drug detection) |
-| `MAILEROO_API_KEY` | Yes | Magic link email delivery (was Resend, switched July 2026) |
+| `OPENAI_API_KEY` | Yes | Chat moderation (omni-moderation + GPT drug detection). Absence is logged loudly at startup — without it, moderated rooms fall back to the word filter only (AI layers 2-3 silently pass everything). |
+| `MAILEROO_API_KEY` | Yes | Magic link email delivery (was Resend, switched July 2026). The `/chat/api/login` endpoint now returns 500 (not a false `{"sent": true}`) when this is unset, so a misconfigured container can't silently take out the only email auth path. |
 | `CHAT_EMAIL_FROM` | No | From address for magic links (default: `no-reply@deftlab.dev`) |
 | `CHAT_BASE_URL` | Dev only | Set to `https://localhost:<port>` for local dev. Omit in production. |
 | `VAPID_PRIVATE_KEY` | Yes | Push notification signing |
@@ -294,7 +295,7 @@ Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DBs at `server/d
 
 **DNS** (already done): SPF includes `_spf.maileroo.com`, DKIM at `mta._domainkey.deftlab.dev`
 
-**Automatic on deploy**: Dockerfile installs ffmpeg + libvips + all Python deps. `chat.db` created fresh on first run. `chat/uploads/` and `chat/tmp/` auto-created.
+**Automatic on deploy**: Dockerfile installs ffmpeg + libvips + all Python deps. `chat.db` created fresh on first run. `chat/uploads/` and `chat/tmp/` auto-created. `server/.dockerignore` keeps local runtime files (`chat/uploads/`, `chat/tmp/`, `data/`, `.env`, `*.pem`) out of the image build context (the Dockerfile does `COPY chat/ ./chat/`). Container logs are capped via `docker-compose.yml` (`json-file`, 10m x 5). `.gitignore` covers the live `chat.db` and `chat/uploads/` so they can't be committed.
 
 ## Push Notifications
 
@@ -304,7 +305,8 @@ Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DBs at `server/d
 - **VAPID key pair consistency is checked at startup** (`_check_vapid_key_consistency` in `api.py`): logs `VAPID key pair verified` or a loud mismatch error. Check this line after touching keys or `.env`.
 - **Notification tags must be unique across server restarts**: the payload carries a random `push_id` (`secrets.token_hex(8)`) and sw.js prefers it for the tag. `push_index` alone resets with the process and re-collides with notifications still in iOS Notification Center (see "tag uniqueness" below).
 - **Brave subscriptions can silently die**: revoking site notification permission or Brave's "Forget me when I close this site" unsubscribes at the FCM level (next push → 410, row auto-pruned). The client repairs on load (`_repairPushSubscription`, gated by the `push_enabled` localStorage flag so an explicit disable is never overridden), and `_enableAllNotifications` only reports success when subscribe + server POST both succeeded.
-- **Regression net**: `tests/test_chat_ws.py::TestVapidClaimsIsolation` (claims-dict isolation), `tests/notif_badge_browser_check.py` (badges, truthful enable, gated repair — multi-context Playwright), `tests/test_notifications.py` (SW tag/version assertions).
+- **Lineup and chat share ONE browser subscription**: both pages register `/sw.js` at the root scope, so a browser holds exactly one push subscription per origin. The lineup record lives in `push_subscriptions` (hearts.db, keyed by `session_id`); the chat record lives in `chat_push_subscriptions` (chat.db, keyed by `user_id`) — but both must point at the SAME endpoint. Never `unsubscribe()` before `subscribe()` in an enable flow: that rotates the shared endpoint and orphans the other surface's stored record (its next push → 410, silently unsubscribing that surface). Both `enableNotifications` (lineup, `render.py`) and `_subscribePush` (chat, `chat.html`) reuse the existing subscription instead; chat also resyncs its endpoint to the backend on every load (`_repairPushSubscription`), mirroring lineup. Verify with `python server/verify_push_both.py` after enabling both surfaces in one Chromium profile (expects one endpoint, LIVE in both tables).
+- **Regression net**: `tests/test_chat_ws.py::TestVapidClaimsIsolation` (claims-dict isolation), `tests/notif_badge_browser_check.py` (badges, truthful enable, gated repair — multi-context Playwright), `tests/test_notifications.py` (SW tag/version assertions), `server/verify_push_both.py` (both-surfaces single-endpoint check — run against a live Chromium subscription).
 
 ### Lineup push
 - **Scheduler**: background task runs every 60s, matches `timetable.json` slots against sessions' schedule, sends via `pywebpush`
@@ -349,10 +351,10 @@ email_tokens       — token, email, provider_id, fingerprint, expires_at (DB-ba
 avatars            — user_id (PK), data (BLOB, WebP 128x128)
 user_providers     — user_id, provider, provider_id, created_at (multi-provider auth: same user via Google + email)
 bans               — id, user_id, provider, provider_id, device_fingerprint, reason, created_at (survives user deletion)
-rooms              — id, event_id, type, name, description, is_main, is_moderated, is_read_only, auto_join, allows_media, ttl_minutes, position, created_at
+rooms              — id, event_id, type, name, description, is_main, is_moderated, is_read_only, auto_join, allows_media, ttl_minutes, position, created_at, last_message_at
 chat_settings      — key, value (app-level config: room_sort, msg_char_limit, dm_ttl_minutes, room_ttl_minutes, meetup_ttl_minutes)
 room_memberships   — user_id + room_id (PK), joined_at, last_read_at (tracks joined rooms + unread)
-messages           — id, room_id, user_id, type, content, link_preview, reply_to_id, expires_at, created_at
+messages           — id, room_id, user_id, type, content, link_preview, reply_to_id, media_url, expires_at, created_at
 message_reactions  — message_id + user_id + emoji (PK), created_at, CASCADE on message delete
 meetups            — id, creator_id, stage_id, title, location_lat, location_lng, location_label, meetup_time, note, created_at, expires_at
 meetup_attendees   — meetup_id + user_id (PK), joined_at
@@ -374,7 +376,7 @@ Mandatory before entering chat: username, avatar photo, country. Optional displa
 
 - **Username**: unique, case-insensitive alphanumerics (`a-z A-Z 0-9 . _ -`), 2-20 chars, stored lowercase in `username_lower` for uniqueness checks. Live availability check (400ms debounce). Shown in bubbles when no display name set.
 - **Display name**: optional, Latin Unicode letters + digits + spaces + `. _ -`, 2-30 chars. Replaces username in bubbles when set. Live validation.
-- **Avatar**: circular 128px pan+zoom editor. Click to select image (min 128x128), drag to pan, custom friction slider to zoom. Client crops to 128x128 via `createImageBitmap` with `resizeQuality: 'high'`. Stored as WebP blob in `avatars` table. Served via `/chat/api/avatar/{user_id}?v=timestamp` (version stamp for cache busting). Large images (>2000px) downscaled in browser for smooth editor, full-res used for final crop.
+- **Avatar**: circular 128px pan+zoom editor. Click to select image (min 128x128), drag to pan, custom friction slider to zoom. Client crops to 128x128 via `createImageBitmap` with `resizeQuality: 'high'`. Stored as WebP blob in `avatars` table. Served via `/chat/api/avatar/{user_id}?v=timestamp` (version stamp for cache busting). Large images (>2000px) downscaled in browser for smooth editor, full-res used for final crop. Server-side: rate-limited (`_check_upload_rate`), restricted to a raster loader allowlist (rejects SVG and other librsvg/XML vectors), and the re-encoded image passes OpenAI omni-moderation before storage (avatars are shown app-wide with no TTL, so they can't skip moderation the way the old code let them).
 - **Country**: searchable dropdown with 196 countries + local name aliases (Deutschland, Italia, Espana, etc.). Search matches from start of word only, exact match for 2-char codes, 3+ chars for aliases. Arrow key navigation, Enter to select, first result highlighted.
 - **User colors**: 12 vivid+pastel color pairs assigned randomly at registration (stored as `color_index`). 13th "self" color for own messages. Others see your assigned color.
 - **Name moderation**: OpenAI omni-moderation on submit (no word filter for names — too many false positives).
@@ -392,11 +394,11 @@ Every message in a moderated (group) room passes through three layers before bro
 
 Layers 2 and 3 run in parallel via `asyncio.gather`. Word filter blocks before AI calls (saves API round-trips).
 
-**Optimistic delivery**: message saved to DB immediately, `message_acked` sent to sender, moderation runs in `asyncio.create_task`. If passes: broadcast to others. If fails: delete from DB, send `message_removed` + strike to sender. Mute/ban also deletes all user's active messages and broadcasts removal.
+**Optimistic delivery**: message saved to DB immediately, `message_acked` (carries `temp_id` AND `room_id`) sent to sender, moderation runs in `asyncio.create_task`. If passes: broadcast to others. If fails: delete from DB, unlink any served media file, send `message_removed` + strike to sender. Mute/ban also deletes all user's active messages and broadcasts removal. The ack's `room_id` matters: the client keys the pending-message lookup by it, so switching rooms before the ack arrives no longer drops the ack and spuriously reports "message not sent".
 
 **Moderation logging**: OpenAI scores logged via `logger.info` — top 5 categories above 0.1 threshold, FLAGGED line with threshold comparison. `logging.basicConfig(level=INFO)` configured at startup.
 
-**Strike system**: 4-step escalation with expiring strikes (4h TTL, reset on new violation). 1st = warning, 2nd = warning, 3rd = 30-min mute, 4th = permanent ban. Lifetime mute counter: 3 total mutes across the event = permanent ban (prevents cycling). Same escalation for all content types including drugs. Bans stored by provider_id + device fingerprint. `secure_delete=ON` zeros deleted data on disk.
+**Strike system**: 4-step escalation with expiring strikes (4h TTL, reset on new violation). 1st = warning, 2nd = warning, 3rd = 30-min mute, 4th = permanent ban. Lifetime mute counter: 3 total mutes across the event = permanent ban (prevents cycling). Same escalation for all content types including drugs. Bans stored by provider_id + device fingerprint. Admin ban covers ALL of a user's linked `user_providers` (not just the frozen `users.provider/provider_id`, so a second provider can't evade it) and closes the user's live WebSocket connections immediately (a still-connected user can't keep sending — DMs included). `secure_delete=ON` zeros deleted data on disk.
 
 ### End-to-End Encryption (DMs)
 
@@ -406,6 +408,7 @@ DMs — and only DMs — are end-to-end encrypted; group rooms stay unencrypted 
 - **Envelope** (stored in the existing `content` TEXT field): `{e2ee, v: 2, sd: <sender_device_id>, ct: <encrypted content>, keys: {<device_id>: <wrapped key>, ...}}`.
 - **Server storage**: `e2ee_device_keys` table (capped at 6 devices/user, pruned after 7 days of inactivity). `PUT`/`GET /chat/api/keys` register/fetch device keys with device_id + JWK validation. `key_rotated` WS event notifies DM peers per room plus a self-notification (room_id null) when a device re-keys.
 - **Server cannot read DM content**: moderation is skipped, push previews are generic ("Sent you a message"), reply snippets are blanked server-side and rebuilt client-side, link previews are skipped. Reports carry reporter-provided plaintext, flagged `unverified`.
+- **Media file cleanup for E2EE DMs**: the file URL is encrypted inside the envelope, so the server can't find the file to garbage-collect it by parsing message content. The client sends the plaintext URL in a top-level `media_url` field, stored in `messages.media_url`; both the TTL purge and manual delete read that column to unlink the served file (and its `_mod*.webp` copies). Without this, encrypted image/video DMs orphaned their files on disk forever.
 - **Fallback**: keyless peers (no registered devices) fall back to plaintext, with lock-icon/banner UI suppressed accordingly.
 - **No history sync**: a newly registered device cannot decrypt messages sent before it existed; the 60-minute message TTL bounds how long that gap is visible.
 - **Specs**: `docs/e2ee-dev.md` (v1 design + server adaptations) and `docs/e2ee-multidevice.md` (v2 multi-device design, current).
@@ -415,7 +418,7 @@ DMs — and only DMs — are end-to-end encrypted; group rooms stay unencrypted 
 
 Rooms have configurable properties set via the admin page:
 - `description` — what the room is for
-- `ttl_minutes` — per-room message TTL, defaults from `chat_settings`: DMs 24h (`dm_ttl_minutes: 1440`), rooms 24h (`room_ttl_minutes: 1440`; code falls back to 360 only if the settings row is missing), meetups 1h after meetup time (`meetup_ttl_minutes: 60`). Meetup expiry destroys messages + room + meetup record. DM rooms persist after messages expire (conversation thread stays).
+- `ttl_minutes` — per-room message TTL, defaults from `chat_settings`: DMs 24h (`dm_ttl_minutes: 1440`), rooms 24h (`room_ttl_minutes: 1440`; code falls back to 360 only if the settings row is missing), meetups 1h after meetup time (`meetup_ttl_minutes: 60`). Meetup expiry destroys messages + room + meetup record. DM rooms persist after messages expire (conversation thread stays) — the purge loop only deletes DM shells that NEVER had a message, detected via `rooms.last_message_at IS NULL` (stamped by `create_message`, backfilled on migration). Deriving "empty" purely from a post-purge `messages` scan wrongly destroyed live DM threads once their messages hit TTL.
 - `is_moderated` — toggles word filter + AI moderation for the room
 - `is_read_only` — only admins can post
 - `auto_join` — new users automatically become members on WS connect (always on for main room)
@@ -476,11 +479,11 @@ Main room auto-opens on login. Path-based routing (`/chat`, `/chat/r/{id}`, `/ch
 
 ### Chat Tests
 
-195 tests total: `python -m pytest tests/ -v`
+198 tests total: `python -m pytest tests/ -v`
 - `test_chat_db.py` (59) — all CRUD, cascade deletes, purge, wipe
 - `test_chat_moderation.py` (39) — word filter, AI mocks, strike escalation (expiry, reset, mute cycling)
-- `test_chat_ws.py` (42) — WebSocket rooms, messaging, presence, moderation flow
-- `test_chat_api.py` (55) — REST endpoints, auth, rooms, meetups, DMs, admin
+- `test_chat_ws.py` (44) — WebSocket rooms, messaging, presence, moderation flow
+- `test_chat_api.py` (56) — REST endpoints, auth, rooms, meetups, DMs, admin
 
 Two suites run outside pytest: `test_notifications.py` (54 tests — push debounce, payload, badge, clearing; requires Playwright infra, run separately) and `tests/e2ee_browser_check.py` (standalone Playwright verification, 21 checks — see "End-to-End Encryption (DMs)" below).
 
