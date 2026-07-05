@@ -140,7 +140,7 @@ Key design decisions:
 python stone_techno_companion.py --render-only --deploy
 ```
 
-`deploy.sh` does: download VPS data to `backups/{timestamp}/` locally, create timestamped backup on VPS, `git pull`, `docker compose up --build --force-recreate`, health check (container + chat API), prune old VPS backups (keeps 5). Local backups survive VPS disk failure.
+`deploy.sh` does: sync prod env vars to the VPS `.env` (atomic temp-file + byte-count check + `mv`, so a dropped connection can't leave a truncated `.env`); WAL-checkpoint the VPS SQLite DBs; download VPS data (`server/data/` + best-effort `server/chat-uploads/`) to `backups/{timestamp}/` locally; verify each downloaded `.db` with `PRAGMA quick_check` and abort before any change if a backup is corrupt; create a timestamped backup on the VPS; `git pull`; `docker compose up -d --build --force-recreate`; health check (container + chat API), exiting non-zero on failure; prune old VPS backups (keeps 5). Local backups survive VPS disk failure.
 
 ## Generated Artifacts (gitignored)
 
@@ -153,7 +153,8 @@ python stone_techno_companion.py --render-only --deploy
 - `output/thumbs/*.avif` — YouTube video thumbnails (240px max, AVIF)
 
 - `server/data/` — runtime databases (hearts.db, chat.db), VAPID keys (gitignored)
-- `server/chat/uploads/` — uploaded images/videos (WebP, MP4)
+- `server/chat/uploads/` — uploaded images/videos (WebP, MP4) in local/bare-uvicorn dev
+- `server/chat-uploads/` — the PRODUCTION uploads dir: `docker-compose.yml` bind-mounts `./chat-uploads:/app/chat/uploads`, so live user media lives here on the VPS (inside the deploy git worktree). Gitignored and backed up by `deploy.sh`
 - `server/chat/tmp/` — intermediate processing files (auto-cleaned on startup)
 - `stress_test/media/` — auto-generated test images (WebP 1500px Q=80) + videos (H.264 MP4) + user-provided files
 - `stress_test/report_*.txt` — stress test reports
@@ -233,6 +234,7 @@ Clicking artist name/photo opens modal with photo, name, biography (markdown →
 - SVG sprite: `aria-hidden="true"`; images have meaningful `alt` text
 - PWA meta tags: `apple-mobile-web-app-capable`, `theme-color`, `apple-mobile-web-app-title`
 - Social links rendered as a loop from `artist_links` — adding a platform requires only a new SVG icon + a mapping entry in `PLATFORM_ICONS`
+- All artist-link hrefs pass a render-layer URL scheme allowlist (`_safe_href` in Python, `_safeHref` in the emitted popup JS): only `http`/`https`/`mailto` survive, anything else renders as `#`. This is defense-in-depth at the last output stage even though scraped links are already http(s)-validated — it blocks a `javascript:` URL injected via a hand-edited `overrides.toml`. (Note: bio "Sets" video links still use `esc()` only, no scheme check — those URLs come from our own YouTube fetch, not user input.)
 
 ## Page Load Flash Prevention
 
@@ -254,7 +256,7 @@ cd output && python3 -m http.server 8321
 
 FastAPI (`server/api.py`). Sessions via 128-bit URL-safe tokens. Cross-device sync via ephemeral 6-digit PINs (5-min TTL). Real-time sync via WebSocket. Atomic pick/schedule operations via `json_group_array`/`json_each`.
 
-Static file routes (`/bios.json`, `/manifest.json`, `/sw.js`, `/favicon.*`) are explicit endpoints before the catch-all `/{path:path}` (which serves `index.html`). New static files need an explicit route in `api.py`. `timetable.json` has no HTTP route — it's read server-side by the push scheduler and ICS export only.
+Static file routes (`/bios.json`, `/manifest.json`, `/sw.js`, `/shared.css`, `/shared.js`, `/favicon.*`) are explicit endpoints before the catch-all `/{path:path}` (which serves `index.html`). New static files need an explicit route in `api.py`. `/sw.js`, `/manifest.json`, `/shared.css`, `/shared.js` are served with `Cache-Control: no-cache` so a content deploy that ships new shared bundles is picked up (the catch-all `index.html` uses `no-store`). `timetable.json` has no HTTP route — it's read server-side by the push scheduler and ICS export only.
 
 The catch-all `/{path:path}` serves `index.html` with `Cache-Control: no-store` and explicitly rejects `/chat*` paths (returns 404). Chat module import is **required** — if `chat_api.py` fails to import, the server crashes at startup (fail-fast, no silent degradation).
 
@@ -295,7 +297,7 @@ Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DBs at `server/d
 
 **DNS** (already done): SPF includes `_spf.maileroo.com`, DKIM at `mta._domainkey.deftlab.dev`
 
-**Automatic on deploy**: Dockerfile installs ffmpeg + libvips + all Python deps. `chat.db` created fresh on first run. `chat/uploads/` and `chat/tmp/` auto-created. `server/.dockerignore` keeps local runtime files (`chat/uploads/`, `chat/tmp/`, `data/`, `.env`, `*.pem`) out of the image build context (the Dockerfile does `COPY chat/ ./chat/`). Container logs are capped via `docker-compose.yml` (`json-file`, 10m x 5). `.gitignore` covers the live `chat.db` and `chat/uploads/` so they can't be committed.
+**Automatic on deploy**: Dockerfile installs ffmpeg + libvips + all Python deps. `chat.db` created fresh on first run. `chat/uploads/` and `chat/tmp/` auto-created. `server/.dockerignore` keeps local runtime files (`chat/uploads/`, `chat/tmp/`, `data/`, `.env`, `*.pem`) out of the image build context (the Dockerfile does `COPY chat/ ./chat/`). Container logs are capped via `docker-compose.yml` (`json-file`, 10m x 5). `.gitignore` covers the live `chat.db`, `chat/uploads/`, and the production `chat-uploads/` bind-mount path so none of them can be committed.
 
 ## Push Notifications
 
@@ -306,13 +308,15 @@ Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DBs at `server/d
 - **Notification tags must be unique across server restarts**: the payload carries a random `push_id` (`secrets.token_hex(8)`) and sw.js prefers it for the tag. `push_index` alone resets with the process and re-collides with notifications still in iOS Notification Center (see "tag uniqueness" below).
 - **Brave subscriptions can silently die**: revoking site notification permission or Brave's "Forget me when I close this site" unsubscribes at the FCM level (next push → 410, row auto-pruned). The client repairs on load (`_repairPushSubscription`, gated by the `push_enabled` localStorage flag so an explicit disable is never overridden), and `_enableAllNotifications` only reports success when subscribe + server POST both succeeded.
 - **Lineup and chat share ONE browser subscription**: both pages register `/sw.js` at the root scope, so a browser holds exactly one push subscription per origin. The lineup record lives in `push_subscriptions` (hearts.db, keyed by `session_id`); the chat record lives in `chat_push_subscriptions` (chat.db, keyed by `user_id`) — but both must point at the SAME endpoint. Never `unsubscribe()` before `subscribe()` in an enable flow: that rotates the shared endpoint and orphans the other surface's stored record (its next push → 410, silently unsubscribing that surface). Both `enableNotifications` (lineup, `render.py`) and `_subscribePush` (chat, `chat.html`) reuse the existing subscription instead; chat also resyncs its endpoint to the backend on every load (`_repairPushSubscription`), mirroring lineup. Verify with `python server/verify_push_both.py` after enabling both surfaces in one Chromium profile (expects one endpoint, LIVE in both tables).
-- **Regression net**: `tests/test_chat_ws.py::TestVapidClaimsIsolation` (claims-dict isolation), `tests/notif_badge_browser_check.py` (badges, truthful enable, gated repair — multi-context Playwright), `tests/test_notifications.py` (SW tag/version assertions), `server/verify_push_both.py` (both-surfaces single-endpoint check — run against a live Chromium subscription).
+- **TTL**: both senders pass `ttl=300` to `webpush()` (pywebpush defaults to TTL=0 = discard if the client is momentarily unreachable). The lineup scheduler payload also carries a `push_id` (`secrets.token_hex(8)`) for the documented tag-uniqueness invariant.
+- **Pending exclusion**: `get_unread_counts` and the push-preview fallback queries exclude `moderation_status='pending'`, so a not-yet-moderated (or soon-rejected) message never appears in a push body or inflates a badge.
+- **Regression net**: `tests/test_chat_ws.py::TestVapidClaimsIsolation` (claims-dict isolation), `tests/notif_badge_browser_check.py` (badges, truthful enable, gated repair — multi-context Playwright), `tests/test_notifications.py` (SW tag/version assertions), `server/verify_push_both.py` (both-surfaces single-endpoint check — run against a live Chromium subscription), and `tests/notif_e2e/` (21-scenario automated harness across emission / client / service-worker — see "Automated Notification Test Harness" below).
 
 ### Lineup push
 - **Scheduler**: background task runs every 60s, matches `timetable.json` slots against sessions' schedule, sends via `pywebpush`
 - **Dedup**: `sent_notifications` table, pruned after 7 days. Dead subscriptions auto-removed.
 - **Re-sync on load**: client re-sends push subscription to recover from DB purges
-- **iOS notification click — tag uniqueness is critical**: iOS silently drops `notificationclick` for any notification that *replaced* an earlier one (same `tag`). The tap opens the app at `start_url` with no event, no error. So `showNotification` MUST use a unique tag per notification (derived from the push URL). This was the root cause of "notification click lands on line-up" — room-tag reuse meant every organic message notification was a replacement, while one-off test pushes (never replaced) worked. Diagnosed July 2026 via [push-diag](https://github.com/gabrielelosurdo/push-diag) + server-side SW timeline logging (`POST /chat/api/swlog`, `[SWLOG]`/`[PUSH-ACK]` log lines).
+- **iOS notification click — tag uniqueness is critical**: iOS silently drops `notificationclick` for any notification that *replaced* an earlier one (same `tag`). The tap opens the app at `start_url` with no event, no error. So `showNotification` MUST use a unique tag per notification (derived from the push URL). This was the root cause of "notification click lands on line-up" — room-tag reuse meant every organic message notification was a replacement, while one-off test pushes (never replaced) worked. Diagnosed July 2026 via [push-diag](https://github.com/gabrielelosurdo/push-diag) + server-side SW timeline logging (`POST /chat/api/swlog`, `[SWLOG]`/`[PUSH-ACK]` log lines). `/chat/api/swlog` and `/chat/api/push/ack` are unauthenticated diagnostics, so both are per-IP rate-limited (swlog 30/min, ack 60/min) to prevent log-flood abuse.
 - **iOS notification click — navigation**: SW does all LOCAL work first (iOS may kill the SW right after the app foregrounds — never put network calls before the navigation primitives): write target URL to Cache Storage (`stc-push`/`_push_navigate`), then `postMessage` + `focus()` to the existing client, `openWindow()` only when no window exists. Acks/logging go last. Pages navigate on the SW `navigate` message and poll the cache on `visibilitychange`/`focus`/`pageshow` with retries (0ms, 300ms, 1s) as fallback; the navigation latch is a 3s timeout, not permanent, so an aborted navigation self-heals. `client.navigate()` must not be combined with `postMessage` (two racing navigations abort each other). `openWindow()` silently returns null when a window already exists. Push URL includes message ID (`/chat/msg/{id}`) for scroll-to-message on click.
 
 ### Chat push
@@ -368,7 +372,7 @@ e2ee_device_keys   — user_id + device_id (PK), public_key, created_at, last_se
 
 ### Auth
 
-Two passwordless providers: Google OAuth and Email magic link (via Maileroo, 3,000/mo free). Disposable domains blocked via 7,860-domain blocklist (`chat/disposable_domains.txt`). Email validation via `email-validator` library (RFC 5322 + DNS MX check). Ban enforcement is provider-based and covers every linked provider of a user (Google + email); the `bans.device_fingerprint` column exists and the matching logic works, but clients do not currently submit a fingerprint, so it is unused (bans by a new account are possible — mitigated by moderation, not fingerprinting). Session cookies (non-httpOnly for WS access, Secure in production, SameSite=Strict in production / Lax in dev, path=/). Email tokens stored in DB (not memory) — survive server restarts.
+Two passwordless providers: Google OAuth and Email magic link (via Maileroo, 3,000/mo free). Disposable domains blocked via 7,860-domain blocklist (`chat/disposable_domains.txt`). Email validation via `email-validator` library (RFC 5322 + DNS MX check). Ban enforcement is provider-based and covers every linked provider of a user (Google + email); the `bans.device_fingerprint` column exists and the matching logic works, but clients do not currently submit a fingerprint, so it is unused (bans by a new account are possible — mitigated by moderation, not fingerprinting). A banned email hitting `/chat/api/login` gets a generic "cannot sign in" 403 (no ban reason, no registration-status leak). Session cookies (non-httpOnly for WS access, Secure in production, SameSite=Strict in production / Lax in dev, path=/). Email tokens stored in DB (not memory) — survive server restarts. **Rate limits** (per client IP, in-memory, self-pruning): magic-link `/chat/api/login` 5 / 15 min; the OAuth + verify endpoints (`_check_auth_rate`) 120 / 5 min — high because a festival venue shares a public IP and magic-link tokens are 128-bit / OAuth is Google-validated, so brute force is not the threat this guards.
 
 ### Profile Setup
 
@@ -380,7 +384,7 @@ Mandatory before entering chat: username, avatar photo, country. Optional displa
 - **Country**: searchable dropdown with 196 countries + local name aliases (Deutschland, Italia, Espana, etc.). Search matches from start of word only, exact match for 2-char codes, 3+ chars for aliases. Arrow key navigation, Enter to select, first result highlighted.
 - **User colors**: 12 vivid+pastel color pairs assigned randomly at registration (stored as `color_index`). 13th "self" color for own messages. Others see your assigned color.
 - **Name moderation**: OpenAI omni-moderation on submit (no word filter for names — too many false positives).
-- **Profile edit**: settings menu via avatar in header. Edit display name, avatar (full pan+zoom editor), country. Live preview bubble.
+- **Profile edit**: settings menu via avatar in header. Edit display name, avatar (full pan+zoom editor), country. Live preview bubble. Edits propagate to live connections: the server broadcasts `broadcast_profile_update` / a `profile_updated` WS event that patches every rendered message and member entry for that user in real time, and `send_message`/`join_room`/`meetup_invite` re-fetch fresh identity from the DB instead of using values frozen at the WS handshake.
 
 ### Moderation Pipeline
 
@@ -390,11 +394,11 @@ Every message in a moderated (group) room passes through three layers before bro
 2. **OpenAI omni-moderation-latest** (free) — harassment, hate, violence, sexual content. Supports images (WebP data URI) and video (3 frames at 25/50/75% extracted by ffmpeg). Via raw httpx.
 3. **GPT-5.4-nano content detection** (Responses API, reasoning=none) — catches drugs, spam/scams, payment links, external platform links (Telegram, WhatsApp, Discord). Explicit safe list for festival conversation.
 
-**DMs are exempt**: DMs are created with `is_moderated=False` and are end-to-end encrypted, so the server cannot run these layers on their content. Moderation is replaced by user reporting — see "End-to-End Encryption (DMs)" below.
+**DMs skip CONTENT scanning, not ban/mute enforcement**: DMs are created with `is_moderated=False` and are end-to-end encrypted, so the server cannot run the three content layers on them — content moderation is replaced by user reporting (see "End-to-End Encryption (DMs)" below). But ban/mute is enforced on every send regardless of `is_moderated` (the unmoderated branch calls `check_ban_mute` in `chat_moderation.py`), and a banned user is rejected at WS connect (`handle_chat_ws` checks `is_banned` before accepting the socket) — so a banned/muted user cannot keep sending DMs over an open connection.
 
 Layers 2 and 3 run in parallel via `asyncio.gather`. Word filter blocks before AI calls (saves API round-trips).
 
-**Optimistic delivery**: message saved to DB immediately, `message_acked` (carries `temp_id` AND `room_id`) sent to sender, moderation runs in `asyncio.create_task`. If passes: broadcast to others. If fails: delete from DB, unlink any served media file, send `message_removed` + strike to sender. Mute/ban also deletes all user's active messages and broadcasts removal. The ack's `room_id` matters: the client keys the pending-message lookup by it, so switching rooms before the ack arrives no longer drops the ack and spuriously reports "message not sent".
+**Optimistic delivery + pending hold**: message saved to DB immediately with `moderation_status='pending'` (moderated rooms) or `'approved'` (unmoderated), `message_acked` (carries `temp_id` AND `room_id`) sent to sender, moderation runs in a tracked `asyncio.create_task` (references held in a module-level set so the task can't be GC'd mid-flight). If passes: flip to `'approved'` and broadcast — **but only if the row still exists** (a message deleted or TTL-purged during the moderation window is not resurrected). If fails: delete from DB, unlink any served media file, send `message_removed` + strike to sender. Mute/ban also deletes all user's active messages and broadcasts removal. Pending messages are excluded from `room_history`, unread counts, and push previews, so nothing unmoderated is ever served or pushed. A stuck-pending sweep in the purge loop deletes any message left `'pending'` past ~3 minutes (its moderation task died on a restart) and sends the sender a `message_removed`. The ack's `room_id` matters: the client keys the pending-message lookup by it, so switching rooms before the ack arrives no longer drops the ack and spuriously reports "message not sent".
 
 **Moderation logging**: OpenAI scores logged via `logger.info` — top 5 categories above 0.1 threshold, FLAGGED line with threshold comparison. `logging.basicConfig(level=INFO)` configured at startup.
 
@@ -427,9 +431,9 @@ Rooms have configurable properties set via the admin page:
 
 ### Membership Model
 
-Room "member count" reflects **reachable** users — those who can be notified:
-- Has active WebSocket connection, OR
-- Has valid push subscription AND `last_seen` < 2 hours ago
+Room "member count" reflects **reachable** users — those who can be notified. A member is reachable if EITHER (`get_reachable_member_count`, `REACHABILITY_HOURS=2`):
+- `last_seen` within the last 2 hours, OR
+- has any row in `chat_push_subscriptions` (a push subscription makes a user reachable regardless of `last_seen` age — the two branches are OR'd, not AND'd)
 
 `last_seen` updated on: WS connect, WS disconnect, push notification delivery (via `POST /chat/api/push/ack`).
 `last_active` updated on: engagement events (send message, react, join meetup, etc.), throttled to 1 write per 60s.
@@ -475,6 +479,7 @@ Main room auto-opens on login. Path-based routing (`/chat`, `/chat/r/{id}`, `/ch
 - **Page titles**: `Line-up · ST26`, `Timetable · ST26`, `Chat · ST26` — short name from `events.short_name` in lineup DB, loaded at server startup
 - **Mobile navigation**: chat icon (dialog bubbles) on lineup/timetable header left, calendar icon on chat header left. Both `position: absolute; left: 4px`, matching hamburger at `right: 4px`. SVG viewBox scaled to match hamburger visual weight.
 - **Toast**: word-based duration (1.5s + 300ms/word, min 4s), balanced text, max 360px
+- **First-run notification prompt**: a NON-blocking top banner (`#notif-prompt-banner`), not a full-screen modal — it sits below the header and never covers the composer/send button. It arms only after the user's first sent message (`sent_first_msg`), auto-dismisses after 12s without persisting (so an unnoticed prompt is re-offered next session), and only an explicit Enable/dismiss sets `notif_prompt_done`. An explicit disable also sets `notif_prompt_done` so the user is never nagged again.
 - **Debug**: 236 `dbg()` calls with timecodes across all functions, `verify()` checks DOM state
 
 ### Chat Tests
@@ -486,6 +491,16 @@ Main room auto-opens on login. Path-based routing (`/chat`, `/chat/r/{id}`, `/ch
 - `test_chat_api.py` (56) — REST endpoints, auth, rooms, meetups, DMs, admin
 
 Two suites run outside pytest: `test_notifications.py` (54 tests — push debounce, payload, badge, clearing; requires Playwright infra, run separately) and `tests/e2ee_browser_check.py` (standalone Playwright verification, 21 checks — see "End-to-End Encryption (DMs)" below).
+
+### Automated Notification Test Harness
+
+`tests/notif_e2e/` — 21 scenarios across three stages, all green (see its `README.md` and `docs/notification-test-design.md`). Each scenario runs against a fully isolated server (own port, scratch `chat.db` + `hearts.db`, freshly generated VAPID keypair, sensitive env stripped) and writes a signal timeline to `_artifacts/<scenario>.json`.
+
+- **Stage 1 (emission, no browser)** — a WebSocket-client sender drives the real server; a **Fake Push Service** (aiohttp, impersonates FCM/Apple/Mozilla) captures the real WebPush and **decrypts it** (aes128gcm via `http_ece`, using injected subscription keys) and parses the VAPID JWT, so assertions run on the exact payload / TTL / per-service VAPID `aud` (the anti-poisoning invariant), targeting, debounce/silent, 410 pruning, and pending-moderation gating.
+- **Stage 2 (client behavior)** — real headless Chromium via Playwright's **sync** API, with a subscribe-success override (headless can't reach a real push service), spies on `Notification`/`setAppBadge`/`sendBeacon`/`document.hasFocus`, and WS + push-network capture. Covers enable/disable/repair, idle beacon, the focus-gated keepalive, cross-device badge fan-out+clear, and the non-blocking first-run banner.
+- **Stage 3 (service-worker handlers)** — runs the real `sw.js` source in a **mock SW environment** (`new Function('self','fetch','caches','navigator', swSrc)` with recording mocks) and dispatches synthetic push/notificationclick/notificationclose/pushsubscriptionchange events. Necessary because headless Chromium has no notification backend (a real SW's `showNotification` rejects, so the handler chain that runs swlog/ack never completes) and Playwright's SW Worker handles die too aggressively.
+
+Run: `python tests/notif_e2e/run.py [--sw | --browser | --all | --list]`. **`--browser`/`--all` must run OUTSIDE the command sandbox** (headless Chromium needs Mach-port access). Stage 4 (headed real-browser FCM + real OS-notification render) is designed but not built.
 
 ### Stress Test
 
