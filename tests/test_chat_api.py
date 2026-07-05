@@ -30,7 +30,7 @@ from chat_db import (
     block_user,
     get_user,
     add_strike,
-    upsert_e2ee_key,
+    upsert_e2ee_device_key,
 )
 
 
@@ -333,7 +333,7 @@ class TestDMs:
 
     def test_list_dms_other_has_key(self, auth_client, user1, user2):
         find_or_create_dm(_test_db, "test-event", user1["id"], user2["id"])
-        upsert_e2ee_key(_test_db, user2["id"], _valid_jwk())
+        upsert_e2ee_device_key(_test_db, user2["id"], "a" * 32, _valid_jwk())
         r = auth_client.get("/chat/api/dms")
         assert r.status_code == 200
         assert r.json()[0]["other_has_key"] is True
@@ -501,18 +501,40 @@ def _valid_jwk(x_byte: int = 0x01, y_byte: int = 0x02) -> str:
     return json.dumps({"kty": "EC", "crv": "P-256", "x": x, "y": y})
 
 
-class TestE2eeKeys:
+_DEVICE_A = "a" * 32
+_DEVICE_B = "b" * 32
+
+
+class TestE2eeDeviceKeys:
     def test_put_get_round_trip(self, auth_client, user1):
         jwk = _valid_jwk()
-        r = auth_client.put("/chat/api/keys", json={"public_key": jwk})
+        r = auth_client.put(
+            "/chat/api/keys", json={"device_id": _DEVICE_A, "public_key": jwk}
+        )
         assert r.status_code == 204
 
         r = auth_client.get(f"/chat/api/keys/{user1['id']}")
         assert r.status_code == 200
         data = r.json()
         assert data["user_id"] == user1["id"]
-        assert data["public_key"] == jwk
-        assert "created_at" in data
+        assert len(data["devices"]) == 1
+        assert data["devices"][0]["device_id"] == _DEVICE_A
+        assert data["devices"][0]["public_key"] == jwk
+        assert "created_at" in data["devices"][0]
+
+    def test_put_multiple_devices_listed(self, auth_client, user1):
+        jwk1 = _valid_jwk(0x01, 0x02)
+        jwk2 = _valid_jwk(0x03, 0x04)
+        auth_client.put(
+            "/chat/api/keys", json={"device_id": _DEVICE_A, "public_key": jwk1}
+        )
+        auth_client.put(
+            "/chat/api/keys", json={"device_id": _DEVICE_B, "public_key": jwk2}
+        )
+        r = auth_client.get(f"/chat/api/keys/{user1['id']}")
+        assert r.status_code == 200
+        device_ids = {d["device_id"] for d in r.json()["devices"]}
+        assert device_ids == {_DEVICE_A, _DEVICE_B}
 
     def test_get_404_missing(self, auth_client):
         r = auth_client.get("/chat/api/keys/nonexistent-user-id")
@@ -520,51 +542,91 @@ class TestE2eeKeys:
 
     def test_put_auth_required(self, client):
         jwk = _valid_jwk()
-        r = client.put("/chat/api/keys", json={"public_key": jwk})
+        r = client.put(
+            "/chat/api/keys", json={"device_id": _DEVICE_A, "public_key": jwk}
+        )
         assert r.status_code == 401
 
     def test_get_auth_required(self, client, user1):
         r = client.get(f"/chat/api/keys/{user1['id']}")
         assert r.status_code == 401
 
+    def test_device_id_missing(self, auth_client):
+        jwk = _valid_jwk()
+        r = auth_client.put("/chat/api/keys", json={"public_key": jwk})
+        assert r.status_code == 422
+
+    def test_device_id_wrong_length(self, auth_client):
+        jwk = _valid_jwk()
+        r = auth_client.put(
+            "/chat/api/keys", json={"device_id": "a" * 10, "public_key": jwk}
+        )
+        assert r.status_code == 422
+
+    def test_device_id_bad_hex(self, auth_client):
+        jwk = _valid_jwk()
+        r = auth_client.put(
+            "/chat/api/keys", json={"device_id": "g" * 32, "public_key": jwk}
+        )
+        assert r.status_code == 422
+
+    def test_device_id_uppercase_rejected(self, auth_client):
+        jwk = _valid_jwk()
+        r = auth_client.put(
+            "/chat/api/keys", json={"device_id": "A" * 32, "public_key": jwk}
+        )
+        assert r.status_code == 422
+
     def test_jwk_wrong_kty(self, auth_client):
         x = base64.urlsafe_b64encode(b"\x01" * 32).rstrip(b"=").decode()
         y = base64.urlsafe_b64encode(b"\x02" * 32).rstrip(b"=").decode()
         jwk = json.dumps({"kty": "RSA", "crv": "P-256", "x": x, "y": y})
-        r = auth_client.put("/chat/api/keys", json={"public_key": jwk})
+        r = auth_client.put(
+            "/chat/api/keys", json={"device_id": _DEVICE_A, "public_key": jwk}
+        )
         assert r.status_code == 422
 
     def test_jwk_wrong_crv(self, auth_client):
         x = base64.urlsafe_b64encode(b"\x01" * 32).rstrip(b"=").decode()
         y = base64.urlsafe_b64encode(b"\x02" * 32).rstrip(b"=").decode()
         jwk = json.dumps({"kty": "EC", "crv": "P-384", "x": x, "y": y})
-        r = auth_client.put("/chat/api/keys", json={"public_key": jwk})
+        r = auth_client.put(
+            "/chat/api/keys", json={"device_id": _DEVICE_A, "public_key": jwk}
+        )
         assert r.status_code == 422
 
     def test_jwk_missing_x(self, auth_client):
         y = base64.urlsafe_b64encode(b"\x02" * 32).rstrip(b"=").decode()
         jwk = json.dumps({"kty": "EC", "crv": "P-256", "y": y})
-        r = auth_client.put("/chat/api/keys", json={"public_key": jwk})
+        r = auth_client.put(
+            "/chat/api/keys", json={"device_id": _DEVICE_A, "public_key": jwk}
+        )
         assert r.status_code == 422
 
     def test_jwk_missing_y(self, auth_client):
         x = base64.urlsafe_b64encode(b"\x01" * 32).rstrip(b"=").decode()
         jwk = json.dumps({"kty": "EC", "crv": "P-256", "x": x})
-        r = auth_client.put("/chat/api/keys", json={"public_key": jwk})
+        r = auth_client.put(
+            "/chat/api/keys", json={"device_id": _DEVICE_A, "public_key": jwk}
+        )
         assert r.status_code == 422
 
     def test_jwk_x_wrong_length(self, auth_client):
         x_short = base64.urlsafe_b64encode(b"\x01" * 16).rstrip(b"=").decode()
         y = base64.urlsafe_b64encode(b"\x02" * 32).rstrip(b"=").decode()
         jwk = json.dumps({"kty": "EC", "crv": "P-256", "x": x_short, "y": y})
-        r = auth_client.put("/chat/api/keys", json={"public_key": jwk})
+        r = auth_client.put(
+            "/chat/api/keys", json={"device_id": _DEVICE_A, "public_key": jwk}
+        )
         assert r.status_code == 422
 
     def test_jwk_y_wrong_length(self, auth_client):
         x = base64.urlsafe_b64encode(b"\x01" * 32).rstrip(b"=").decode()
         y_short = base64.urlsafe_b64encode(b"\x02" * 16).rstrip(b"=").decode()
         jwk = json.dumps({"kty": "EC", "crv": "P-256", "x": x, "y": y_short})
-        r = auth_client.put("/chat/api/keys", json={"public_key": jwk})
+        r = auth_client.put(
+            "/chat/api/keys", json={"device_id": _DEVICE_A, "public_key": jwk}
+        )
         assert r.status_code == 422
 
     def test_jwk_present_d_rejected(self, auth_client):
@@ -572,10 +634,14 @@ class TestE2eeKeys:
         y = base64.urlsafe_b64encode(b"\x02" * 32).rstrip(b"=").decode()
         d = base64.urlsafe_b64encode(b"\x03" * 32).rstrip(b"=").decode()
         jwk = json.dumps({"kty": "EC", "crv": "P-256", "x": x, "y": y, "d": d})
-        r = auth_client.put("/chat/api/keys", json={"public_key": jwk})
+        r = auth_client.put(
+            "/chat/api/keys", json={"device_id": _DEVICE_A, "public_key": jwk}
+        )
         assert r.status_code == 422
 
-    def test_key_rotated_broadcast_on_rekey(self, auth_client, user1, user2, session2):
+    def test_key_rotated_broadcast_on_new_device_and_rekey(
+        self, auth_client, user1, user2, session2
+    ):
         find_or_create_dm(_test_db, "test-event", user1["id"], user2["id"])
         jwk1 = _valid_jwk(0x01, 0x02)
         jwk2 = _valid_jwk(0x03, 0x04)
@@ -583,29 +649,71 @@ class TestE2eeKeys:
         # First upload: broadcast expected too — a DM peer may have latched
         # into unencrypted fallback while this user was still in profile setup
         # (before any key existed), and key_rotated is what unlatches them.
+        # Two create_task calls per changed mapping: one to the DM peer
+        # (room-scoped) and one self-notification (room_id null) so sibling
+        # devices of the SAME user fan out to the new device too.
         with patch("chat_ws.manager.send_to_user", new_callable=AsyncMock):
             with patch("chat_api.asyncio.create_task") as mock_ct:
-                r = auth_client.put("/chat/api/keys", json={"public_key": jwk1})
+                r = auth_client.put(
+                    "/chat/api/keys", json={"device_id": _DEVICE_A, "public_key": jwk1}
+                )
+                assert r.status_code == 204
+                assert mock_ct.call_count == 2
+
+        # Re-key the SAME device with a different key: broadcast expected
+        with patch("chat_ws.manager.send_to_user", new_callable=AsyncMock):
+            with patch("chat_api.asyncio.create_task") as mock_ct:
+                r = auth_client.put(
+                    "/chat/api/keys", json={"device_id": _DEVICE_A, "public_key": jwk2}
+                )
+                assert r.status_code == 204
+                assert mock_ct.call_count == 2
+
+    def test_key_rotated_broadcast_on_second_device_no_dm(self, auth_client, user1):
+        # No DM room here -- only the self-notification (room_id null) fires,
+        # confirming sibling-device fanout doesn't depend on having a peer.
+        jwk1 = _valid_jwk(0x01, 0x02)
+        jwk2 = _valid_jwk(0x03, 0x04)
+        auth_client.put(
+            "/chat/api/keys", json={"device_id": _DEVICE_A, "public_key": jwk1}
+        )
+        with patch("chat_ws.manager.send_to_user", new_callable=AsyncMock):
+            with patch("chat_api.asyncio.create_task") as mock_ct:
+                r = auth_client.put(
+                    "/chat/api/keys", json={"device_id": _DEVICE_B, "public_key": jwk2}
+                )
                 assert r.status_code == 204
                 assert mock_ct.call_count == 1
 
-        # Second upload with different key: broadcast expected
-        with patch("chat_ws.manager.send_to_user", new_callable=AsyncMock):
-            with patch("chat_api.asyncio.create_task") as mock_ct:
-                r = auth_client.put("/chat/api/keys", json={"public_key": jwk2})
+    def test_key_rotated_self_notification_payload(self, auth_client, user1):
+        jwk = _valid_jwk()
+        with patch("chat_ws.manager.send_to_user", new_callable=AsyncMock) as mock_send:
+            with patch(
+                "chat_api.asyncio.create_task", side_effect=lambda coro: coro.close()
+            ):
+                r = auth_client.put(
+                    "/chat/api/keys", json={"device_id": _DEVICE_A, "public_key": jwk}
+                )
                 assert r.status_code == 204
-                assert mock_ct.call_count == 1
+        self_calls = [c for c in mock_send.call_args_list if c.args[0] == user1["id"]]
+        assert len(self_calls) == 1
+        assert self_calls[0].args[1]["event"] == "key_rotated"
+        assert self_calls[0].args[1]["room_id"] is None
 
     def test_no_broadcast_same_key_reupload(self, auth_client, user1, user2):
         find_or_create_dm(_test_db, "test-event", user1["id"], user2["id"])
         jwk = _valid_jwk()
 
         # First upload
-        r = auth_client.put("/chat/api/keys", json={"public_key": jwk})
+        r = auth_client.put(
+            "/chat/api/keys", json={"device_id": _DEVICE_A, "public_key": jwk}
+        )
         assert r.status_code == 204
 
         # Same key re-upload: no broadcast
         with patch("chat_api.asyncio.create_task") as mock_ct:
-            r = auth_client.put("/chat/api/keys", json={"public_key": jwk})
+            r = auth_client.put(
+                "/chat/api/keys", json={"device_id": _DEVICE_A, "public_key": jwk}
+            )
             assert r.status_code == 204
             mock_ct.assert_not_called()

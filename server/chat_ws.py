@@ -1195,8 +1195,17 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                         continue
 
                 max_content = msg_char_limit + 20 if msg_type == "text" else 2000
-                if is_e2ee_msg and msg_type == "text":
-                    max_content = max(max_content * 2, 4000)
+                if is_e2ee_msg:
+                    # v2 envelopes add ~125 chars per device slot (device_id ->
+                    # wrapped message key) on top of the base overhead, and this
+                    # applies to EVERY message type now, not just text -- a
+                    # 12-device image envelope is ~1,600 chars. +2000 headroom
+                    # covers the device cap (12 total across both users) x
+                    # ~125 chars/slot; raising the cap requires raising this too.
+                    if msg_type == "text":
+                        max_content = max(msg_char_limit * 2, 4000) + 2000
+                    else:
+                        max_content = 2000 + 2000
                 if len(content) > max_content:
                     await manager.send_to_user(
                         user_id,

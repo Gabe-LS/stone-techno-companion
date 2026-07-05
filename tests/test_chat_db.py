@@ -48,8 +48,9 @@ from chat_db import (
     purge_expired_sessions,
     wipe_all_chat_data,
     hash_email,
-    upsert_e2ee_key,
-    get_e2ee_key,
+    upsert_e2ee_device_key,
+    get_e2ee_device_keys,
+    prune_stale_devices,
     _migrate_chat_db,
 )
 
@@ -458,29 +459,89 @@ class TestEmailHash:
         assert hash_email("  test@example.com  ") == hash_email("test@example.com")
 
 
-# --- E2EE keys ---
+# --- E2EE device keys ---
 
 
-class TestE2eeKeys:
+class TestE2eeDeviceKeys:
     _JWK = '{"kty":"EC","crv":"P-256","x":"AAAA","y":"BBBB"}'
     _JWK2 = '{"kty":"EC","crv":"P-256","x":"CCCC","y":"DDDD"}'
 
     def test_upsert_and_get(self, db, user):
-        upsert_e2ee_key(db, user["id"], self._JWK)
-        assert get_e2ee_key(db, user["id"]) == self._JWK
+        upsert_e2ee_device_key(db, user["id"], "a" * 32, self._JWK)
+        devices = get_e2ee_device_keys(db, user["id"])
+        assert len(devices) == 1
+        assert devices[0]["device_id"] == "a" * 32
+        assert devices[0]["public_key"] == self._JWK
 
-    def test_get_missing_returns_none(self, db, user):
-        assert get_e2ee_key(db, user["id"]) is None
+    def test_get_missing_returns_empty(self, db, user):
+        assert get_e2ee_device_keys(db, user["id"]) == []
 
-    def test_overwrite(self, db, user):
-        upsert_e2ee_key(db, user["id"], self._JWK)
-        upsert_e2ee_key(db, user["id"], self._JWK2)
-        assert get_e2ee_key(db, user["id"]) == self._JWK2
+    def test_upsert_new_device_returns_changed(self, db, user):
+        assert upsert_e2ee_device_key(db, user["id"], "a" * 32, self._JWK) is True
+
+    def test_upsert_same_key_returns_unchanged(self, db, user):
+        upsert_e2ee_device_key(db, user["id"], "a" * 32, self._JWK)
+        assert upsert_e2ee_device_key(db, user["id"], "a" * 32, self._JWK) is False
+
+    def test_upsert_rekey_same_device_returns_changed(self, db, user):
+        upsert_e2ee_device_key(db, user["id"], "a" * 32, self._JWK)
+        assert upsert_e2ee_device_key(db, user["id"], "a" * 32, self._JWK2) is True
+
+    def test_multiple_devices_per_user(self, db, user):
+        upsert_e2ee_device_key(db, user["id"], "a" * 32, self._JWK)
+        upsert_e2ee_device_key(db, user["id"], "b" * 32, self._JWK2)
+        devices = get_e2ee_device_keys(db, user["id"])
+        assert {d["device_id"] for d in devices} == {"a" * 32, "b" * 32}
 
     def test_cascade_on_user_delete(self, db, user):
-        upsert_e2ee_key(db, user["id"], self._JWK)
+        upsert_e2ee_device_key(db, user["id"], "a" * 32, self._JWK)
         delete_user(db, user["id"])
-        assert get_e2ee_key(db, user["id"]) is None
+        assert get_e2ee_device_keys(db, user["id"]) == []
+
+    def test_prune_by_age(self, db, user):
+        upsert_e2ee_device_key(db, user["id"], "a" * 32, self._JWK)
+        stale = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+        db.execute(
+            "UPDATE e2ee_device_keys SET last_seen = ? WHERE user_id = ? AND device_id = ?",
+            (stale, user["id"], "a" * 32),
+        )
+        db.commit()
+        prune_stale_devices(db, user["id"])
+        assert get_e2ee_device_keys(db, user["id"]) == []
+
+    def test_prune_by_cap_evicts_oldest_last_seen(self, db, user):
+        now = datetime.now(timezone.utc)
+        for i in range(8):
+            device_id = str(i) * 32
+            upsert_e2ee_device_key(db, user["id"], device_id, self._JWK)
+            ts = (now - timedelta(minutes=8 - i)).isoformat()
+            db.execute(
+                "UPDATE e2ee_device_keys SET last_seen = ? WHERE user_id = ? AND device_id = ?",
+                (ts, user["id"], device_id),
+            )
+            db.commit()
+        prune_stale_devices(db, user["id"], max_devices=6, max_age_days=7)
+        remaining = {d["device_id"] for d in get_e2ee_device_keys(db, user["id"])}
+        assert len(remaining) == 6
+        assert "0" * 32 not in remaining
+        assert "1" * 32 not in remaining
+        assert "7" * 32 in remaining
+
+    def test_migration_drops_e2ee_keys_table(self, db):
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS e2ee_keys "
+            "(user_id TEXT PRIMARY KEY, public_key TEXT NOT NULL, created_at TEXT NOT NULL)"
+        )
+        db.commit()
+        _migrate_chat_db(db)
+        tables = {
+            r[0]
+            for r in db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        assert "e2ee_keys" not in tables
+        assert "e2ee_device_keys" in tables
 
     def test_reports_unverified_default(self, db, user, user2, stage_room):
         report_id = create_report(

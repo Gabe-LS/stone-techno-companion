@@ -207,10 +207,13 @@ def init_chat_db(db: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_chat_push_user ON chat_push_subscriptions(user_id);
 
-        CREATE TABLE IF NOT EXISTS e2ee_keys (
-            user_id    TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        CREATE TABLE IF NOT EXISTS e2ee_device_keys (
+            user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            device_id  TEXT NOT NULL,
             public_key TEXT NOT NULL,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            last_seen  TEXT NOT NULL,
+            PRIMARY KEY (user_id, device_id)
         );
 
         CREATE TABLE IF NOT EXISTS avatars (
@@ -292,6 +295,23 @@ def _migrate_chat_db(db: sqlite3.Connection) -> None:
         db.commit()
 
     db.execute("UPDATE rooms SET is_moderated = 0 WHERE type = 'dm'")
+    db.commit()
+
+    # v2: per-device keys replace the v1 single-key-per-user table. v1 rows
+    # cannot be mapped to a device_id, so they're dropped; clients re-upload
+    # under a device_id on next load (at most one hour of old envelopes
+    # degrade to the sentinel, per the compat rule in docs/e2ee-multidevice.md).
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS e2ee_device_keys (
+            user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            device_id  TEXT NOT NULL,
+            public_key TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            last_seen  TEXT NOT NULL,
+            PRIMARY KEY (user_id, device_id)
+        )
+    """)
+    db.execute("DROP TABLE IF EXISTS e2ee_keys")
     db.commit()
 
 
@@ -1581,19 +1601,60 @@ def get_push_subscription_count(db: sqlite3.Connection, user_id: str) -> int:
     return row[0]
 
 
-# --- E2EE keys ---
+# --- E2EE device keys ---
 
 
-def upsert_e2ee_key(db: sqlite3.Connection, user_id: str, public_key_jwk: str) -> None:
+def upsert_e2ee_device_key(
+    db: sqlite3.Connection, user_id: str, device_id: str, public_key_jwk: str
+) -> bool:
+    """Upsert a device's public key. Returns True if the (device_id ->
+    public_key) mapping changed (new device, or same device re-keyed) so the
+    caller knows whether to broadcast key_rotated."""
+    row = db.execute(
+        "SELECT public_key, created_at FROM e2ee_device_keys "
+        "WHERE user_id = ? AND device_id = ?",
+        (user_id, device_id),
+    ).fetchone()
+    changed = row is None or row["public_key"] != public_key_jwk
+    created_at = row["created_at"] if row else _now()
     db.execute(
-        "INSERT OR REPLACE INTO e2ee_keys (user_id, public_key, created_at) VALUES (?, ?, ?)",
-        (user_id, public_key_jwk, _now()),
+        "INSERT OR REPLACE INTO e2ee_device_keys "
+        "(user_id, device_id, public_key, created_at, last_seen) VALUES (?, ?, ?, ?, ?)",
+        (user_id, device_id, public_key_jwk, created_at, _now()),
     )
     db.commit()
+    prune_stale_devices(db, user_id)
+    return changed
 
 
-def get_e2ee_key(db: sqlite3.Connection, user_id: str) -> str | None:
-    row = db.execute(
-        "SELECT public_key FROM e2ee_keys WHERE user_id = ?", (user_id,)
-    ).fetchone()
-    return row["public_key"] if row else None
+def get_e2ee_device_keys(db: sqlite3.Connection, user_id: str) -> list[dict]:
+    rows = db.execute(
+        "SELECT device_id, public_key, created_at, last_seen FROM e2ee_device_keys "
+        "WHERE user_id = ? ORDER BY created_at",
+        (user_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def prune_stale_devices(
+    db: sqlite3.Connection,
+    user_id: str,
+    max_devices: int = 6,
+    max_age_days: int = 7,
+) -> None:
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).isoformat()
+    db.execute(
+        "DELETE FROM e2ee_device_keys WHERE user_id = ? AND last_seen < ?",
+        (user_id, cutoff),
+    )
+    rows = db.execute(
+        "SELECT device_id FROM e2ee_device_keys WHERE user_id = ? ORDER BY last_seen DESC",
+        (user_id,),
+    ).fetchall()
+    if len(rows) > max_devices:
+        stale_ids = [r["device_id"] for r in rows[max_devices:]]
+        db.executemany(
+            "DELETE FROM e2ee_device_keys WHERE user_id = ? AND device_id = ?",
+            [(user_id, did) for did in stale_ids],
+        )
+    db.commit()

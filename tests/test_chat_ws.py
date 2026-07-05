@@ -457,6 +457,12 @@ class TestIsE2eeContent:
         content = json.dumps({"e2ee": True, "v": 1, "ct": "abc"})
         assert chat_ws._is_e2ee_content(content) is True
 
+    def test_valid_v2_envelope(self):
+        content = json.dumps(
+            {"e2ee": True, "v": 2, "sd": "a" * 32, "ct": "abc", "keys": {"a" * 32: "x"}}
+        )
+        assert chat_ws._is_e2ee_content(content) is True
+
     def test_plain_text_json(self):
         content = json.dumps({"text": "hello everyone"})
         assert chat_ws._is_e2ee_content(content) is False
@@ -498,12 +504,47 @@ class TestE2eeSendMessage:
         assert get_room_messages(db, "grand-hall") == []
 
     @pytest.mark.asyncio
+    async def test_e2ee_v2_rejected_outside_dm(
+        self, db, user1, session1, stage_room, event_id
+    ):
+        envelope = json.dumps(
+            {
+                "e2ee": True,
+                "v": 2,
+                "sd": "a" * 32,
+                "ct": "ciphertext-blob",
+                "keys": {"a" * 32: "x"},
+            }
+        )
+        ws = FakeWebSocket()
+        ws.to_receive = [
+            json.dumps(
+                {
+                    "event": "send_message",
+                    "room_id": "grand-hall",
+                    "type": "text",
+                    "content": envelope,
+                    "temp_id": "t1v2",
+                }
+            )
+        ]
+        await _run_ws(ws, session1["token"], event_id, db)
+
+        rejected = ws.get_events_by_type("message_rejected")
+        assert len(rejected) == 1
+        assert (
+            rejected[0]["reason"]
+            == "Encrypted messages are only supported in direct messages"
+        )
+        assert get_room_messages(db, "grand-hall") == []
+
+    @pytest.mark.asyncio
     async def test_e2ee_length_allowance_in_dm(
         self, db, user1, user2, session1, event_id
     ):
         room_id = find_or_create_dm(db, event_id, user1["id"], user2["id"])
         envelope = json.dumps({"e2ee": True, "v": 1, "ct": "A" * 3500})
-        assert 1020 < len(envelope) < 4000
+        assert 1020 < len(envelope) < 6000
 
         ws = FakeWebSocket()
         ws.to_receive = [
@@ -526,12 +567,49 @@ class TestE2eeSendMessage:
         assert stored[0]["content"] == envelope
 
     @pytest.mark.asyncio
+    async def test_e2ee_v2_envelope_accepted_in_dm(
+        self, db, user1, user2, session1, event_id
+    ):
+        # 12 device slots (~118 chars each, matching the size math in
+        # docs/e2ee-multidevice.md -- only ~1.4 KB, well under any limit) plus
+        # a padded ciphertext to deliberately land between the old v1 text
+        # ceiling (4000) and the new v2 ceiling (6000).
+        keys = {f"{i:032x}": "B" * 80 for i in range(12)}
+        envelope = json.dumps(
+            {"e2ee": True, "v": 2, "sd": "a" * 32, "ct": "A" * 3600, "keys": keys}
+        )
+        assert 4000 < len(envelope) < 6000
+        room_id = find_or_create_dm(db, event_id, user1["id"], user2["id"])
+
+        ws = FakeWebSocket()
+        ws.to_receive = [
+            json.dumps(
+                {
+                    "event": "send_message",
+                    "room_id": room_id,
+                    "type": "text",
+                    "content": envelope,
+                    "temp_id": "t2v2",
+                }
+            )
+        ]
+        await _run_ws(ws, session1["token"], event_id, db)
+
+        assert ws.get_events_by_type("message_rejected") == []
+        assert len(ws.get_events_by_type("message_acked")) == 1
+        stored = get_room_messages(db, room_id)
+        assert len(stored) == 1
+        assert stored[0]["content"] == envelope
+
+    @pytest.mark.asyncio
     async def test_e2ee_length_still_bounded(
         self, db, user1, user2, session1, event_id
     ):
         room_id = find_or_create_dm(db, event_id, user1["id"], user2["id"])
-        envelope = json.dumps({"e2ee": True, "v": 1, "ct": "A" * 4500})
-        assert len(envelope) > 4000
+        # v2's +2000 headroom raised the text ceiling to 6000 -- this must
+        # exceed that, not the old v1 ceiling of 4000.
+        envelope = json.dumps({"e2ee": True, "v": 1, "ct": "A" * 6500})
+        assert len(envelope) > 6000
 
         ws = FakeWebSocket()
         ws.to_receive = [
@@ -576,6 +654,64 @@ class TestE2eeSendMessage:
         rejected = ws.get_events_by_type("message_rejected")
         assert not any(r["reason"] == "Invalid media URL." for r in rejected)
         assert len(get_room_messages(db, room_id)) == 1
+
+    @pytest.mark.asyncio
+    async def test_e2ee_non_text_length_allowance_increased(
+        self, db, user1, user2, session1, event_id
+    ):
+        # Before v2, non-text E2EE envelopes got no extra allowance (2000
+        # flat) -- a multi-device image envelope this size would have been
+        # rejected. v2 extends the +2000 headroom to every message type.
+        room_id = find_or_create_dm(db, event_id, user1["id"], user2["id"])
+        keys = {f"{i:032x}": "B" * 80 for i in range(10)}
+        envelope = json.dumps(
+            {"e2ee": True, "v": 2, "sd": "a" * 32, "ct": "A" * 900, "keys": keys}
+        )
+        assert 2000 < len(envelope) < 4000
+
+        ws = FakeWebSocket()
+        ws.to_receive = [
+            json.dumps(
+                {
+                    "event": "send_message",
+                    "room_id": room_id,
+                    "type": "image",
+                    "content": envelope,
+                    "temp_id": "t5",
+                }
+            )
+        ]
+        await _run_ws(ws, session1["token"], event_id, db)
+
+        assert ws.get_events_by_type("message_rejected") == []
+        assert len(get_room_messages(db, room_id)) == 1
+
+    @pytest.mark.asyncio
+    async def test_e2ee_non_text_length_still_bounded(
+        self, db, user1, user2, session1, event_id
+    ):
+        room_id = find_or_create_dm(db, event_id, user1["id"], user2["id"])
+        envelope = json.dumps({"e2ee": True, "v": 1, "ct": "A" * 4200})
+        assert len(envelope) > 4000
+
+        ws = FakeWebSocket()
+        ws.to_receive = [
+            json.dumps(
+                {
+                    "event": "send_message",
+                    "room_id": room_id,
+                    "type": "image",
+                    "content": envelope,
+                    "temp_id": "t6",
+                }
+            )
+        ]
+        await _run_ws(ws, session1["token"], event_id, db)
+
+        rejected = ws.get_events_by_type("message_rejected")
+        assert len(rejected) == 1
+        assert rejected[0]["reason"] == "Message too long."
+        assert get_room_messages(db, room_id) == []
 
     @pytest.mark.asyncio
     async def test_media_url_check_enforced_for_plaintext_image(

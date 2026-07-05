@@ -74,8 +74,8 @@ from chat_db import (
     get_reachable_member_counts,
     get_setting,
     set_setting,
-    upsert_e2ee_key,
-    get_e2ee_key,
+    upsert_e2ee_device_key,
+    get_e2ee_device_keys,
 )
 from chat_ws import handle_chat_ws, purge_loop
 
@@ -1010,13 +1010,14 @@ async def list_dms(request: Request):
             "u.display_name AS other_name, u.username AS other_username, "
             "u.avatar_url AS other_avatar_url, u.color_index AS other_color_index, "
             "u.country AS other_country, "
-            "CASE WHEN k.user_id IS NULL THEN 0 ELSE 1 END AS other_has_key, "
+            "CASE WHEN EXISTS ("
+            "  SELECT 1 FROM e2ee_device_keys dk WHERE dk.user_id = dp2.user_id"
+            ") THEN 1 ELSE 0 END AS other_has_key, "
             "(SELECT MAX(m.created_at) FROM messages m WHERE m.room_id = r.id AND m.expires_at > ?) AS last_message_at "
             "FROM dm_participants dp1 "
             "JOIN dm_participants dp2 ON dp1.room_id = dp2.room_id AND dp1.user_id != dp2.user_id "
             "JOIN rooms r ON r.id = dp1.room_id "
             "JOIN users u ON u.id = dp2.user_id "
-            "LEFT JOIN e2ee_keys k ON k.user_id = dp2.user_id "
             "WHERE dp1.user_id = ? "
             "ORDER BY last_message_at DESC",
             (now, user["id"]),
@@ -1526,7 +1527,9 @@ async def chat_push_ack(request: Request):
         db.close()
 
 
-# --- E2EE keys ---
+# --- E2EE device keys ---
+
+_DEVICE_ID_RE = re.compile(r"^[a-f0-9]{32}$")
 
 
 def _validate_e2ee_jwk(public_key: str) -> None:
@@ -1566,15 +1569,17 @@ async def put_e2ee_key(request: Request):
     user, db = _get_user_from_cookie(request)
     try:
         body = await request.json()
+        device_id = body.get("device_id", "")
+        if not isinstance(device_id, str) or not _DEVICE_ID_RE.match(device_id):
+            raise HTTPException(422, "Invalid device_id: must be 32 hex chars")
         public_key = body.get("public_key", "")
         _validate_e2ee_jwk(public_key)
-        existing = get_e2ee_key(db, user["id"])
-        upsert_e2ee_key(db, user["id"], public_key)
-        # Broadcast on ANY new key, including the first upload: a peer may have
-        # opened the DM (and latched into unencrypted fallback) while this user
-        # was still in profile setup, before their first key existed. Same-key
-        # re-uploads on every login stay silent.
-        if existing != public_key:
+        changed = upsert_e2ee_device_key(db, user["id"], device_id, public_key)
+        # Broadcast on ANY changed mapping, including the first upload: a peer
+        # may have opened the DM (and latched into unencrypted fallback) while
+        # this user was still in profile setup, before their first key existed.
+        # Same-key re-uploads (every page load) stay silent.
+        if changed:
             dm_rows = db.execute(
                 "SELECT dp1.room_id, dp2.user_id AS other_user_id "
                 "FROM dm_participants dp1 "
@@ -1596,6 +1601,19 @@ async def put_e2ee_key(request: Request):
                         },
                     )
                 )
+            # Sibling devices of the SAME user must also invalidate their
+            # cached device list for this user, so their next send fans out
+            # to the new/re-keyed device. No room to key this on.
+            asyncio.create_task(
+                manager.send_to_user(
+                    user["id"],
+                    {
+                        "event": "key_rotated",
+                        "user_id": user["id"],
+                        "room_id": None,
+                    },
+                )
+            )
         return Response(status_code=204)
     finally:
         db.close()
@@ -1605,15 +1623,19 @@ async def put_e2ee_key(request: Request):
 async def get_e2ee_key_endpoint(user_id: str, request: Request):
     _user, db = _get_user_from_cookie(request)
     try:
-        row = db.execute(
-            "SELECT public_key, created_at FROM e2ee_keys WHERE user_id = ?", (user_id,)
-        ).fetchone()
-        if not row:
+        devices = get_e2ee_device_keys(db, user_id)
+        if not devices:
             raise HTTPException(404, "Key not found")
         return {
             "user_id": user_id,
-            "public_key": row["public_key"],
-            "created_at": row["created_at"],
+            "devices": [
+                {
+                    "device_id": d["device_id"],
+                    "public_key": d["public_key"],
+                    "created_at": d["created_at"],
+                }
+                for d in devices
+            ],
         }
     finally:
         db.close()
