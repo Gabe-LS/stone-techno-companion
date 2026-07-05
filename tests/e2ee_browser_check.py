@@ -491,6 +491,12 @@ def create_dave_user(db_path):
 
 
 def add_session_cookie(context, base_url, token):
+    # Onboarded-user harness: suppress the first-run notification banner so it
+    # never overlaps the flows under test (this harness verifies E2EE/badges,
+    # not onboarding). Mirrors how it strips push/VAPID concerns.
+    context.add_init_script(
+        "() => { try { localStorage.setItem('notif_prompt_done', '1'); } catch (e) {} }"
+    )
     context.add_cookies(
         [
             {

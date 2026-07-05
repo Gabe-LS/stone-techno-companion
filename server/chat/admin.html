@@ -290,14 +290,14 @@ const render = {
         const [reporterHist, reportedHist] = histories[i];
         const snapshotText = esc((() => { try { const p = JSON.parse(r.message_snapshot); return p.text || r.message_snapshot; } catch { return r.message_snapshot; } })());
         return `<tr>
-        <td>${esc(r.reporter_name)}${historyLine(reporterHist)}</td>
-        <td><b>${esc(r.reported_name)}</b>${historyLine(reportedHist)}</td>
+        <td>${esc(r.reporter_name || '[deleted user]')}${historyLine(reporterHist)}</td>
+        <td><b>${esc(r.reported_name || '[deleted user]')}</b>${historyLine(reportedHist)}</td>
         <td>${esc(r.reason)}</td>
         <td><div class="snapshot${r.unverified ? ' unverified' : ''}">${snapshotText}${r.unverified ? '<div class="unverified-banner">Content provided by reporter (unverified - server cannot read encrypted messages)</div>' : ''}</div></td>
         <td class="col-narrow" style="color:var(--text-muted)">${ago(r.created_at)}</td>
         <td class="col-actions"><div class="btn-group">
-          <button class="btn btn-red" onclick="reportAction('${esc(r.id)}','${esc(r.reported_user_id)}','${esc(r.reported_name)}','ban')">Ban</button>
-          <button class="btn btn-amber" onclick="reportAction('${esc(r.id)}','${esc(r.reported_user_id)}','${esc(r.reported_name)}','strike')">Strike</button>
+          <button class="btn btn-red" onclick="reportAction('${esc(r.id)}','${esc(r.reported_user_id)}','${esc(r.reported_name || '[deleted user]')}','ban')">Ban</button>
+          <button class="btn btn-amber" onclick="reportAction('${esc(r.id)}','${esc(r.reported_user_id)}','${esc(r.reported_name || '[deleted user]')}','strike')">Strike</button>
           <button class="btn btn-neutral" onclick="reportAction('${esc(r.id)}','','','dismiss')">Dismiss</button>
         </div></td>
       </tr>`;
