@@ -1491,6 +1491,27 @@ async def chat_vapid_key():
     )
 
 
+_ALLOWED_PUSH_HOST_SUFFIXES = (
+    ".googleapis.com",  # FCM (Chrome / Brave / Chromium Edge)
+    ".push.services.mozilla.com",  # Firefox
+    ".push.apple.com",  # Safari / iOS
+    ".notify.windows.com",  # WNS (legacy Edge)
+)
+
+
+def _is_valid_push_endpoint(endpoint: str) -> bool:
+    from urllib.parse import urlparse
+
+    try:
+        p = urlparse(endpoint)
+    except ValueError:
+        return False
+    if p.scheme != "https" or not p.hostname:
+        return False
+    host = p.hostname.lower()
+    return any(host.endswith(s) for s in _ALLOWED_PUSH_HOST_SUFFIXES)
+
+
 @router.post("/push/subscribe", status_code=204)
 async def chat_push_subscribe(request: Request):
     user, db = _get_user_from_cookie(request)
@@ -1502,6 +1523,8 @@ async def chat_push_subscribe(request: Request):
         auth = keys.get("auth", "")
         if not endpoint or not p256dh or not auth:
             raise HTTPException(422, "Missing subscription fields")
+        if not _is_valid_push_endpoint(endpoint):
+            raise HTTPException(422, "Invalid push endpoint")
         save_push_subscription(db, user["id"], endpoint, p256dh, auth)
         return Response(status_code=204)
     finally:
