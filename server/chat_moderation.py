@@ -354,7 +354,7 @@ def process_strike(
     from chat_db import (
         add_strike,
         mute_user,
-        ban_user,
+        ban_user_all_providers,
         get_user,
         increment_mute_count,
         MAX_MUTES_BEFORE_BAN,
@@ -367,27 +367,17 @@ def process_strike(
     count = add_strike(db, user_id, reason, detail)
 
     if count >= 4:
-        ban_user(
-            db,
-            user_id,
-            user["provider"],
-            user["provider_id"],
-            f"Auto-ban: 4 strikes ({detail})",
-            user["device_fingerprint"],
-        )
+        ban_user_all_providers(db, user_id, f"Auto-ban: 4 strikes ({detail})")
         return {"action": "ban", "strike_count": count, "reason": reason}
 
     if count == 3:
         mute_count = increment_mute_count(db, user_id)
         mute_user(db, user_id, minutes=30)
         if mute_count >= MAX_MUTES_BEFORE_BAN:
-            ban_user(
+            ban_user_all_providers(
                 db,
                 user_id,
-                user["provider"],
-                user["provider_id"],
                 f"Auto-ban: muted {MAX_MUTES_BEFORE_BAN} times ({detail})",
-                user["device_fingerprint"],
             )
             return {"action": "ban", "strike_count": count, "reason": reason}
         return {
@@ -490,17 +480,14 @@ async def moderate_message(
 
     if ai_result:
         if ai_result["instant_ban"]:
-            from chat_db import ban_user, get_user
+            from chat_db import ban_user_all_providers, get_user
 
             user = get_user(db, user_id)
             if user:
-                ban_user(
+                ban_user_all_providers(
                     db,
                     user_id,
-                    user["provider"],
-                    user["provider_id"],
                     f"Auto-ban: {ai_result['category']} (score {ai_result['score']:.2f})",
-                    user["device_fingerprint"],
                 )
             return {
                 "allowed": False,

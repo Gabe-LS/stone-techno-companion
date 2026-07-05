@@ -503,6 +503,41 @@ def ban_user(
     return ban_id
 
 
+def ban_user_all_providers(
+    db: sqlite3.Connection,
+    user_id: str,
+    reason: str,
+) -> None:
+    """Ban every linked identity of a user, not just the frozen users-row one.
+
+    Mirrors the admin-ban fan-out so a user with a second linked provider
+    (e.g. Google + email) can't evade an automatic ban by re-authenticating
+    through the other provider.
+    """
+    user = get_user(db, user_id)
+    fingerprint = user["device_fingerprint"] if user else None
+    providers = db.execute(
+        "SELECT provider, provider_id FROM user_providers WHERE user_id = ?",
+        (user_id,),
+    ).fetchall()
+    seen: set[tuple[str, str]] = set()
+    for p in providers:
+        key = (p["provider"], p["provider_id"])
+        if key in seen:
+            continue
+        seen.add(key)
+        ban_user(db, user_id, p["provider"], p["provider_id"], reason, fingerprint)
+    if user and (user["provider"], user["provider_id"]) not in seen:
+        ban_user(
+            db,
+            user_id,
+            user["provider"],
+            user["provider_id"],
+            reason,
+            fingerprint,
+        )
+
+
 def is_banned(
     db: sqlite3.Connection,
     provider: str,
