@@ -1178,7 +1178,7 @@ async def _moderate_and_broadcast(
         db.close()
         if msg_type in ("image", "video"):
             try:
-                rel_url = json.loads(content).get("url", "")
+                rel_url = msg.get("media_url") or json.loads(content).get("url", "")
                 stem = rel_url.rsplit("/", 1)[-1].rsplit(".", 1)[0]
                 if stem:
                     for suffix in (
@@ -2083,6 +2083,17 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
 _purge_cycle = 0
 
 
+def _checkpoint_wal() -> None:
+    """Runs on a worker thread via asyncio.to_thread -- opens its own
+    connection rather than sharing the purge loop's, since sqlite3
+    connections cannot cross threads."""
+    checkpoint_db = get_chat_db()
+    try:
+        checkpoint_db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        checkpoint_db.close()
+
+
 async def purge_loop() -> None:
     global _purge_cycle
     while True:
@@ -2159,7 +2170,7 @@ async def purge_loop() -> None:
             _purge_cycle += 1
 
             if _purge_cycle % 120 == 0:
-                db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                await asyncio.to_thread(_checkpoint_wal)
 
             if _purge_cycle % 2880 == 0:
                 purge_stale_push_subscriptions(db)

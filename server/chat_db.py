@@ -683,10 +683,32 @@ def update_room(db: sqlite3.Connection, room_id: str, **kwargs) -> None:
 
 
 def delete_room(db: sqlite3.Connection, room_id: str) -> None:
+    msgs = db.execute(
+        "SELECT type, content, media_url FROM messages WHERE room_id = ?",
+        (room_id,),
+    ).fetchall()
+    media_urls: list[str] = []
+    for msg in msgs:
+        if msg["type"] in ("image", "video"):
+            url = msg["media_url"] or ""
+            if not url:
+                import json
+
+                try:
+                    url = json.loads(msg["content"]).get("url", "")
+                except (json.JSONDecodeError, TypeError):
+                    url = ""
+            if url:
+                media_urls.append(url)
+
     db.execute("DELETE FROM messages WHERE room_id = ?", (room_id,))
     db.execute("DELETE FROM room_memberships WHERE room_id = ?", (room_id,))
     db.execute("DELETE FROM rooms WHERE id = ?", (room_id,))
     db.commit()
+
+    uploads_dir = Path(__file__).resolve().parent / "chat" / "uploads"
+    for url in media_urls:
+        _unlink_media_if_orphaned(db, uploads_dir, url)
 
 
 def get_room(db: sqlite3.Connection, room_id: str) -> sqlite3.Row | None:
@@ -965,6 +987,27 @@ def get_reactions_for_messages(
     return result
 
 
+def _unlink_media_if_orphaned(
+    db: sqlite3.Connection, uploads_dir: Path, url: str | None
+) -> None:
+    """Unlink a served media file + its moderation copies, but only if no
+    remaining message still references the same media_url -- otherwise a
+    bulk delete/purge would rip a file out from under a live message."""
+    if not url:
+        return
+    still_referenced = db.execute(
+        "SELECT 1 FROM messages WHERE media_url = ? LIMIT 1", (url,)
+    ).fetchone()
+    if still_referenced:
+        return
+    filename = url.rsplit("/", 1)[-1]
+    (uploads_dir / filename).unlink(missing_ok=True)
+    stem = filename.rsplit(".", 1)[0]
+    (uploads_dir / f"{stem}_mod.webp").unlink(missing_ok=True)
+    for i in range(3):
+        (uploads_dir / f"{stem}_mod{i}.webp").unlink(missing_ok=True)
+
+
 def purge_expired_messages(db: sqlite3.Connection) -> list[dict]:
     now = _now()
     expired = db.execute(
@@ -995,12 +1038,7 @@ def purge_expired_messages(db: sqlite3.Connection) -> list[dict]:
 
     uploads_dir = Path(__file__).resolve().parent / "chat" / "uploads"
     for path_str in image_paths:
-        filename = path_str.rsplit("/", 1)[-1]
-        (uploads_dir / filename).unlink(missing_ok=True)
-        stem = filename.rsplit(".", 1)[0]
-        (uploads_dir / f"{stem}_mod.webp").unlink(missing_ok=True)
-        for i in range(3):
-            (uploads_dir / f"{stem}_mod{i}.webp").unlink(missing_ok=True)
+        _unlink_media_if_orphaned(db, uploads_dir, path_str)
 
     return [{"room_id": rid, "message_ids": ids} for rid, ids in by_room.items()]
 
@@ -1134,13 +1172,34 @@ def purge_expired_meetups(db: sqlite3.Connection) -> list[str]:
     ).fetchall()
     expired_ids = [m["id"] for m in expired]
 
+    media_urls: list[str] = []
     for mid in expired_ids:
+        msgs = db.execute(
+            "SELECT type, content, media_url FROM messages WHERE room_id = ?",
+            (mid,),
+        ).fetchall()
+        for msg in msgs:
+            if msg["type"] in ("image", "video"):
+                url = msg["media_url"] or ""
+                if not url:
+                    import json
+
+                    try:
+                        url = json.loads(msg["content"]).get("url", "")
+                    except (json.JSONDecodeError, TypeError):
+                        url = ""
+                if url:
+                    media_urls.append(url)
         db.execute("DELETE FROM messages WHERE room_id = ?", (mid,))
         db.execute("DELETE FROM rooms WHERE id = ?", (mid,))
 
     if expired_ids:
         db.execute("DELETE FROM meetups WHERE expires_at <= ?", (now,))
         db.commit()
+
+    uploads_dir = Path(__file__).resolve().parent / "chat" / "uploads"
+    for url in media_urls:
+        _unlink_media_if_orphaned(db, uploads_dir, url)
 
     return expired_ids
 
@@ -1368,6 +1427,7 @@ def delete_user_messages(db: sqlite3.Connection, user_id: str) -> list[dict]:
     ).fetchall()
 
     by_room: dict[str, list[str]] = {}
+    media_urls: list[str] = []
     uploads = Path(__file__).resolve().parent / "chat" / "uploads"
     for msg in msgs:
         by_room.setdefault(msg["room_id"], []).append(msg["id"])
@@ -1381,12 +1441,7 @@ def delete_user_messages(db: sqlite3.Connection, user_id: str) -> list[dict]:
                 except (json.JSONDecodeError, TypeError):
                     url = ""
             if url:
-                filename = url.rsplit("/", 1)[-1]
-                (uploads / filename).unlink(missing_ok=True)
-                stem = filename.rsplit(".", 1)[0]
-                (uploads / f"{stem}_mod.webp").unlink(missing_ok=True)
-                for i in range(3):
-                    (uploads / f"{stem}_mod{i}.webp").unlink(missing_ok=True)
+                media_urls.append(url)
 
     if msgs:
         db.execute(
@@ -1394,6 +1449,9 @@ def delete_user_messages(db: sqlite3.Connection, user_id: str) -> list[dict]:
             (user_id, now),
         )
         db.commit()
+
+    for url in media_urls:
+        _unlink_media_if_orphaned(db, uploads, url)
 
     return [{"room_id": rid, "message_ids": ids} for rid, ids in by_room.items()]
 
