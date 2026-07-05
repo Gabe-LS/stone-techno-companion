@@ -234,7 +234,7 @@ Clicking artist name/photo opens modal with photo, name, biography (markdown →
 - SVG sprite: `aria-hidden="true"`; images have meaningful `alt` text
 - PWA meta tags: `apple-mobile-web-app-capable`, `theme-color`, `apple-mobile-web-app-title`
 - Social links rendered as a loop from `artist_links` — adding a platform requires only a new SVG icon + a mapping entry in `PLATFORM_ICONS`
-- All artist-link hrefs pass a render-layer URL scheme allowlist (`_safe_href` in Python, `_safeHref` in the emitted popup JS): only `http`/`https`/`mailto` survive, anything else renders as `#`. This is defense-in-depth at the last output stage even though scraped links are already http(s)-validated — it blocks a `javascript:` URL injected via a hand-edited `overrides.toml`. (Note: bio "Sets" video links still use `esc()` only, no scheme check — those URLs come from our own YouTube fetch, not user input.)
+- Every artist-facing href passes a render-layer URL scheme allowlist, so anything that isn't `http(s)` (or `mailto` for social links) renders as `#`: `_safe_href` (Python) + `_safeHref` (emitted popup JS) for artist social links, and an inline `^https?://` guard on bio "Sets" video links. This is defense-in-depth at the last output stage even though scraped links are already http(s)-validated — it blocks a `javascript:` URL injected via a hand-edited `overrides.toml`.
 
 ## Page Load Flash Prevention
 

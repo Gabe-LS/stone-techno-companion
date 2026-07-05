@@ -2130,7 +2130,7 @@ def render_output_html(
       if (data.videos && data.videos.length) {
         let html = '<div class="bio-videos-title">Sets</div>';
         data.videos.forEach(function(v) {
-          html += '<a class="bio-video" href="' + esc(v.url) + '" target="_blank" rel="noopener noreferrer">';
+          html += '<a class="bio-video" href="' + esc(/^https?:\\/\\//i.test(v.url || '') ? v.url : '#') + '" target="_blank" rel="noopener noreferrer">';
           html += '<img class="bio-video-thumb" src="thumbs/' + v.id + '.avif" alt="" loading="lazy">';
           html += '<div class="bio-video-info">';
           html += '<div class="bio-video-title">' + esc(v.title) + '</div>';
