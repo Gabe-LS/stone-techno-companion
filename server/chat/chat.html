@@ -1404,6 +1404,13 @@ async function handleWSEvent(data) {
         unreadByRoom[data.room_id] = data.count;
         if (Notification.permission === 'granted' && document.hidden) _queueBrowserNotification(data);
       }
+      if (data.type === 'dm' && !(data.room_id in _dmListCache) && _isDmsTabActive()) {
+        // Brand-new DM (created or opened mid-session): the sidebar has
+        // never rendered a row for this room, so updateBadge()'s
+        // [data-room-id] lookup below is a no-op. Only DMs tab is visible.
+        dbg('[DM] badge_update for unseen DM room, refreshing DM list:', data.room_id);
+        loadDMs();
+      }
       updateBadge(data.room_id);
       updateTabBadges();
       _updateAppBadge();
@@ -1496,6 +1503,11 @@ function renderRoomList() {
   verify('renderRoomList', roomItems.length > 0, roomItems.length + ' room items in DOM');
   verify('renderRoomList', document.getElementById('room-list'), 'room-list element exists');
   updateTabBadges();
+}
+
+function _isDmsTabActive() {
+  const activeBtn = document.querySelector('.tabs button.active');
+  return !!activeBtn && activeBtn.textContent.trim() === 'DMs';
 }
 
 function switchTab(btn, tab) {

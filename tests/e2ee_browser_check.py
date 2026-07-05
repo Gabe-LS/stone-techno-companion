@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Standalone Playwright browser verification for E2EE DMs.
 
-Spins up an isolated uvicorn server against a scratch chat.db, drives two
-real headless Chromium browser contexts (Alice, Bob) through the actual
-chat UI, and verifies the full E2EE-for-DMs flow end to end: key upload,
-DM encryption, UI indicators, replies, link-preview suppression, reporting,
-key rotation, and group-room plaintext behavior.
+Spins up an isolated uvicorn server against a scratch chat.db, drives real
+headless Chromium browser contexts (Alice, Bob, and later Dave) through the
+actual chat UI, and verifies the full E2EE-for-DMs flow end to end: key
+upload, DM encryption, UI indicators, replies, link-preview suppression,
+reporting, key rotation, group-room plaintext behavior, and -- for a brand
+new counterpart appearing mid-session -- browser notifications with an
+E2EE-safe generic preview plus live (no-reload) DM list updates.
 
 Run directly (NOT collected by pytest -- no test_ prefix):
 
@@ -53,6 +55,30 @@ SENSITIVE_ENV_KEYS = [
     "CHAT_ADMIN_TOKEN",
 ]
 
+# Installed on Bob's context via add_init_script (must run before Bob's page
+# ever loads) so every Notification the app constructs is recorded instead of
+# actually shown. The spy reports permission='granted' itself: headless
+# Chromium has no notification service and reports 'denied' regardless of
+# context.grant_permissions, so delegating to the real Notification would
+# permanently block the app's `Notification.permission === 'granted'` gate.
+# The unit under test is the app's notification logic, not the browser's
+# permission plumbing.
+NOTIFICATION_SPY_SCRIPT = """
+(() => {
+  window.__notifications = [];
+  function FakeNotification(title, options) {
+    window.__notifications.push({ title, body: options && options.body });
+    this.onclick = null;
+  }
+  FakeNotification.prototype.close = function () {};
+  Object.defineProperty(FakeNotification, 'permission', {
+    get: () => 'granted',
+  });
+  FakeNotification.requestPermission = () => Promise.resolve('granted');
+  window.Notification = FakeNotification;
+})();
+"""
+
 CHECK_DESCS = {
     1: "Pages load, WS connects, main room visible; e2ee_keys row exists for both users",
     2: "Alice opens DM with Bob, sends message, Bob sees plaintext; Bob replies, Alice sees it",
@@ -64,7 +90,9 @@ CHECK_DESCS = {
     8: "Key rotation: Bob re-keys, Alice re-derives, Bob's old messages now fail to decrypt",
     9: "Group room sanity: plaintext message stored and visible, no E2EE wrapper",
     10: "Keyless peer: DM row and header show NO lock, unavailable banner, plaintext fallback",
-    11: "Zero console errors / page errors across both pages",
+    11: "New-counterpart DM: Bob (hidden tab) gets a browser notification with E2EE-safe generic preview",
+    12: "New-counterpart DM: Bob's DM list shows the new room live (lock + unread), no reload",
+    13: "Zero console errors / page errors across all pages",
 }
 
 
@@ -176,6 +204,39 @@ def click_exact_action(page, text, timeout_ms=10000):
         has_text=re.compile(rf"^\s*{re.escape(text)}\s*$")
     )
     loc.first.click(timeout=timeout_ms)
+
+
+def open_dm_and_send(page, target_user_id, msg_text):
+    """Drive the real UI to start a DM with target_user_id and send msg_text.
+    Shared by check 2 (Alice -> Bob) and checks 11/12 (Dave -> Bob).
+
+    openRoom('pending-dm') re-renders the input bar; typing before that
+    render completes lands in an input element that gets replaced, so the
+    send submits an empty message and the DM is never created. Wait for the
+    pending-DM view to be fully open before touching #msg-input.
+    """
+    page.locator(f'.member-item[data-user-id="{target_user_id}"]').click(timeout=15000)
+    page.wait_for_selector("#action-sheet", timeout=10000)
+    click_exact_action(page, "Send Message")
+
+    wait_until(
+        lambda: page.evaluate(
+            "() => currentRoom === 'pending-dm' && currentRoomType === 'dm'"
+            " && !!document.getElementById('msg-input')"
+            " && !document.querySelector('#action-sheet')"
+        ),
+        timeout=10.0,
+        desc="pending DM view open",
+    )
+    page.fill("#msg-input", msg_text)
+    page.click(".input-bar .send")
+
+    wait_until(
+        lambda: page.evaluate("() => currentRoom") not in (None, "pending-dm"),
+        timeout=10.0,
+        desc="DM room created client-side",
+    )
+    return page.evaluate("() => currentRoom")
 
 
 # --- Server lifecycle ---------------------------------------------------------
@@ -347,6 +408,24 @@ def setup_users(db_path):
     return alice, bob, carol, carol_dm_id
 
 
+def create_dave_user(db_path):
+    # Created only once checks 1-10 are done: Dave must not exist (and no DM
+    # with Bob can exist) at the point Bob's page first loads, so checks
+    # 11/12 exercise a genuinely new counterpart appearing mid-session.
+    # chat_db is already imported and CHAT_DB_PATH-bound by setup_users();
+    # get_chat_db() opens a fresh WAL connection safe to use alongside the
+    # already-running scratch server.
+    import chat_db
+
+    db = chat_db.get_chat_db()
+    nonce = secrets.token_hex(4)
+    dave = create_fake_user(
+        chat_db, db, f"e2ee-dave-{nonce}", "Dave E2E", f"dave_e2e_{nonce}"
+    )
+    db.close()
+    return dave
+
+
 def add_session_cookie(context, base_url, token):
     context.add_cookies(
         [
@@ -434,32 +513,7 @@ def check2_dm_flow(page_a, page_b, alice, bob, ctx, nonce1, nonce2):
     msg1_text = f"hello from alice {nonce1}"
     msg2_text = f"hello from bob {nonce2}"
 
-    page_a.locator(f'.member-item[data-user-id="{bob["id"]}"]').click(timeout=15000)
-    page_a.wait_for_selector("#action-sheet", timeout=10000)
-    click_exact_action(page_a, "Send Message")
-
-    # openRoom('pending-dm') re-renders the input bar; typing before that
-    # render completes lands in an input element that gets replaced, so the
-    # send submits an empty message and the DM is never created. Wait for the
-    # pending-DM view to be fully open before touching #msg-input.
-    wait_until(
-        lambda: page_a.evaluate(
-            "() => currentRoom === 'pending-dm' && currentRoomType === 'dm'"
-            " && !!document.getElementById('msg-input')"
-            " && !document.querySelector('#action-sheet')"
-        ),
-        timeout=10.0,
-        desc="pending DM view open",
-    )
-    page_a.fill("#msg-input", msg1_text)
-    page_a.click(".input-bar .send")
-
-    wait_until(
-        lambda: page_a.evaluate("() => currentRoom") not in (None, "pending-dm"),
-        timeout=10.0,
-        desc="DM room created client-side",
-    )
-    dm_room_id = page_a.evaluate("() => currentRoom")
+    dm_room_id = open_dm_and_send(page_a, bob["id"], msg1_text)
     ctx["dm_room_id"] = dm_room_id
 
     page_a.wait_for_selector(f'.msg-text:has-text("{nonce1}")', timeout=10000)
@@ -862,8 +916,153 @@ def check10_keyless_peer(page_a, db_path, carol, carol_dm_id, ctx, nonce6):
     return "no lock (row + header), unavailable banner, message fell back to plaintext"
 
 
-def check11_console_sweep(
-    console_errors_a, console_errors_b, page_errors_a, page_errors_b, allowlist
+def check11_notifications(browser, base_url, page_b, bob, db_path, ctx, nonce7):
+    # Shared setup for checks 11/12: bring up a fourth user (Dave) who has no
+    # prior DM with Bob, prep Bob's page to look like a backgrounded tab on
+    # the DMs list, then have Dave open a DM with Bob through the real UI.
+    dave = create_dave_user(ctx["db_path"])
+    ctx["dave"] = dave
+
+    ctx_d = browser.new_context(viewport={"width": 1280, "height": 900})
+    add_session_cookie(ctx_d, base_url, dave["token"])
+    page_d = ctx_d.new_page()
+    console_errors_d, page_errors_d = [], []
+    attach_console_collectors(page_d, "dave", console_errors_d, page_errors_d)
+    ctx["dave_ctx"] = ctx_d
+    ctx["dave_page"] = page_d
+    ctx["dave_console_errors"] = console_errors_d
+    ctx["dave_page_errors"] = page_errors_d
+
+    page_d.goto(base_url + "/chat", timeout=30000)
+    page_d.wait_for_selector("#messages", timeout=20000)
+    wait_until(
+        lambda: page_d.evaluate("() => !!ws && ws.readyState === 1"),
+        timeout=15.0,
+        desc="dave WS open",
+    )
+    # Dave's E2EE keypair uploads asynchronously right after page load (see
+    # E2EE.init().then(uploadPublicKey)); wait for it so check 12's lock-icon
+    # assertion isn't racing dave's own key upload.
+    wait_until(
+        lambda: (
+            len(
+                query_db(
+                    db_path,
+                    "SELECT user_id FROM e2ee_keys WHERE user_id = ?",
+                    (dave["id"],),
+                )
+            )
+            == 1
+        ),
+        timeout=15.0,
+        desc="dave's e2ee_keys row",
+    )
+
+    # Bob: DMs tab must be the active sidebar tab for check 12's live-refresh
+    # assertion, and the tab must look hidden/backgrounded for the app to
+    # fire a browser Notification instead of just an in-app badge. Spoofing
+    # hidden also fires the app's sendBeacon idle signal -- expected and
+    # realistic (a hidden tab IS idle); the badge_update path is what we
+    # assert below, not the idle signal itself.
+    page_b.locator(".tabs button", has_text="DMs").click(timeout=10000)
+    page_b.evaluate(
+        """() => {
+            Object.defineProperty(document, 'hidden', { get: () => true, configurable: true });
+            Object.defineProperty(document, 'visibilityState', { get: () => 'hidden', configurable: true });
+            document.dispatchEvent(new Event('visibilitychange'));
+        }"""
+    )
+
+    msg_text = f"hello bob from dave {nonce7}"
+    dave_dm_id = open_dm_and_send(page_d, bob["id"], msg_text)
+    ctx["dave_dm_id_client"] = dave_dm_id
+    ctx["dave_msg_text"] = msg_text
+
+    def _notified():
+        entries = page_b.evaluate("() => window.__notifications || []")
+        return any(e.get("title") == "Dave E2E" for e in entries)
+
+    wait_until(
+        _notified, timeout=10.0, desc="bob receives spied Notification from dave"
+    )
+
+    entries = page_b.evaluate("() => window.__notifications || []")
+    matching = [e for e in entries if e.get("title") == "Dave E2E"]
+    if not matching:
+        raise AssertionError(f"no notification recorded for Dave E2E: {entries!r}")
+    match = matching[-1]
+    if match.get("body") != "Sent you a message":
+        raise AssertionError(
+            f"DM notification body was not the E2EE-safe generic preview: {match!r}"
+        )
+    for e in entries:
+        if nonce7 in (e.get("title") or "") or nonce7 in (e.get("body") or ""):
+            raise AssertionError(f"plaintext nonce leaked into a notification: {e!r}")
+
+    return (
+        f"dave_dm_id={dave_dm_id}, notification title='Dave E2E' "
+        "body='Sent you a message' (no plaintext leaked)"
+    )
+
+
+def check12_dm_list_autoupdate(page_b, db_path, dave, ctx):
+    dave_dm_id_client = ctx.get("dave_dm_id_client")
+    if not dave_dm_id_client:
+        raise AssertionError("dave_dm_id_client missing (check 11 must have failed)")
+
+    def _dave_dm_row():
+        rows = query_db(
+            db_path,
+            "SELECT room_id FROM dm_participants WHERE user_id = ?",
+            (dave["id"],),
+        )
+        return rows[0] if rows else None
+
+    wait_until(
+        lambda: _dave_dm_row() is not None,
+        timeout=10.0,
+        desc="dave's message landed / dm_participants row created",
+    )
+    dave_dm_id = _dave_dm_row()["room_id"]
+    if dave_dm_id != dave_dm_id_client:
+        raise AssertionError(
+            f"DB-resolved DM room {dave_dm_id!r} != client-observed {dave_dm_id_client!r}"
+        )
+    ctx["dave_dm_id"] = dave_dm_id
+
+    # No reload/navigation on Bob's page here -- the badge_update handler
+    # must have refreshed the DM list on its own (this is the fix under test).
+    wait_until(
+        lambda: (
+            page_b.locator(f'.member-item[data-room-id="{dave_dm_id}"]').count() == 1
+        ),
+        timeout=10.0,
+        desc="dave's DM row appears in bob's sidebar without reload",
+    )
+
+    lock_count = page_b.locator(
+        f'.member-item[data-room-id="{dave_dm_id}"] .icon-lock'
+    ).count()
+    if lock_count != 1:
+        raise AssertionError(f"new DM row missing lock icon (count={lock_count})")
+
+    badge_count = page_b.locator(
+        f'.member-item[data-room-id="{dave_dm_id}"] .unread-badge'
+    ).count()
+    if badge_count != 1:
+        raise AssertionError(f"new DM row missing unread badge (count={badge_count})")
+
+    return f"dave_dm_id={dave_dm_id} appeared live in bob's DM list with lock + unread badge"
+
+
+def check13_console_sweep(
+    console_errors_a,
+    console_errors_b,
+    console_errors_d,
+    page_errors_a,
+    page_errors_b,
+    page_errors_d,
+    allowlist,
 ):
     log(
         "console allowlist: "
@@ -885,15 +1084,18 @@ def check11_console_sweep(
     remaining = (
         _filter(console_errors_a)
         + _filter(console_errors_b)
+        + _filter(console_errors_d)
         + _filter(page_errors_a)
         + _filter(page_errors_b)
+        + _filter(page_errors_d)
     )
     if remaining:
         raise AssertionError("; ".join(remaining[:5]))
     return (
         f"0 console errors / page errors "
         f"(raw counts: console_a={len(console_errors_a)} console_b={len(console_errors_b)} "
-        f"pageerror_a={len(page_errors_a)} pageerror_b={len(page_errors_b)})"
+        f"console_d={len(console_errors_d)} pageerror_a={len(page_errors_a)} "
+        f"pageerror_b={len(page_errors_b)} pageerror_d={len(page_errors_d)})"
     )
 
 
@@ -928,6 +1130,13 @@ def main():
             try:
                 ctx_a = browser.new_context(viewport={"width": 1280, "height": 900})
                 ctx_b = browser.new_context(viewport={"width": 1280, "height": 900})
+                # Checks 11/12 need Bob to receive a real (spied) browser
+                # Notification while backgrounded -- both the OS permission
+                # grant and the constructor spy must be in place before Bob's
+                # page ever loads, or the app's Notification.permission check
+                # / first badge_update would miss them.
+                ctx_b.grant_permissions(["notifications"], origin=base_url)
+                ctx_b.add_init_script(NOTIFICATION_SPY_SCRIPT)
                 add_session_cookie(ctx_a, base_url, alice["token"])
                 add_session_cookie(ctx_b, base_url, bob["token"])
                 page_a = ctx_a.new_page()
@@ -947,7 +1156,7 @@ def main():
                 page_a.goto(base_url + "/chat", timeout=30000)
                 page_b.goto(base_url + "/chat", timeout=30000)
 
-                ctx = {"ws_frames_a": ws_frames_a}
+                ctx = {"ws_frames_a": ws_frames_a, "db_path": db_path}
                 nonce1 = secrets.token_hex(4)
                 nonce2 = secrets.token_hex(4)
                 nonce_reply = secrets.token_hex(4)
@@ -955,6 +1164,7 @@ def main():
                 nonce4 = secrets.token_hex(4)
                 nonce5 = secrets.token_hex(4)
                 nonce6 = secrets.token_hex(4)
+                nonce7 = secrets.token_hex(4)
 
                 # Single allowlist entry: check 10 deliberately opens a DM
                 # with a keyless peer, whose /chat/api/keys/{id} lookup 404s
@@ -1013,11 +1223,25 @@ def main():
                 )
                 run_check(
                     11,
-                    lambda: check11_console_sweep(
+                    lambda: check11_notifications(
+                        browser, base_url, page_b, bob, db_path, ctx, nonce7
+                    ),
+                )
+                run_check(
+                    12,
+                    lambda: check12_dm_list_autoupdate(
+                        page_b, db_path, ctx.get("dave"), ctx
+                    ),
+                )
+                run_check(
+                    13,
+                    lambda: check13_console_sweep(
                         console_errors_a,
                         console_errors_b,
+                        ctx.get("dave_console_errors", []),
                         page_errors_a,
                         page_errors_b,
+                        ctx.get("dave_page_errors", []),
                         console_allowlist,
                     ),
                 )
