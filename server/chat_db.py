@@ -178,8 +178,8 @@ def init_chat_db(db: sqlite3.Connection) -> None:
 
         CREATE TABLE IF NOT EXISTS reports (
             id               TEXT PRIMARY KEY,
-            reporter_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            reported_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            reporter_id      TEXT NOT NULL,
+            reported_user_id TEXT NOT NULL,
             message_snapshot TEXT NOT NULL,
             room_id          TEXT NOT NULL,
             reason           TEXT NOT NULL,
@@ -307,6 +307,39 @@ def _migrate_chat_db(db: sqlite3.Connection) -> None:
         db.execute(
             "ALTER TABLE reports ADD COLUMN unverified INTEGER NOT NULL DEFAULT 0"
         )
+        db.commit()
+
+    # Drop the ON DELETE CASCADE FKs on reports so the moderation evidence
+    # survives user deletion (like bans, which are deliberately FK-less).
+    # SQLite can't drop a constraint in place, so rebuild the table.
+    if db.execute("PRAGMA foreign_key_list(reports)").fetchall():
+        db.commit()
+        db.execute("PRAGMA foreign_keys=OFF")
+        db.executescript(
+            """
+            BEGIN;
+            CREATE TABLE reports_new (
+                id               TEXT PRIMARY KEY,
+                reporter_id      TEXT NOT NULL,
+                reported_user_id TEXT NOT NULL,
+                message_snapshot TEXT NOT NULL,
+                room_id          TEXT NOT NULL,
+                reason           TEXT NOT NULL,
+                status           TEXT NOT NULL DEFAULT 'pending',
+                unverified       INTEGER NOT NULL DEFAULT 0,
+                created_at       TEXT NOT NULL,
+                reviewed_at      TEXT
+            );
+            INSERT INTO reports_new
+                SELECT id, reporter_id, reported_user_id, message_snapshot, room_id,
+                       reason, status, unverified, created_at, reviewed_at
+                FROM reports;
+            DROP TABLE reports;
+            ALTER TABLE reports_new RENAME TO reports;
+            COMMIT;
+            """
+        )
+        db.execute("PRAGMA foreign_keys=ON")
         db.commit()
 
     db.execute("UPDATE rooms SET is_moderated = 0 WHERE type = 'dm'")
@@ -1179,8 +1212,8 @@ def get_pending_reports(db: sqlite3.Connection) -> list[sqlite3.Row]:
         "SELECT r.*, u.display_name AS reporter_name, "
         "u2.display_name AS reported_name "
         "FROM reports r "
-        "JOIN users u ON u.id = r.reporter_id "
-        "JOIN users u2 ON u2.id = r.reported_user_id "
+        "LEFT JOIN users u ON u.id = r.reporter_id "
+        "LEFT JOIN users u2 ON u2.id = r.reported_user_id "
         "WHERE r.status = 'pending' ORDER BY r.created_at DESC"
     ).fetchall()
 
@@ -1448,7 +1481,7 @@ def get_user_admin_detail(db: sqlite3.Connection, user_id: str) -> dict | None:
     reports = db.execute(
         "SELECT r.id, u.display_name AS reporter_name, r.reason, "
         "r.message_snapshot, r.status, r.unverified, r.created_at "
-        "FROM reports r JOIN users u ON u.id = r.reporter_id "
+        "FROM reports r LEFT JOIN users u ON u.id = r.reporter_id "
         "WHERE r.reported_user_id = ? ORDER BY r.created_at DESC",
         (user_id,),
     ).fetchall()
