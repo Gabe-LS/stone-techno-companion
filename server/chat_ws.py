@@ -1787,6 +1787,10 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                         )
                     continue
                 stage_id = data.get("stage_id")
+                if stage_id:
+                    _stage_room = get_room(db, stage_id)
+                    if not _stage_room or _stage_room["type"] not in ("stage", "general") or _stage_room["is_read_only"]:
+                        stage_id = None
                 title = (data.get("title") or "")[:60]
                 meetup_time = data.get("meetup_time")
                 if not title or not meetup_time:
