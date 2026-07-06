@@ -1114,6 +1114,8 @@ async def _moderate_and_broadcast(
         for uid, badge_rooms in list(mgr.user_badge_rooms.items()):
             if room_id not in badge_rooms or uid == user_id:
                 continue
+            if is_blocked(db, uid, user_id):
+                continue
             unread = mgr.user_unread.setdefault(uid, {})
             unread[room_id] = unread.get(room_id, 0) + 1
             await mgr.send_to_user(

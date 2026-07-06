@@ -879,8 +879,9 @@ def get_unread_counts(db: sqlite3.Connection, user_id: str) -> dict:
         "  AND m.expires_at > ? "
         "  AND m.user_id != ? "
         "  AND m.moderation_status != 'pending' "
+        "  AND m.user_id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = ?) "
         "GROUP BY src.room_id",
-        (user_id, user_id, now, user_id),
+        (user_id, user_id, now, user_id, user_id),
     ).fetchall()
     return {
         r["room_id"]: {
