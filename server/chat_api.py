@@ -58,7 +58,6 @@ from chat_db import (
     get_room_messages_admin,
     delete_message_by_id,
     get_reports_by_status,
-    get_dm_participant_names,
     get_all_meetups,
     delete_meetup,
     hash_email,
@@ -2327,12 +2326,12 @@ async def admin_rooms(request: Request):
             )
     db = _get_db()
     try:
-        rooms = get_room_stats(db, online_counts)
+        # DM rooms are end-to-end encrypted and unmanageable from here (no read,
+        # edit, delete, reorder, or set-main), so they are excluded from the tab.
+        rooms = [r for r in get_room_stats(db, online_counts) if r["type"] != "dm"]
         counts = get_reachable_member_counts(db, [r["id"] for r in rooms])
         for r in rooms:
             r["member_count"] = counts.get(r["id"], 0)
-            if r["type"] == "dm":
-                r["participants"] = get_dm_participant_names(db, r["id"])
         return rooms
     finally:
         db.close()
@@ -2632,6 +2631,8 @@ async def admin_set_main_room(room_id: str, request: Request):
         room = get_room(db, room_id)
         if not room:
             raise HTTPException(404, "Room not found")
+        if room["type"] not in ("general", "stage"):
+            raise HTTPException(400, "Only group rooms can be the main room")
         db.execute(
             "UPDATE rooms SET is_main = 0 WHERE event_id = ?", (room["event_id"],)
         )

@@ -398,10 +398,10 @@ const render = {
       const starPath = 'M9.15 5.41C10.42 3.14 11.05 2 12 2s1.58 1.14 2.85 3.41l.33.59c.36.65.54.97.82 1.18.28.21.63.29 1.33.45l.64.14c2.46.56 3.69.84 3.98 1.78.29.94-.55 1.92-2.22 3.88l-.43.51c-.48.56-.72.84-.82 1.18-.11.34-.07.72 0 1.46l.07.68c.25 2.62.38 3.92-.39 4.5-.77.58-1.92.05-4.22-.89l-.6-.27c-.65-.3-.98-.45-1.33-.45s-.67.15-1.33.45l-.6.27c-2.3 1.06-3.45 1.59-4.22 1.01-.77-.58-.64-1.89-.39-4.5l.07-.68c.07-.74.1-1.12 0-1.46-.11-.34-.35-.62-.82-1.18l-.43-.51C2.6 11.47 1.76 10.49 2.06 9.55c.29-.94 1.52-1.22 3.98-1.78l.64-.14c.7-.16 1.05-.24 1.33-.45.28-.21.46-.53.82-1.18l.33-.59Z';
       el.innerHTML = html + `<table class="tbl"><thead><tr>
         <th class="col-narrow"></th><th class="col-narrow"></th><th>Name</th><th class="col-narrow">Type</th><th class="col-narrow">TTL</th><th class="col-narrow">Members</th><th class="col-narrow">Online</th><th>Flags</th><th class="col-narrow">Last activity</th><th class="col-actions">Actions</th>
-      </tr></thead><tbody id="rooms-tbody">` + rooms.map(r => `<tr draggable="true" data-room-id="${esc(r.id)}" ondragstart="onDragStart(event)" ondragover="onDragOver(event)" ondrop="onDrop(event)" ondragend="onDragEnd(event)" ondragleave="onDragLeave(event)">
-        <td class="col-narrow"><span class="drag-handle"><svg width="18" height="18" viewBox="0 0 24 24" fill="var(--text-muted)"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg></span></td>
-        <td class="col-narrow star-cell" onclick="event.stopPropagation();setMainRoom('${esc(r.id)}')" title="${r.is_main ? 'Main room' : 'Set as main room'}"><svg width="18" height="18" viewBox="0 0 24 24" ${r.is_main ? 'fill="var(--amber)" stroke="var(--amber)"' : 'fill="none" stroke="var(--text-muted)"'} stroke-width="1.5"><path d="${starPath}"/></svg></td>
-        <td>${r.type === 'dm' && r.participants && r.participants.length ? esc(r.participants.join(' <-> ')) : esc(r.name)}${r.description ? '<div style="color:var(--text-muted);font-size:12px">' + esc(r.description) + '</div>' : ''}</td>
+      </tr></thead><tbody id="rooms-tbody">` + rooms.map(r => { const isGroup = r.type === 'general' || r.type === 'stage'; return `<tr draggable="${isGroup ? 'true' : 'false'}" data-room-id="${esc(r.id)}" ondragstart="onDragStart(event)" ondragover="onDragOver(event)" ondrop="onDrop(event)" ondragend="onDragEnd(event)" ondragleave="onDragLeave(event)">
+        <td class="col-narrow">${isGroup ? '<span class="drag-handle"><svg width="18" height="18" viewBox="0 0 24 24" fill="var(--text-muted)"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg></span>' : ''}</td>
+        ${isGroup ? `<td class="col-narrow star-cell" onclick="event.stopPropagation();setMainRoom('${esc(r.id)}')" title="${r.is_main ? 'Main room' : 'Set as main room'}"><svg width="18" height="18" viewBox="0 0 24 24" ${r.is_main ? 'fill="var(--amber)" stroke="var(--amber)"' : 'fill="none" stroke="var(--text-muted)"'} stroke-width="1.5"><path d="${starPath}"/></svg></td>` : '<td class="col-narrow"></td>'}
+        <td>${esc(r.name)}${r.description ? '<div style="color:var(--text-muted);font-size:12px">' + esc(r.description) + '</div>' : ''}</td>
         <td class="col-narrow"><span class="pill ${typePill(r.type)}">${esc(r.type)}</span></td>
         <td class="col-narrow">${ttlLabel(r.ttl_minutes)}</td>
         <td class="col-narrow">${r.member_count}</td>
@@ -414,7 +414,7 @@ const render = {
           ${r.type === 'meetup' ? `<button class="btn btn-neutral" onclick="deleteMeetup('${esc(r.id)}')">Delete</button>` : ''}
           ${!r.is_main && r.type !== 'dm' && r.type !== 'meetup' && window._me && window._me.role === 'super_admin' ? `<button class="btn btn-neutral" onclick="deleteRoom('${esc(r.id)}')">Delete</button>` : ''}
         </div></td>
-      </tr>`).join('') + '</tbody></table>';
+      </tr>`; }).join('') + '</tbody></table>';
     } catch { el.innerHTML = '<div class="empty">Failed to load rooms</div>'; }
   },
 };

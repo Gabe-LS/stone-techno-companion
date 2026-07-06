@@ -329,3 +329,29 @@ def test_reports_status_filter(client):
         x["id"] == rid
         for x in client.get("/chat/api/admin/reports?status=all", headers=TOKEN).json()
     )
+
+
+def test_rooms_tab_excludes_dm_rooms(client):
+    from chat_db import create_room
+
+    create_room(_test_db, "party", "test-event", "general", "Party")
+    create_room(_test_db, "dm-x", "test-event", "dm", "DM")
+    create_room(_test_db, "mt-x", "test-event", "meetup", "Meetup")
+    rooms = client.get("/chat/api/admin/rooms", headers=TOKEN).json()
+    types = {r["type"] for r in rooms}
+    assert "dm" not in types  # DMs hidden from the Rooms tab
+    assert "general" in types and "meetup" in types  # group + meetup still shown
+
+
+def test_cannot_set_dm_or_meetup_as_main_room(client):
+    from chat_db import create_room, get_room
+
+    create_room(_test_db, "dm-x", "test-event", "dm", "DM")
+    create_room(_test_db, "mt-x", "test-event", "meetup", "Meetup")
+    create_room(_test_db, "party", "test-event", "general", "Party")
+    assert client.post("/chat/api/admin/rooms/dm-x/main", headers=TOKEN).status_code == 400
+    assert client.post("/chat/api/admin/rooms/mt-x/main", headers=TOKEN).status_code == 400
+    assert not get_room(_test_db, "dm-x")["is_main"]
+    # a group room can still be set main
+    assert client.post("/chat/api/admin/rooms/party/main", headers=TOKEN).status_code == 200
+    assert get_room(_test_db, "party")["is_main"]
