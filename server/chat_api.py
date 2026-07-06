@@ -2613,6 +2613,19 @@ async def admin_update_room(room_id: str, request: Request):
             v = body["description"]
             if not isinstance(v, str) or len(v) > 500:
                 raise HTTPException(400, "description must be a string (max 500)")
+        # The client sends the whole form on every save, so diff against the
+        # current values (room still holds them) to log only what actually changed.
+        bool_fields = ("is_moderated", "is_read_only", "auto_join", "allows_media")
+        editable = bool_fields + ("name", "description", "ttl_minutes", "position")
+        changed = []
+        for k in body:
+            if k not in editable or k not in room.keys():
+                continue
+            if k in bool_fields:
+                if bool(room[k]) != bool(body[k]):
+                    changed.append(k)
+            elif room[k] != body[k]:
+                changed.append(k)
         update_room(db, room_id, **body)
         from chat_ws import manager
 
@@ -2622,7 +2635,7 @@ async def admin_update_room(room_id: str, request: Request):
             actor["label"],
             "update_room",
             target_room_id=room_id,
-            detail=", ".join(k for k in body) or None,
+            detail=", ".join(changed) if changed else "no changes",
         )
         return {"ok": True}
     finally:
