@@ -3520,7 +3520,7 @@ async function openMeetupMapPicker() {
   const center = (_meetupCoords && inBounds(_meetupCoords.lng, _meetupCoords.lat))
     ? [_meetupCoords.lng, _meetupCoords.lat]
     : [(west + east) / 2, (south + north) / 2];
-  const startZoom = 18, minZoom = startZoom - 1, maxZoom = 20;
+  const startZoom = 18, minZoom = startZoom - 3, maxZoom = 20;
   document.getElementById('meetup-map-overlay')?.remove();
   const overlay = document.createElement('div');
   overlay.id = 'meetup-map-overlay';
