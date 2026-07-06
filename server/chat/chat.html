@@ -3512,14 +3512,20 @@ let _meetupVenueBounds = [[51.486962, 7.02983], [51.492088, 7.041295]];
 async function openMeetupMapPicker() {
   dbg('[MEETUP] openMeetupMapPicker (maplibre)');
   try { await _loadMaplibre(); } catch (e) { showToast('Could not load map'); return; }
-  const b = _meetupVenueBounds; // [[S,W],[N,E]]
-  const south = b[0][0], west = b[0][1], north = b[1][0], east = b[1][1];
+  const b = _meetupVenueBounds; // [[S,W],[N,E]] = POIs + padding
+  // Grow the pannable / zoom-out box beyond the tight POI box so users can zoom
+  // OUT for context — maxBounds otherwise floors the zoom at "POIs fill the
+  // screen". Larger GROW = more zoom-out + more pan room.
+  const GROW = 3;
+  const cLat = (b[0][0] + b[1][0]) / 2, cLng = (b[0][1] + b[1][1]) / 2;
+  const hLat = (b[1][0] - b[0][0]) / 2 * GROW, hLng = (b[1][1] - b[0][1]) / 2 * GROW;
+  const south = cLat - hLat, north = cLat + hLat, west = cLng - hLng, east = cLng + hLng;
   const inBounds = (lng, lat) => lng >= west && lng <= east && lat >= south && lat <= north;
   // Open instantly on the existing pin (if on-site) or the venue centre — never
   // block on GPS; jump to GPS in the background below if there's no pin yet.
   const center = (_meetupCoords && inBounds(_meetupCoords.lng, _meetupCoords.lat))
     ? [_meetupCoords.lng, _meetupCoords.lat]
-    : [(west + east) / 2, (south + north) / 2];
+    : [cLng, cLat];
   const startZoom = 18, maxZoom = 20;
   document.getElementById('meetup-map-overlay')?.remove();
   const overlay = document.createElement('div');
