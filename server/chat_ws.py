@@ -1851,7 +1851,15 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     broadcast_room = main["id"] if main else "general"
                 await manager.broadcast_to_room(
                     broadcast_room,
-                    {"event": "meetup_created", "meetup": meetup},
+                    {
+                        "event": "meetup_created",
+                        "meetup": {
+                            "id": meetup["id"],
+                            "title": meetup["title"],
+                            "meetup_time": meetup["meetup_time"],
+                            "stage_id": stage_id,
+                        },
+                    },
                 )
 
             elif event == "join_meetup":

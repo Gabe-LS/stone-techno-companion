@@ -1156,6 +1156,23 @@ async def room_online(room_id: str, request: Request):
 # --- Meetups ---
 
 
+def _shape_meetup(*, id, title, meetup_time, stage_id, attendee_count, expires_at,
+                  is_attendee, location_lat, location_lng, location_label, note,
+                  attendees, last_message_at=None):
+    out = {
+        "id": id, "title": title, "meetup_time": meetup_time, "stage_id": stage_id,
+        "attendee_count": attendee_count, "is_going": is_attendee, "expires_at": expires_at,
+    }
+    if last_message_at is not None:
+        out["last_message_at"] = last_message_at
+    if is_attendee:
+        out.update({
+            "location_lat": location_lat, "location_lng": location_lng,
+            "location_label": location_label, "note": note, "attendees": attendees,
+        })
+    return out
+
+
 @router.get("/meetups")
 async def list_meetups(request: Request, stage_id: str | None = None):
     user, db = _get_user_from_cookie(request)
@@ -1177,24 +1194,24 @@ async def list_meetups(request: Request, stage_id: str | None = None):
             attendees = get_meetup_attendees(db, m["id"])
             att_ids = {a["id"] for a in attendees}
             result.append(
-                {
-                    "id": m["id"],
-                    "title": m["title"],
-                    "meetup_time": m["meetup_time"],
-                    "location_lat": m["location_lat"],
-                    "location_lng": m["location_lng"],
-                    "location_label": m["location_label"],
-                    "note": m["note"],
-                    "stage_id": m["stage_id"],
-                    "attendee_count": m["attendee_count"],
-                    "is_going": user_id in att_ids,
-                    "attendees": [
+                _shape_meetup(
+                    id=m["id"],
+                    title=m["title"],
+                    meetup_time=m["meetup_time"],
+                    stage_id=m["stage_id"],
+                    attendee_count=m["attendee_count"],
+                    expires_at=m["expires_at"],
+                    is_attendee=(user_id in att_ids),
+                    location_lat=m["location_lat"],
+                    location_lng=m["location_lng"],
+                    location_label=m["location_label"],
+                    note=m["note"],
+                    attendees=[
                         {"id": a["id"], "display_name": a["display_name"]}
                         for a in attendees
                     ],
-                    "expires_at": m["expires_at"],
-                    "last_message_at": last_msgs.get(m["id"], ""),
-                }
+                    last_message_at=last_msgs.get(m["id"], ""),
+                )
             )
         result.sort(key=lambda r: r["last_message_at"] or "", reverse=True)
         return result
@@ -1212,19 +1229,22 @@ async def get_meetup(meetup_id: str, request: Request):
         if not meetup:
             raise HTTPException(404, "Meetup not found")
         attendees = get_meetup_attendees(db, meetup_id)
-        return {
-            "id": meetup["id"],
-            "title": meetup["title"],
-            "meetup_time": meetup["meetup_time"],
-            "location_lat": meetup["location_lat"],
-            "location_lng": meetup["location_lng"],
-            "location_label": meetup["location_label"],
-            "note": meetup["note"],
-            "attendees": [
-                {"id": a["id"], "display_name": a["display_name"]} for a in attendees
-            ],
-            "expires_at": meetup["expires_at"],
-        }
+        att_list = [{"id": a["id"], "display_name": a["display_name"]} for a in attendees]
+        is_attendee = any(a["id"] == user["id"] for a in attendees)
+        return _shape_meetup(
+            id=meetup["id"],
+            title=meetup["title"],
+            meetup_time=meetup["meetup_time"],
+            stage_id=meetup["stage_id"] if "stage_id" in meetup.keys() else None,
+            attendee_count=len(attendees),
+            expires_at=meetup["expires_at"],
+            is_attendee=is_attendee,
+            location_lat=meetup["location_lat"],
+            location_lng=meetup["location_lng"],
+            location_label=meetup["location_label"],
+            note=meetup["note"],
+            attendees=att_list,
+        )
     finally:
         db.close()
 
