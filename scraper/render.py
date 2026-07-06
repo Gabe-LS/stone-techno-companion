@@ -167,26 +167,52 @@ def _format_artist_schedule(
 def _render_markdown(text: str) -> str:
     import markdown as _md
     import re as _re
+    from html.parser import HTMLParser
 
     result = _md.markdown(text, extensions=["nl2br"])
-    result = _re.sub(
-        r"<(script|iframe|object|embed|form)[^>]*>.*?</\1>",
-        "",
-        result,
-        flags=_re.DOTALL | _re.IGNORECASE,
+
+    _ALLOWED_TAGS = frozenset(
+        {"p", "br", "strong", "em", "b", "i", "a", "ul", "ol", "li",
+         "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "code", "pre", "hr"}
     )
-    result = _re.sub(
-        r"<(script|iframe|object|embed|form)[^>]*/?>", "", result, flags=_re.IGNORECASE
-    )
-    result = _re.sub(
-        r"""\bon\w+\s*=\s*["'][^"']*["']""", "", result, flags=_re.IGNORECASE
-    )
-    result = _re.sub(r"\bon\w+\s*=\s*\S+", "", result, flags=_re.IGNORECASE)
-    result = _re.sub(
-        r"""href\s*=\s*["']javascript:[^"']*["']""", "", result, flags=_re.IGNORECASE
-    )
-    result = _re.sub(r"""href\s*=\s*javascript:\S*""", "", result, flags=_re.IGNORECASE)
-    return result.strip()
+    _ALLOWED_ATTRS = {"a": frozenset({"href"})}
+    _SAFE_HREF_RE = _re.compile(r"^https?://", _re.IGNORECASE)
+
+    class _Sanitizer(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=False)
+            self.out = []
+
+        def handle_starttag(self, tag, attrs):
+            if tag not in _ALLOWED_TAGS:
+                return
+            allowed = _ALLOWED_ATTRS.get(tag, frozenset())
+            safe_attrs = []
+            for k, v in attrs:
+                if k not in allowed:
+                    continue
+                if k == "href" and not _SAFE_HREF_RE.match(v or ""):
+                    continue
+                safe_attrs.append(f'{k}="{_re.sub(r"[\"&]", lambda m: "&quot;" if m.group() == chr(34) else "&amp;", v or "")}"')
+            attr_str = (" " + " ".join(safe_attrs)) if safe_attrs else ""
+            self.out.append(f"<{tag}{attr_str}>")
+
+        def handle_endtag(self, tag):
+            if tag in _ALLOWED_TAGS:
+                self.out.append(f"</{tag}>")
+
+        def handle_data(self, data):
+            self.out.append(data.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+
+        def handle_entityref(self, name):
+            self.out.append(f"&{name};")
+
+        def handle_charref(self, name):
+            self.out.append(f"&#{name};")
+
+    s = _Sanitizer()
+    s.feed(result)
+    return "".join(s.out).strip()
 
 
 def render_output_html(
