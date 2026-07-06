@@ -3482,7 +3482,10 @@ async function openMeetupMapPicker() {
     </div>
     <div class="modal-footer"><button type="button" class="modal-btn-primary" onclick="confirmMeetupMapPin()">Use this location</button></div>
   </div>`;
-  overlay.addEventListener('click', closeMeetupMapPicker);
+  // Close only on a genuine backdrop click — a press that both starts AND ends on
+  // the overlay itself. A map pan that releases over the backdrop must NOT close.
+  overlay.addEventListener('pointerdown', (e) => { overlay._downOnBackdrop = (e.target === overlay); });
+  overlay.addEventListener('click', (e) => { if (e.target === overlay && overlay._downOnBackdrop) closeMeetupMapPicker(); });
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('open'));
   const isMT = !!_maptilerKey;
