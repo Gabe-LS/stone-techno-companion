@@ -120,6 +120,10 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .poi-dot-marker { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; box-sizing: border-box; cursor: pointer; }
 .poi-label-marker { display: none; background: rgba(49,46,129,.9); color: #fff; font-size: 12px; font-weight: 600; padding: 1px 6px; border-radius: 5px; white-space: nowrap; pointer-events: none; }
 .poi-labels-on .poi-label-marker, .poi-label-marker.hover { display: block; }
+/* Smaller map attribution; collapsed to an "i" that expands only on click. */
+#meetup-map .maplibregl-ctrl-attrib { font-size: 9px; }
+#meetup-map .maplibregl-ctrl-attrib.maplibregl-compact { min-height: 20px; border-radius: 10px; }
+#meetup-map .maplibregl-ctrl-attrib-button { width: 20px; height: 20px; background-size: 12px; }
 .meetup-details .md-cancel { display: block; margin-top: var(--space-sm); padding: var(--space-xs) var(--space-md); border: 1px solid #c0392b; color: #c0392b; background: none; border-radius: var(--radius-pill); font-family: inherit; font-size: var(--font-xs); font-weight: 600; cursor: pointer; }
 .meetup-going { font-weight: 400; }
 .meetup-join-wide { width: 260px; max-width: 100%; box-sizing: border-box; display: block; margin-top: var(--space-xs); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-md); font-size: var(--font-sm); }
@@ -3511,21 +3515,14 @@ let _meetupVenueBounds = [[51.486962, 7.02983], [51.492088, 7.041295]];
 async function openMeetupMapPicker() {
   dbg('[MEETUP] openMeetupMapPicker (maplibre)');
   try { await _loadMaplibre(); } catch (e) { showToast('Could not load map'); return; }
-  const b = _meetupVenueBounds; // [[S,W],[N,E]] = POIs + padding
-  // Grow the pannable / zoom-out box beyond the tight POI box so users can zoom
-  // OUT for context — maxBounds otherwise floors the zoom at "POIs fill the
-  // screen". Larger GROW = more zoom-out + more pan room.
-  const GROW = 3;
-  const cLat = (b[0][0] + b[1][0]) / 2, cLng = (b[0][1] + b[1][1]) / 2;
-  const hLat = (b[1][0] - b[0][0]) / 2 * GROW, hLng = (b[1][1] - b[0][1]) / 2 * GROW;
-  const south = cLat - hLat, north = cLat + hLat, west = cLng - hLng, east = cLng + hLng;
+  const b = _meetupVenueBounds; // [[S,W],[N,E]] = square + EXPAND% (from /config)
+  const south = b[0][0], west = b[0][1], north = b[1][0], east = b[1][1];
   const inBounds = (lng, lat) => lng >= west && lng <= east && lat >= south && lat <= north;
-  // Open instantly on the existing pin (if on-site) or the venue centre — never
-  // block on GPS; jump to GPS in the background below if there's no pin yet.
-  const center = (_meetupCoords && inBounds(_meetupCoords.lng, _meetupCoords.lat))
+  // Start the pin on the existing pick (if on-site) or the venue centre.
+  const pinAt = (_meetupCoords && inBounds(_meetupCoords.lng, _meetupCoords.lat))
     ? [_meetupCoords.lng, _meetupCoords.lat]
-    : [cLng, cLat];
-  const startZoom = 18, maxZoom = 20;
+    : [(west + east) / 2, (south + north) / 2];
+  const maxZoom = 20;
   document.getElementById('meetup-map-overlay')?.remove();
   const overlay = document.createElement('div');
   overlay.id = 'meetup-map-overlay';
@@ -3547,7 +3544,9 @@ async function openMeetupMapPicker() {
   _meetupMap = new maplibregl.Map({
     container: 'meetup-map',
     style: _meetupMapStyle(),
-    center, zoom: startZoom, minZoom: 1, maxZoom,
+    bounds: [[west, south], [east, north]],
+    fitBoundsOptions: { padding: 0, animate: false },
+    minZoom: 1, maxZoom,
     maxBounds: [[west, south], [east, north]],
     attributionControl: { compact: true },
     dragRotate: false, pitchWithRotate: false, touchPitch: false
@@ -3555,12 +3554,9 @@ async function openMeetupMapPicker() {
   _meetupMap.touchZoomRotate.disableRotation();
   _meetupMap.on('zoom', _updatePoiLabels);
   _meetupMap.on('load', () => {
-    // Auto min-zoom = the zoom at which the whole POI area (bounds) just fits,
-    // so users can zoom out to see everything but no further.
-    try {
-      const cam = _meetupMap.cameraForBounds([[west, south], [east, north]], { padding: 0 });
-      if (cam && typeof cam.zoom === 'number') _meetupMap.setMinZoom(Math.max(1, Math.min(cam.zoom, startZoom)));
-    } catch (e) { dbg('[MEETUP] cameraForBounds failed', e && e.message); }
+    // Opened fit-to-bounds, so the current zoom IS the fit; lock the floor there
+    // => default zoom == min zoom (can zoom in, not out).
+    _meetupMap.setMinZoom(_meetupMap.getZoom());
     _updatePoiLabels();
     // Festival POIs as HTML markers (coloured dot + hover/max-zoom name label).
     _loadFestivalPois().then(pois => {
@@ -3586,7 +3582,7 @@ async function openMeetupMapPicker() {
       });
     });
   });
-  _meetupMarker = new maplibregl.Marker({ draggable: true, color: '#ff2020' }).setLngLat(center).addTo(_meetupMap);
+  _meetupMarker = new maplibregl.Marker({ draggable: true, color: '#ff2020' }).setLngLat(pinAt).addTo(_meetupMap);
   _meetupMarker.getElement().style.zIndex = '2'; // above POI dots, below POI labels
   let _userMoved = false;
   _meetupMarker.on('dragstart', () => { _userMoved = true; });
@@ -3596,10 +3592,7 @@ async function openMeetupMapPicker() {
   if (!_meetupCoords && navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(p => {
       const lng = p.coords.longitude, lat = p.coords.latitude;
-      if (!_userMoved && _meetupMap && inBounds(lng, lat)) {
-        _meetupMap.easeTo({ center: [lng, lat], zoom: startZoom });
-        _meetupMarker.setLngLat([lng, lat]);
-      }
+      if (!_userMoved && _meetupMarker && inBounds(lng, lat)) _meetupMarker.setLngLat([lng, lat]);
     }, () => {}, { timeout: 8000, maximumAge: 60000 });
   }
 }

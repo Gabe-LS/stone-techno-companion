@@ -257,7 +257,7 @@ def init_chat_db(db: sqlite3.Connection) -> None:
         INSERT OR IGNORE INTO chat_settings (key, value) VALUES ('room_ttl_minutes', '1440');
         INSERT OR IGNORE INTO chat_settings (key, value) VALUES ('meetup_ttl_minutes', '60');
         INSERT OR IGNORE INTO chat_settings (key, value) VALUES ('meetup_bbox', '');
-        INSERT OR IGNORE INTO chat_settings (key, value) VALUES ('meetup_bbox_padding_m', '100');
+        INSERT OR IGNORE INTO chat_settings (key, value) VALUES ('meetup_bbox_expand_pct', '15');
     """)
     db.commit()
 

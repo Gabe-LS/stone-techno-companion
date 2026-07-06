@@ -441,17 +441,17 @@ async def get_config():
         msg_limit = int(get_setting(db, "msg_char_limit", "1000"))
     except (ValueError, TypeError):
         msg_limit = 1000
-    # Meetup map bounds: auto-derived from the POI extent + a padding setting
-    # (metres) -> [[S,W],[N,E]]. A non-empty meetup_bbox setting ("west,south,
-    # east,north") overrides the auto fit. Padding is one number; the app re-derives.
+    # Meetup map bounds: the POI extent (or a manual meetup_bbox override), made
+    # SQUARE (equal metres) and expanded by meetup_bbox_expand_pct, centred on the
+    # content -> [[S,W],[N,E]]. EXPAND% is the single framing dial.
     meetup_bounds = None
     try:
         import math
 
         try:
-            pad_m = float(get_setting(db, "meetup_bbox_padding_m", "0") or 0)
+            expand = float(get_setting(db, "meetup_bbox_expand_pct", "0") or 0) / 100.0
         except (ValueError, TypeError):
-            pad_m = 0.0
+            expand = 0.0
         raw = get_setting(db, "meetup_bbox", "")
         if raw:
             w, s, e, n = (float(x) for x in raw.split(","))
@@ -462,11 +462,17 @@ async def get_config():
             lats = [p["lat"] for p in pois]
             lngs = [p["lng"] for p in pois]
             s, n, w, e = min(lats), max(lats), min(lngs), max(lngs)
-        if pad_m:
-            lat_pad = pad_m / 111320.0
-            lng_pad = pad_m / (111320.0 * math.cos(math.radians((s + n) / 2)))
-            w, e, s, n = w - lng_pad, e + lng_pad, s - lat_pad, n + lat_pad
-        meetup_bounds = [[round(s, 6), round(w, 6)], [round(n, 6), round(e, 6)]]
+        mid_lat = (s + n) / 2
+        m_per_lat = 111320.0
+        m_per_lng = 111320.0 * math.cos(math.radians(mid_lat))
+        side_m = max((e - w) * m_per_lng, (n - s) * m_per_lat) * (1 + expand)
+        half_lat = (side_m / 2) / m_per_lat
+        half_lng = (side_m / 2) / m_per_lng
+        c_lat, c_lng = (s + n) / 2, (w + e) / 2
+        meetup_bounds = [
+            [round(c_lat - half_lat, 6), round(c_lng - half_lng, 6)],
+            [round(c_lat + half_lat, 6), round(c_lng + half_lng, 6)],
+        ]
     except (ValueError, TypeError):
         meetup_bounds = None
     db.close()
