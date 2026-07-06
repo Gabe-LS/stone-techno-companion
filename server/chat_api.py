@@ -1331,9 +1331,23 @@ async def join_meetup_endpoint(meetup_id: str, request: Request):
         if not db_join_meetup(db, meetup_id, user["id"]):
             raise HTTPException(404, "This meetup has ended.")
         attendees = get_meetup_attendees(db, meetup_id)
-        return [{"id": a["id"], "display_name": a["display_name"]} for a in attendees]
+        att_list = [{"id": a["id"], "display_name": a["display_name"]} for a in attendees]
+        await _broadcast_meetup_updated(meetup_id, att_list)
+        return att_list
     finally:
         db.close()
+
+
+async def _broadcast_meetup_updated(meetup_id: str, attendees: list) -> None:
+    """Notify connected members of a meetup room that its attendee list changed,
+    so 'N going' counts and Join/Joined state update live (the REST join/leave
+    endpoints are the only path the client uses)."""
+    from chat_ws import manager
+
+    await manager.broadcast_to_room(
+        meetup_id,
+        {"event": "meetup_updated", "meetup_id": meetup_id, "attendees": attendees},
+    )
 
 
 @router.delete("/meetups/{meetup_id}/join")
@@ -1342,7 +1356,9 @@ async def leave_meetup_endpoint(meetup_id: str, request: Request):
     try:
         db_leave_meetup(db, meetup_id, user["id"])
         attendees = get_meetup_attendees(db, meetup_id)
-        return [{"id": a["id"], "display_name": a["display_name"]} for a in attendees]
+        att_list = [{"id": a["id"], "display_name": a["display_name"]} for a in attendees]
+        await _broadcast_meetup_updated(meetup_id, att_list)
+        return att_list
     finally:
         db.close()
 

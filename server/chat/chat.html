@@ -1494,21 +1494,29 @@ async function handleWSEvent(data) {
       break;
     }
     case 'report_confirmed': showToast('Report submitted'); break;
+    case 'meetup_created': {
+      const at = document.querySelector('.tabs button.active');
+      if (at && /meetup/i.test(at.textContent)) loadMeetups();
+      break;
+    }
     case 'meetup_updated': {
-      const mBtn = document.querySelector(`[data-meetup-id="${data.meetup_id}"] .meetup-join-btn`);
-      if (mBtn && data.attendees) {
+      if (data.attendees) {
         const count = data.attendees.length;
         const going = data.attendees.some(a => a.id === currentUser?.id);
-        mBtn.textContent = going ? 'Joined' : 'Join';
-        mBtn.classList.toggle('active', going);
-        const countEl = document.querySelector(`[data-meetup-id="${data.meetup_id}"] .meetup-going`);
-        if (countEl) countEl.textContent = count + ' going';
+        document.querySelectorAll(`.meetup-going[data-meetup-id="${data.meetup_id}"]`).forEach(el => {
+          el.textContent = count > 0 ? ' · ' + count + ' going' : '';
+        });
+        document.querySelectorAll(`.meetup-join[data-meetup-id="${data.meetup_id}"]`).forEach(btn => {
+          btn.textContent = going ? 'Joined' : 'Join';
+          btn.classList.toggle('joined', going);
+        });
       }
       break;
     }
     case 'meetup_expired': {
-      const mEl = document.querySelector(`[data-meetup-id="${data.meetup?.id || data.meetup_id}"]`);
-      if (mEl) { mEl.style.opacity = '0.5'; mEl.querySelector('.meetup-join-btn')?.remove(); }
+      const mid = data.meetup?.id || data.meetup_id;
+      document.querySelectorAll(`[data-meetup-id="${mid}"]`).forEach(el => { el.style.opacity = '0.5'; });
+      document.querySelectorAll(`.meetup-join[data-meetup-id="${mid}"]`).forEach(btn => btn.remove());
       break;
     }
     case 'reaction_updated': {
