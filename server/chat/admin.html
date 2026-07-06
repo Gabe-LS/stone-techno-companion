@@ -103,6 +103,7 @@ select { -webkit-appearance: none; appearance: none; background-image: url("data
 .dropdown { position: relative; display: inline-block; }
 .dropdown-btn { display: flex; align-items: center; gap: 4px; }
 .dropdown-btn::after { content: ''; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid currentColor; }
+.kebab { font-weight: 700; letter-spacing: 2px; line-height: 1; padding: 6px 12px; }
 .dropdown-menu { display: none; position: fixed; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); min-width: 140px; z-index: 100; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
 .dropdown-menu.visible { display: block; }
 .dropdown-item { display: block; width: 100%; padding: 8px 14px; font-size: 13px; text-align: left; background: none; border: none; border-radius: 0; color: var(--text); cursor: pointer; white-space: nowrap; }
@@ -597,7 +598,7 @@ function userRow(u) {
     <td class="col-narrow">${statusPill(u)}</td>
     <td class="col-narrow">${warningPill(u)}</td>
     <td class="col-actions"><div class="dropdown" onclick="event.stopPropagation();toggleDropdown(this)">
-      <button class="btn btn-neutral dropdown-btn">Warnings</button>
+      <button class="btn btn-neutral kebab" title="Actions" aria-label="Actions">...</button>
       <div class="dropdown-menu">
         <button class="dropdown-item warn" onclick="adminStrike('${esc(u.id)}')">Strike</button>
         <button class="dropdown-item warn" onclick="adminMute('${esc(u.id)}')">Mute</button>
@@ -608,6 +609,8 @@ function userRow(u) {
         ${u.is_banned
           ? (window._me && window._me.role === 'super_admin' ? `<button class="dropdown-item" onclick="adminUnban('${esc(u.id)}')">Unban</button>` : '')
           : `<button class="dropdown-item danger" onclick="adminBan('${esc(u.id)}')">Ban</button>`}
+        ${window._me && window._me.role === 'super_admin'
+          ? `<div class="dropdown-sep"></div><button class="dropdown-item danger" onclick="adminDeleteUser('${esc(u.id)}')">Delete user</button>` : ''}
       </div>
     </div></td>
   </tr><tr id="detail-row-${esc(u.id)}" style="display:none"><td colspan="10" style="padding:0"></td></tr>`;
@@ -643,9 +646,6 @@ async function loadUserDetail(userId) {
       <div class="detail-row"><b>Provider:</b> ${esc(u.provider)} &middot; <b>Created:</b> ${ago(u.created_at)} &middot; <b>Last seen:</b> ${ago(u.last_seen) || 'never'}</div>
       <div class="detail-row"><b>Mute count:</b> ${u.mute_count} / 3 &middot; <b>Active messages:</b> ${u.message_count}</div>
       ${isMuted ? '<div class="detail-row"><span class="pill pill-amber">MUTED until ' + new Date(u.muted_until).toLocaleTimeString() + '</span></div>' : ''}
-      ${window._me && window._me.role === 'super_admin' ? `<div style="margin-top:8px">
-        <button class="btn btn-red" onclick="event.stopPropagation();adminDeleteUser('${esc(u.id)}')">Delete user</button>
-      </div>` : ''}
       ${u.strikes.length ? '<h3>Strikes (' + u.strikes.length + ')</h3>' + u.strikes.map(s =>
         '<div class="detail-sub-row' + (s.is_active ? '' : ' expired') + '">' +
         esc(s.reason) + (s.detail ? ': ' + esc(s.detail) : '') +
