@@ -459,7 +459,6 @@ _POI_TAG_TO_TYPE = {
     "FOOD": "food",
     "WC": "wc", "TOILET": "wc", "TOILETS": "wc",
     "TAP WATER": "water", "WATER": "water",
-    "ENTRANCE": "entrance",
     "FIRST AID": "services", "SHUTTLE": "services",
     "LOCKER": "services", "LOST & FOUND": "services", "LOST AND FOUND": "services",
     "VINYL SHOP": "shop", "MERCH STORE": "shop", "SHOP": "shop", "MERCH": "shop",
