@@ -1111,6 +1111,13 @@ _chat_purge_coro = mount_chat(app)
 async def serve_index(path: str = ""):
     if path.startswith("chat"):
         raise HTTPException(404, "Not found")
+    # Clean-URL static pages: /public-transport -> static/pages/public-transport.html.
+    # The slug regex forbids slashes and dots, so the lookup is traversal-safe;
+    # anything without a matching page file falls through to the SPA below.
+    if path and re.fullmatch(r"[a-z0-9][a-z0-9-]*", path):
+        page = STATIC_DIR / "pages" / f"{path}.html"
+        if page.is_file():
+            return FileResponse(page, headers={"Cache-Control": "no-cache"})
     file_path = STATIC_DIR / "index.html"
     if file_path.exists():
         return FileResponse(file_path, headers={"Cache-Control": "no-store"})

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<!--
+  Static content page template.
+  Drop any file here as static/pages/<slug>.html and it is served at /<slug>
+  (extensionless) automatically - no route change needed. See serve_index in api.py.
+  Replace the placeholder content below with the real public-transport info.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Public Transport</title>
+<link rel="stylesheet" href="/shared.css">
+<style>
+  body { background: var(--color-bg); color: var(--color-text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; }
+  .page { max-width: 720px; margin: 0 auto; padding: 24px 20px 64px; }
+  .page a.back { color: var(--color-accent); text-decoration: none; font-size: var(--font-sm); }
+  .page h1 { font-size: var(--font-2xl); margin: 16px 0 8px; }
+  .page h2 { font-size: var(--font-lg); margin: 28px 0 8px; }
+  .page p, .page li { color: var(--color-muted); line-height: 1.6; }
+  .card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-card); padding: 16px; margin: 12px 0; }
+</style>
+</head>
+<body>
+<main class="page">
+  <a class="back" href="/line-up">&larr; Back to line-up</a>
+  <h1>Getting there</h1>
+  <p>How to reach the festival by public transport. Replace this placeholder with the real routes, schedules, and stops.</p>
+
+  <h2>By train</h2>
+  <div class="card">
+    <p>Nearest station and walking directions go here.</p>
+  </div>
+
+  <h2>Shuttle</h2>
+  <div class="card">
+    <p>Shuttle times and pickup points go here.</p>
+  </div>
+</main>
+</body>
+</html>

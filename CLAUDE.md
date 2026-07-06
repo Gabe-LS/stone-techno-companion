@@ -260,6 +260,8 @@ Static file routes (`/bios.json`, `/manifest.json`, `/sw.js`, `/shared.css`, `/s
 
 The catch-all `/{path:path}` serves `index.html` with `Cache-Control: no-store` and explicitly rejects `/chat*` paths (returns 404). Chat module import is **required** — if `chat_api.py` fails to import, the server crashes at startup (fail-fast, no silent degradation).
 
+**Clean-URL static pages**: drop a file at `server/static/pages/<slug>.html` and it is served at `/<slug>` (extensionless) automatically — the catch-all checks `static/pages/{path}.html` before falling back to `index.html`. The slug must match `[a-z0-9][a-z0-9-]*` (no slashes/dots), so the lookup is path-traversal-safe and multi-segment or dotted paths fall through to the SPA. No per-page route needed. `static/` is bind-mounted (`./static:/app/static`) and tracked in git, so new pages deploy via `git pull` with no image rebuild. Example: `static/pages/public-transport.html` → `/public-transport`.
+
 Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DBs at `server/data/` volume-mounted (hearts.db, chat.db, vapid_private.pem).
 
 ### Environment Variables (`server/.env`)
