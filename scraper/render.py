@@ -1269,12 +1269,8 @@ def render_output_html(
                     e_display = _format_hhmm(end_min)
                     loc_name = locations.get(fid, {}).get("name", fid)
 
-                    # Include start/end time so two slots for the same artist(s)
-                    # on the same floor/date/period get distinct UUIDs (one-time
-                    # push-dedup reset, harmless pre-event).
                     card_key = ":".join(
-                        [a.get("id", "") for a in group]
-                        + [tt_date_str, period, fid, st, et]
+                        [a.get("id", "") for a in group] + [tt_date_str, period, fid]
                     )
                     artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, card_key))
 
@@ -1395,12 +1391,8 @@ def render_output_html(
                     e_display = _format_hhmm(end_min)
                     loc_name = locations.get(fid, {}).get("name", fid)
 
-                    # Include start/end time so two slots for the same artist(s)
-                    # on the same floor/date/period get distinct UUIDs (one-time
-                    # push-dedup reset, harmless pre-event).
                     card_key = ":".join(
-                        [a.get("id", "") for a in group]
-                        + [tt_date_str, period, fid, st, et]
+                        [a.get("id", "") for a in group] + [tt_date_str, period, fid]
                     )
                     artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, card_key))
                     names = " b2b ".join(a.get("name", "") for a in group)
