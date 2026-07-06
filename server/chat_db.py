@@ -1202,6 +1202,20 @@ def sweep_stuck_pending(db: sqlite3.Connection, older_than_iso: str) -> list[tup
 # --- Meetups ---
 
 
+def _sanitize_coord(value, limit: float):
+    """Round a GPS coordinate to ~11m precision and reject out-of-range/non-finite
+    values (data minimization + input validation). Returns None on invalid input."""
+    if value is None:
+        return None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    if f != f or f in (float("inf"), float("-inf")) or not (-limit <= f <= limit):
+        return None
+    return round(f, 4)
+
+
 def create_meetup(
     db: sqlite3.Connection,
     creator_id: str,
@@ -1216,6 +1230,8 @@ def create_meetup(
 ) -> dict:
     meetup_id = _uuid()
     now = _now()
+    location_lat = _sanitize_coord(location_lat, 90.0)
+    location_lng = _sanitize_coord(location_lng, 180.0)
     mt = datetime.fromisoformat(meetup_time)
     try:
         meetup_ttl = int(get_setting(db, "meetup_ttl_minutes", "60"))
