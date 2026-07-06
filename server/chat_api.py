@@ -80,6 +80,14 @@ from chat_db import (
     set_setting,
     upsert_e2ee_device_key,
     get_e2ee_device_keys,
+    get_admin,
+    list_admins,
+    add_admin,
+    remove_admin,
+    count_super_admins,
+    log_admin_action,
+    get_admin_actions,
+    VALID_ADMIN_ROLES,
 )
 from chat_ws import handle_chat_ws, purge_loop
 
@@ -262,33 +270,109 @@ def _get_user_from_cookie(request: Request):
     return user, db
 
 
-def _require_admin(request: Request) -> None:
-    _check_admin_fail_rate(request)
+def _resolve_admin(request: Request) -> dict | None:
     header_token = request.headers.get("X-Admin-Token") or ""
     if (
         ADMIN_TOKEN
         and header_token
         and secrets.compare_digest(header_token, ADMIN_TOKEN)
     ):
-        return
+        return {
+            "kind": "token",
+            "role": "super_admin",
+            "user_id": None,
+            "email_hash": None,
+            "label": "token",
+        }
     session_token = request.cookies.get("chat_session")
-    if session_token and _ADMIN_EMAIL_HASHES:
+    if session_token:
         db = _get_db()
         try:
             user = get_user_by_token(db, session_token)
             if user:
                 providers = db.execute(
-                    "SELECT provider, provider_id FROM user_providers WHERE user_id = ?",
+                    "SELECT provider_id FROM user_providers WHERE user_id = ?",
                     (user["id"],),
                 ).fetchall()
-                for p in providers:
-                    if p["provider_id"] in _ADMIN_EMAIL_HASHES:
-                        return
+                pid_list = [p["provider_id"] for p in providers]
+                if user["provider_id"] not in pid_list:
+                    pid_list.append(user["provider_id"])
+                # env emails = permanent super-admins
+                for pid in pid_list:
+                    if pid in _ADMIN_EMAIL_HASHES:
+                        row = get_admin(db, pid)
+                        label = row["label"] if row and row["label"] else pid[:12]
+                        return {
+                            "kind": "cookie",
+                            "role": "super_admin",
+                            "user_id": user["id"],
+                            "email_hash": pid,
+                            "label": label,
+                        }
+                # DB-backed admins
+                for pid in pid_list:
+                    row = get_admin(db, pid)
+                    if row:
+                        return {
+                            "kind": "cookie",
+                            "role": row["role"],
+                            "user_id": user["id"],
+                            "email_hash": pid,
+                            "label": (row["label"] or pid[:12]),
+                        }
         finally:
             db.close()
-    ip = request.client.host if request.client else "unknown"
-    _admin_fail_rate.setdefault(ip, []).append(time.monotonic())
-    raise HTTPException(403, "Admin access required")
+    return None
+
+
+def _require_admin(request: Request) -> dict:
+    _check_admin_fail_rate(request)
+    actor = _resolve_admin(request)
+    if actor is None:
+        ip = request.client.host if request.client else "unknown"
+        _admin_fail_rate.setdefault(ip, []).append(time.monotonic())
+        raise HTTPException(403, "Admin access required")
+    return actor
+
+
+def _require_super_admin(request: Request) -> dict:
+    actor = _require_admin(request)
+    if actor["role"] != "super_admin":
+        raise HTTPException(403, "Super-admin access required")
+    return actor
+
+
+def _protected_role(db, target_user_id: str) -> str | None:
+    user = get_user(db, target_user_id)
+    if not user:
+        return None
+    pids = [
+        p["provider_id"]
+        for p in db.execute(
+            "SELECT provider_id FROM user_providers WHERE user_id = ?",
+            (target_user_id,),
+        ).fetchall()
+    ]
+    if user["provider_id"] not in pids:
+        pids.append(user["provider_id"])
+    if any(p in _ADMIN_EMAIL_HASHES for p in pids):
+        return "super_admin"
+    best = None
+    for p in pids:
+        row = get_admin(db, p)
+        if row:
+            if row["role"] == "super_admin":
+                return "super_admin"
+            best = "admin"
+    return best
+
+
+def _guard_target(db, actor: dict, target_user_id: str) -> None:
+    role = _protected_role(db, target_user_id)
+    if role == "super_admin":
+        raise HTTPException(403, "Cannot moderate a super-admin")
+    if role == "admin" and actor["role"] != "super_admin":
+        raise HTTPException(403, "Only a super-admin can moderate another admin")
 
 
 def _set_session_cookie(response: Response, token: str) -> None:
@@ -1945,7 +2029,7 @@ async def _admin_json(request: Request) -> dict:
 
 @router.get("/admin/reports")
 async def admin_reports(request: Request, status: str = "pending"):
-    _require_admin(request)
+    actor = _require_admin(request)
     db = _get_db()
     try:
         reports = get_pending_reports(db) if status == "pending" else []
@@ -1971,7 +2055,7 @@ async def admin_reports(request: Request, status: str = "pending"):
 
 @router.patch("/admin/reports/{report_id}")
 async def admin_resolve_report(report_id: str, request: Request):
-    _require_admin(request)
+    actor = _require_admin(request)
     body = await _admin_json(request)
     status = body.get("status")
     if status not in ("actioned", "dismissed"):
@@ -1980,6 +2064,7 @@ async def admin_resolve_report(report_id: str, request: Request):
     try:
         if resolve_report(db, report_id, status) == 0:
             raise HTTPException(409, "Report already resolved")
+        log_admin_action(db, actor["label"], "resolve_report", detail=status)
         return {"ok": True}
     finally:
         db.close()
@@ -1987,7 +2072,7 @@ async def admin_resolve_report(report_id: str, request: Request):
 
 @router.post("/admin/ban/{user_id}")
 async def admin_ban(user_id: str, request: Request):
-    _require_admin(request)
+    actor = _require_admin(request)
     body = await _admin_json(request)
     reason = body.get("reason", "Banned by admin")
     db = _get_db()
@@ -1995,6 +2080,7 @@ async def admin_ban(user_id: str, request: Request):
         user = get_user(db, user_id)
         if not user:
             raise HTTPException(404, "User not found")
+        _guard_target(db, actor, user_id)
         providers = db.execute(
             "SELECT provider, provider_id FROM user_providers WHERE user_id = ?",
             (user_id,),
@@ -2046,6 +2132,9 @@ async def admin_ban(user_id: str, request: Request):
                 await ws.close(code=4003, reason="Account banned")
             except Exception:
                 pass
+        log_admin_action(
+            db, actor["label"], "ban", target_user_id=user_id, detail=reason
+        )
         return {"ok": True}
     finally:
         db.close()
@@ -2053,11 +2142,12 @@ async def admin_ban(user_id: str, request: Request):
 
 @router.post("/admin/unban/{user_id}")
 async def admin_unban(user_id: str, request: Request):
-    _require_admin(request)
+    actor = _require_super_admin(request)
     db = _get_db()
     try:
         db.execute("DELETE FROM bans WHERE user_id = ?", (user_id,))
         db.commit()
+        log_admin_action(db, actor["label"], "unban", target_user_id=user_id)
         return {"ok": True}
     finally:
         db.close()
@@ -2065,7 +2155,7 @@ async def admin_unban(user_id: str, request: Request):
 
 @router.delete("/admin/bans/{ban_id}")
 async def admin_delete_ban(ban_id: str, request: Request):
-    _require_admin(request)
+    actor = _require_super_admin(request)
     db = _get_db()
     try:
         row = db.execute("SELECT user_id FROM bans WHERE id = ?", (ban_id,)).fetchone()
@@ -2074,6 +2164,12 @@ async def admin_delete_ban(ban_id: str, request: Request):
         else:
             db.execute("DELETE FROM bans WHERE id = ?", (ban_id,))
         db.commit()
+        log_admin_action(
+            db,
+            actor["label"],
+            "delete_ban",
+            target_user_id=(row["user_id"] if row else None),
+        )
         return {"ok": True}
     finally:
         db.close()
@@ -2081,7 +2177,7 @@ async def admin_delete_ban(ban_id: str, request: Request):
 
 @router.get("/admin/settings")
 async def admin_get_settings(request: Request):
-    _require_admin(request)
+    actor = _require_admin(request)
     db = _get_db()
     try:
         return {"room_sort": get_setting(db, "room_sort", "auto")}
@@ -2091,7 +2187,7 @@ async def admin_get_settings(request: Request):
 
 @router.patch("/admin/settings")
 async def admin_update_settings(request: Request):
-    _require_admin(request)
+    actor = _require_super_admin(request)
     body = await _admin_json(request)
     db = _get_db()
     try:
@@ -2099,6 +2195,7 @@ async def admin_update_settings(request: Request):
             if body["room_sort"] not in ("auto", "manual"):
                 raise HTTPException(400, "room_sort must be 'auto' or 'manual'")
             set_setting(db, "room_sort", body["room_sort"])
+        log_admin_action(db, actor["label"], "update_settings", detail=str(body))
         return {"ok": True}
     finally:
         db.close()
@@ -2106,7 +2203,7 @@ async def admin_update_settings(request: Request):
 
 @router.get("/admin/stats")
 async def admin_stats(request: Request):
-    _require_admin(request)
+    actor = _require_admin(request)
     from chat_ws import manager
 
     online_ids = (
@@ -2127,7 +2224,7 @@ async def admin_users(
     limit: int = 50,
     offset: int = 0,
 ):
-    _require_admin(request)
+    actor = _require_admin(request)
     limit = max(1, min(limit, 200))
     offset = max(0, offset)
     from chat_ws import manager
@@ -2144,7 +2241,7 @@ async def admin_users(
 
 @router.get("/admin/users/{user_id}")
 async def admin_user_detail(user_id: str, request: Request):
-    _require_admin(request)
+    actor = _require_admin(request)
     db = _get_db()
     try:
         detail = get_user_admin_detail(db, user_id)
@@ -2162,7 +2259,7 @@ async def admin_user_detail(user_id: str, request: Request):
 
 @router.get("/admin/bans")
 async def admin_bans(request: Request):
-    _require_admin(request)
+    actor = _require_admin(request)
     db = _get_db()
     try:
         return get_all_bans(db)
@@ -2172,7 +2269,7 @@ async def admin_bans(request: Request):
 
 @router.get("/admin/modlog")
 async def admin_modlog(request: Request, limit: int = 50, offset: int = 0):
-    _require_admin(request)
+    actor = _require_admin(request)
     limit = max(1, min(limit, 200))
     offset = max(0, offset)
     db = _get_db()
@@ -2184,7 +2281,7 @@ async def admin_modlog(request: Request, limit: int = 50, offset: int = 0):
 
 @router.get("/admin/rooms")
 async def admin_rooms(request: Request):
-    _require_admin(request)
+    actor = _require_admin(request)
     from chat_ws import manager
 
     online_counts = {}
@@ -2206,7 +2303,7 @@ async def admin_rooms(request: Request):
 
 @router.post("/admin/mute/{user_id}")
 async def admin_mute_user(user_id: str, request: Request):
-    _require_admin(request)
+    actor = _require_admin(request)
     body = await _admin_json(request)
     minutes = body.get("minutes", 30)
     db = _get_db()
@@ -2214,6 +2311,7 @@ async def admin_mute_user(user_id: str, request: Request):
         user = get_user(db, user_id)
         if not user:
             raise HTTPException(404, "User not found")
+        _guard_target(db, actor, user_id)
         mute_user(db, user_id, minutes=minutes)
         mute_count = increment_mute_count(db, user_id)
         removed = delete_user_messages(db, user_id)
@@ -2242,12 +2340,18 @@ async def admin_mute_user(user_id: str, request: Request):
                     await ws.close(code=4003, reason="Account banned")
                 except Exception:
                     pass
+            log_admin_action(
+                db, actor["label"], "ban", target_user_id=user_id, detail=ban_reason
+            )
             return {"ok": True, "action": "ban"}
 
         asyncio.create_task(
             manager.send_to_user(
                 user_id, {"event": "muted", "reason": "Muted by admin"}
             )
+        )
+        log_admin_action(
+            db, actor["label"], "mute", target_user_id=user_id, detail=str(minutes)
         )
         return {"ok": True, "action": "mute"}
     finally:
@@ -2256,7 +2360,7 @@ async def admin_mute_user(user_id: str, request: Request):
 
 @router.post("/admin/unmute/{user_id}")
 async def admin_unmute_user(user_id: str, request: Request):
-    _require_admin(request)
+    actor = _require_admin(request)
     db = _get_db()
     try:
         user = get_user(db, user_id)
@@ -2264,6 +2368,7 @@ async def admin_unmute_user(user_id: str, request: Request):
             raise HTTPException(404, "User not found")
         db.execute("UPDATE users SET muted_until = NULL WHERE id = ?", (user_id,))
         db.commit()
+        log_admin_action(db, actor["label"], "unmute", target_user_id=user_id)
         return {"ok": True}
     finally:
         db.close()
@@ -2271,12 +2376,14 @@ async def admin_unmute_user(user_id: str, request: Request):
 
 @router.post("/admin/strike/{user_id}")
 async def admin_strike_user(user_id: str, request: Request):
-    _require_admin(request)
+    actor = _require_admin(request)
     body = await _admin_json(request)
     reason = body.get("reason", "admin")
     detail = body.get("detail", "Manual admin action")
     db = _get_db()
     try:
+        _guard_target(db, actor, user_id)
+
         from chat_moderation import process_strike
 
         result = process_strike(db, user_id, reason, detail)
@@ -2314,6 +2421,14 @@ async def admin_strike_user(user_id: str, request: Request):
                     },
                 )
 
+        if result["action"] != "none":
+            log_admin_action(
+                db,
+                actor["label"],
+                result["action"],
+                target_user_id=user_id,
+                detail=detail,
+            )
         return result
     finally:
         db.close()
@@ -2321,7 +2436,7 @@ async def admin_strike_user(user_id: str, request: Request):
 
 @router.post("/admin/users/{user_id}/clear-warnings")
 async def admin_clear_warnings(user_id: str, request: Request):
-    _require_admin(request)
+    actor = _require_super_admin(request)
     db = _get_db()
     try:
         user = get_user(db, user_id)
@@ -2340,6 +2455,7 @@ async def admin_clear_warnings(user_id: str, request: Request):
             (_uuid(), user_id, _now()),
         )
         db.commit()
+        log_admin_action(db, actor["label"], "clear_warnings", target_user_id=user_id)
         return {"ok": True}
     finally:
         db.close()
@@ -2347,12 +2463,13 @@ async def admin_clear_warnings(user_id: str, request: Request):
 
 @router.delete("/admin/users/{user_id}")
 async def admin_delete_user(user_id: str, request: Request):
-    _require_admin(request)
+    actor = _require_super_admin(request)
     db = _get_db()
     try:
         user = get_user(db, user_id)
         if not user:
             raise HTTPException(404, "User not found")
+        _guard_target(db, actor, user_id)
         removed = delete_user_messages(db, user_id)
         delete_user(db, user_id)
         from chat_ws import manager
@@ -2373,6 +2490,7 @@ async def admin_delete_user(user_id: str, request: Request):
                 await ws.close(code=4003, reason="Account deleted")
             except Exception:
                 pass
+        log_admin_action(db, actor["label"], "delete_user", target_user_id=user_id)
         return {"ok": True}
     finally:
         db.close()
@@ -2380,7 +2498,7 @@ async def admin_delete_user(user_id: str, request: Request):
 
 @router.post("/admin/rooms")
 async def admin_create_room(request: Request):
-    _require_admin(request)
+    actor = _require_admin(request)
     body = await _admin_json(request)
     name = body.get("name", "").strip()
     room_type = body.get("type", "general")
@@ -2420,6 +2538,9 @@ async def admin_create_room(request: Request):
         from chat_ws import manager
 
         asyncio.create_task(manager.broadcast_to_all({"event": "rooms_changed"}))
+        log_admin_action(
+            db, actor["label"], "create_room", target_room_id=room_id, detail=name
+        )
         return room
     finally:
         db.close()
@@ -2427,7 +2548,7 @@ async def admin_create_room(request: Request):
 
 @router.patch("/admin/rooms/{room_id}")
 async def admin_update_room(room_id: str, request: Request):
-    _require_admin(request)
+    actor = _require_admin(request)
     body = await _admin_json(request)
     db = _get_db()
     try:
@@ -2460,6 +2581,7 @@ async def admin_update_room(room_id: str, request: Request):
         from chat_ws import manager
 
         asyncio.create_task(manager.broadcast_to_all({"event": "rooms_changed"}))
+        log_admin_action(db, actor["label"], "update_room", target_room_id=room_id)
         return {"ok": True}
     finally:
         db.close()
@@ -2467,7 +2589,7 @@ async def admin_update_room(room_id: str, request: Request):
 
 @router.post("/admin/rooms/{room_id}/main")
 async def admin_set_main_room(room_id: str, request: Request):
-    _require_admin(request)
+    actor = _require_admin(request)
     db = _get_db()
     try:
         room = get_room(db, room_id)
@@ -2481,6 +2603,7 @@ async def admin_set_main_room(room_id: str, request: Request):
         from chat_ws import manager
 
         asyncio.create_task(manager.broadcast_to_all({"event": "rooms_changed"}))
+        log_admin_action(db, actor["label"], "set_main", target_room_id=room_id)
         return {"ok": True}
     finally:
         db.close()
@@ -2488,7 +2611,7 @@ async def admin_set_main_room(room_id: str, request: Request):
 
 @router.post("/admin/rooms/reorder")
 async def admin_reorder_rooms(request: Request):
-    _require_admin(request)
+    actor = _require_admin(request)
     body = await _admin_json(request)
     order = body.get("order", [])
     if not order:
@@ -2501,6 +2624,7 @@ async def admin_reorder_rooms(request: Request):
         from chat_ws import manager
 
         asyncio.create_task(manager.broadcast_to_all({"event": "rooms_changed"}))
+        log_admin_action(db, actor["label"], "reorder", detail=str(len(order)))
         return {"ok": True}
     finally:
         db.close()
@@ -2508,7 +2632,7 @@ async def admin_reorder_rooms(request: Request):
 
 @router.delete("/admin/rooms/{room_id}")
 async def admin_delete_room(room_id: str, request: Request):
-    _require_admin(request)
+    actor = _require_super_admin(request)
     db = _get_db()
     try:
         room = get_room(db, room_id)
@@ -2522,6 +2646,105 @@ async def admin_delete_room(room_id: str, request: Request):
         from chat_ws import manager
 
         asyncio.create_task(manager.broadcast_to_all({"event": "rooms_changed"}))
+        log_admin_action(db, actor["label"], "delete_room", target_room_id=room_id)
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+@router.get("/admin/me")
+async def admin_me(request: Request):
+    actor = _require_admin(request)
+    return {
+        "role": actor["role"],
+        "kind": actor["kind"],
+        "label": actor["label"],
+        "email_hash": actor["email_hash"],
+    }
+
+
+@router.get("/admin/audit")
+async def admin_audit(request: Request, limit: int = 50, offset: int = 0):
+    _require_admin(request)
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+    db = _get_db()
+    try:
+        return get_admin_actions(db, limit, offset)
+    finally:
+        db.close()
+
+
+@router.get("/admin/admins")
+async def admin_list_admins(request: Request):
+    _require_super_admin(request)
+    db = _get_db()
+    try:
+        rows = list_admins(db)
+        by_hash = {r["email_hash"]: r for r in rows}
+        out = []
+        # env permanent super-admins first
+        for h in sorted(_ADMIN_EMAIL_HASHES):
+            db_row = by_hash.pop(h, None)
+            out.append(
+                {
+                    "email_hash": h,
+                    "role": "super_admin",
+                    "label": (db_row["label"] if db_row and db_row["label"] else "env"),
+                    "permanent": True,
+                    "added_by": "env",
+                    "created_at": (db_row["created_at"] if db_row else ""),
+                }
+            )
+        for r in by_hash.values():
+            out.append({**r, "permanent": False})
+        return out
+    finally:
+        db.close()
+
+
+@router.post("/admin/admins")
+async def admin_add_admin(request: Request):
+    actor = _require_super_admin(request)
+    body = await _admin_json(request)
+    email = (body.get("email") or "").strip()
+    role = body.get("role", "admin")
+    label = (body.get("label") or "").strip() or None
+    if not email:
+        raise HTTPException(400, "email required")
+    if role not in VALID_ADMIN_ROLES:
+        raise HTTPException(400, "role must be 'admin' or 'super_admin'")
+    h = hash_email(email)
+    if h in _ADMIN_EMAIL_HASHES:
+        raise HTTPException(409, "Already a permanent super-admin")
+    db = _get_db()
+    try:
+        row = add_admin(db, h, role, label, actor["label"])
+        log_admin_action(db, actor["label"], "add_admin", detail=f"{role}:{h[:12]}")
+        return {**row, "permanent": False}
+    finally:
+        db.close()
+
+
+@router.delete("/admin/admins/{email_hash}")
+async def admin_remove_admin(email_hash: str, request: Request):
+    actor = _require_super_admin(request)
+    if email_hash in _ADMIN_EMAIL_HASHES:
+        raise HTTPException(400, "Cannot remove a permanent super-admin")
+    db = _get_db()
+    try:
+        row = get_admin(db, email_hash)
+        if not row:
+            raise HTTPException(404, "Admin not found")
+        # never leave zero super-admins when there are no env super-admins
+        if (
+            row["role"] == "super_admin"
+            and not _ADMIN_EMAIL_HASHES
+            and count_super_admins(db) <= 1
+        ):
+            raise HTTPException(400, "Would remove the last super-admin")
+        remove_admin(db, email_hash)
+        log_admin_action(db, actor["label"], "remove_admin", detail=email_hash[:12])
         return {"ok": True}
     finally:
         db.close()

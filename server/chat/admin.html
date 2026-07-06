@@ -43,7 +43,8 @@ select { -webkit-appearance: none; appearance: none; background-image: url("data
 .stat { display: flex; gap: 4px; align-items: center; }
 .stat b { color: var(--text-sec); font-weight: 600; }
 .stat.alert b { color: var(--amber); }
-.tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); background: var(--bg-card); overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.tabs { display: flex; align-items: center; gap: 0; border-bottom: 1px solid var(--border); background: var(--bg-card); overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.admin-me { margin-left: auto; display: flex; align-items: center; gap: 8px; padding: 6px 12px; font-size: 12px; white-space: nowrap; }
 .tab { padding: 10px 20px; cursor: pointer; color: var(--text-sec); border-bottom: 2px solid transparent; white-space: nowrap; font-size: 13px; user-select: none; transition: color 0.15s; }
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--text); border-bottom-color: var(--text); }
@@ -210,6 +211,7 @@ async function init() {
     renderLogin();
     return;
   }
+  try { window._me = await api('/me'); } catch { window._me = {role: 'admin', kind: 'cookie', label: 'admin'}; }
   document.getElementById('app').innerHTML = `<div class="app">
     <div class="tabs" id="tabs">
       <div class="tab active" data-tab="rooms" onclick="switchTab('rooms')">Rooms</div>
@@ -217,14 +219,32 @@ async function init() {
       <div class="tab" data-tab="reports" onclick="switchTab('reports')">Reports</div>
       <div class="tab" data-tab="banned" onclick="switchTab('banned')">Banned</div>
       <div class="tab" data-tab="log" onclick="switchTab('log')">Logs</div>
+      <div class="tab" data-tab="audit" onclick="switchTab('audit')">Audit</div>
+      ${window._me.role === 'super_admin' ? '<div class="tab" data-tab="admins" onclick="switchTab(\'admins\')">Admins</div>' : ''}
+      <div class="admin-me" id="admin-me"></div>
     </div>
     <div class="content" id="content"></div>
     <div class="stats-bar" id="stats-bar">${renderStatsHTML(stats)}</div>
   </div>`;
+  document.getElementById('admin-me').innerHTML = renderMeChip();
   statsInterval = setInterval(refreshStats, 15000);
   currentTab = 'rooms';
   await render.rooms();
   document.body.style.opacity = '1';
+}
+
+function renderMeChip() {
+  const m = window._me || {role: 'admin', label: 'admin'};
+  const pill = m.role === 'super_admin' ? '<span class="pill pill-amber">super-admin</span>' : '<span class="pill pill-blue">admin</span>';
+  return `<span style="color:var(--text-sec)">${esc(m.label || '')}</span> ${pill} <button class="btn btn-neutral" style="padding:3px 10px" onclick="adminLogout()">Log out</button>`;
+}
+
+async function adminLogout() {
+  dbg('[AUTH] logout');
+  const m = window._me || {};
+  if (m.kind === 'token') { sessionStorage.removeItem('chat_admin_token'); token = ''; renderLogin(); return; }
+  try { await fetch('/chat/api/logout', {method: 'POST', credentials: 'include'}); } catch {}
+  location.reload();
 }
 
 function renderStatsHTML(s) {
@@ -381,12 +401,97 @@ const render = {
         <td class="col-narrow" style="color:var(--text-muted)">${ago(r.last_message_at)}</td>
         <td class="col-actions"><div class="btn-group">
           ${r.type !== 'dm' && r.type !== 'meetup' ? `<button class="btn btn-neutral" onclick="openRoomModal('${esc(r.id)}')">Edit</button>` : ''}
-          ${!r.is_main && r.type !== 'dm' && r.type !== 'meetup' ? `<button class="btn btn-neutral" onclick="deleteRoom('${esc(r.id)}')">Delete</button>` : ''}
+          ${!r.is_main && r.type !== 'dm' && r.type !== 'meetup' && window._me && window._me.role === 'super_admin' ? `<button class="btn btn-neutral" onclick="deleteRoom('${esc(r.id)}')">Delete</button>` : ''}
         </div></td>
       </tr>`).join('') + '</tbody></table>';
     } catch { el.innerHTML = '<div class="empty">Failed to load rooms</div>'; }
   },
 };
+
+// --- Audit ---
+let auditOffset = 0, auditItems = [], _auditFilter = '';
+render.audit = async () => {
+  dbg('[RENDER] audit');
+  const el = document.getElementById('content');
+  auditOffset = 0; auditItems = [];
+  el.innerHTML = `<div class="toolbar"><input type="text" id="audit-search" placeholder="Search audit" oninput="filterAudit(this.value)"></div><div id="audit-list"></div>`;
+  await loadMoreAudit();
+};
+async function loadMoreAudit() {
+  dbg('[AUDIT] load offset:', auditOffset);
+  try {
+    const items = await api('/audit?limit=50&offset=' + auditOffset);
+    auditItems = auditItems.concat(items); auditOffset += items.length;
+    renderAudit(items.length === 50);
+  } catch { (document.getElementById('audit-list') || document.getElementById('content')).innerHTML = '<div class="empty">Failed to load audit</div>'; }
+}
+function renderAudit(hasMore) {
+  const el = document.getElementById('audit-list') || document.getElementById('content');
+  const items = _auditFilter ? auditItems.filter(i =>
+    (i.actor || '').toLowerCase().includes(_auditFilter) ||
+    (i.action || '').toLowerCase().includes(_auditFilter) ||
+    (i.target_name || '').toLowerCase().includes(_auditFilter) ||
+    (i.detail || '').toLowerCase().includes(_auditFilter)) : auditItems;
+  if (!items.length) { el.innerHTML = '<div class="empty">No admin actions</div>'; return; }
+  el.innerHTML = `<table class="tbl"><thead><tr><th class="col-narrow">Actor</th><th class="col-narrow">Action</th><th>Target</th><th>Detail</th><th class="col-narrow">Time</th></tr></thead><tbody>` +
+    items.map(i => `<tr>
+      <td class="col-narrow" style="color:var(--text-sec)">${esc(i.actor)}</td>
+      <td class="col-narrow"><span class="pill pill-gray">${esc(i.action)}</span></td>
+      <td>${esc(i.target_name || i.target_room_id || (i.target_user_id ? i.target_user_id.slice(0, 8) : '--'))}</td>
+      <td class="truncate" style="color:var(--text-sec)">${esc(i.detail || '')}</td>
+      <td class="col-narrow" style="color:var(--text-muted)">${ago(i.created_at)}</td>
+    </tr>`).join('') + '</tbody></table>' +
+    (hasMore && !_auditFilter ? '<div class="load-more"><button onclick="loadMoreAudit()">Load more</button></div>' : '');
+}
+function filterAudit(q) { dbg('[FILTER] audit:', q); _auditFilter = q.toLowerCase(); renderAudit(auditOffset > 0 && auditItems.length === auditOffset); }
+
+// --- Admins ---
+render.admins = async () => {
+  dbg('[RENDER] admins');
+  const el = document.getElementById('content');
+  try {
+    const admins = await api('/admins');
+    window._adminsData = admins;
+    let html = `<div class="toolbar"><button class="btn btn-blue" onclick="openAdminModal()">Add admin</button></div>`;
+    html += `<table class="tbl"><thead><tr><th>Label</th><th class="col-narrow">Role</th><th class="col-narrow">Added by</th><th class="col-narrow">Added</th><th class="col-actions"></th></tr></thead><tbody>` +
+      admins.map(a => `<tr>
+        <td>${esc(a.label || a.email_hash.slice(0, 12))}${a.permanent ? ' <span class="pill pill-gray">permanent</span>' : ''}</td>
+        <td class="col-narrow">${a.role === 'super_admin' ? '<span class="pill pill-amber">super-admin</span>' : '<span class="pill pill-blue">admin</span>'}</td>
+        <td class="col-narrow" style="color:var(--text-muted)">${esc(a.added_by || '')}</td>
+        <td class="col-narrow" style="color:var(--text-muted)">${a.created_at ? ago(a.created_at) : '--'}</td>
+        <td class="col-actions">${a.permanent ? '' : `<button class="btn btn-neutral" onclick="removeAdmin('${esc(a.email_hash)}')">Remove</button>`}</td>
+      </tr>`).join('') + '</tbody></table>';
+    el.innerHTML = html;
+  } catch { el.innerHTML = '<div class="empty">Failed to load admins</div>'; }
+};
+function openAdminModal() {
+  dbg('[MODAL] add admin');
+  const m = document.getElementById('modal');
+  m.innerHTML = `<h2>Add admin</h2>
+    <div class="modal-field"><label>Email</label><input type="email" id="adm-email" placeholder="person@example.com"></div>
+    <div class="modal-field"><label>Label (shown in list)</label><input type="text" id="adm-label" placeholder="Name / role note"></div>
+    <div class="modal-field"><label>Role</label><select id="adm-role"><option value="admin">admin (moderator)</option><option value="super_admin">super-admin</option></select></div>
+    <div class="modal-actions"><button class="btn btn-neutral" onclick="closeModal()">Cancel</button><button class="btn btn-blue" onclick="saveAdmin()">Add</button></div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+async function saveAdmin() {
+  const email = document.getElementById('adm-email')?.value.trim();
+  const label = document.getElementById('adm-label')?.value.trim() || '';
+  const role = document.getElementById('adm-role')?.value || 'admin';
+  if (!email) return;
+  dbg('[ACTION] addAdmin', role);
+  try {
+    await api('/admins', {method: 'POST', body: JSON.stringify({email, label, role})});
+    closeModal(); render.admins();
+  } catch (e) { alert('Failed: ' + e.message); }
+}
+async function removeAdmin(emailHash) {
+  const a = (window._adminsData || []).find(x => x.email_hash === emailHash);
+  dbg('[ACTION] removeAdmin', emailHash);
+  if (!confirm('Remove admin ' + (a ? (a.label || emailHash.slice(0, 12)) : '') + '?')) return;
+  try { await api('/admins/' + emailHash, {method: 'DELETE'}); render.admins(); }
+  catch (e) { alert('Failed: ' + e.message); }
+}
 
 // --- Reports ---
 async function reportAction(reportId, action) {
@@ -450,10 +555,10 @@ function userRow(u) {
         <button class="dropdown-item warn" onclick="adminMute('${esc(u.id)}')">Mute</button>
         ${(u.muted_until && u.muted_until > new Date().toISOString())
             ? `<button class="dropdown-item warn" onclick="adminUnmute('${esc(u.id)}')">Unmute</button>` : ''}
-        <button class="dropdown-item" onclick="adminClearWarnings('${esc(u.id)}')">Clear warnings</button>
+        ${window._me && window._me.role === 'super_admin' ? `<button class="dropdown-item" onclick="adminClearWarnings('${esc(u.id)}')">Clear warnings</button>` : ''}
         <div class="dropdown-sep"></div>
         ${u.is_banned
-          ? `<button class="dropdown-item" onclick="adminUnban('${esc(u.id)}')">Unban</button>`
+          ? (window._me && window._me.role === 'super_admin' ? `<button class="dropdown-item" onclick="adminUnban('${esc(u.id)}')">Unban</button>` : '')
           : `<button class="dropdown-item danger" onclick="adminBan('${esc(u.id)}')">Ban</button>`}
       </div>
     </div></td>
@@ -490,9 +595,9 @@ async function loadUserDetail(userId) {
       <div class="detail-row"><b>Provider:</b> ${esc(u.provider)} &middot; <b>Created:</b> ${ago(u.created_at)} &middot; <b>Last seen:</b> ${ago(u.last_seen) || 'never'}</div>
       <div class="detail-row"><b>Mute count:</b> ${u.mute_count} / 3 &middot; <b>Active messages:</b> ${u.message_count}</div>
       ${isMuted ? '<div class="detail-row"><span class="pill pill-amber">MUTED until ' + new Date(u.muted_until).toLocaleTimeString() + '</span></div>' : ''}
-      <div style="margin-top:8px">
+      ${window._me && window._me.role === 'super_admin' ? `<div style="margin-top:8px">
         <button class="btn btn-red" onclick="event.stopPropagation();adminDeleteUser('${esc(u.id)}')">Delete user</button>
-      </div>
+      </div>` : ''}
       ${u.strikes.length ? '<h3>Strikes (' + u.strikes.length + ')</h3>' + u.strikes.map(s =>
         '<div class="detail-sub-row' + (s.is_active ? '' : ' expired') + '">' +
         esc(s.reason) + (s.detail ? ': ' + esc(s.detail) : '') +
@@ -608,7 +713,7 @@ function filterBans(q) {
     <td class="col-narrow"><span class="pill pill-gray">${esc(b.provider)}</span></td>
     <td class="truncate">${esc(b.reason)}</td>
     <td class="col-narrow" style="color:var(--text-muted)">${ago(b.created_at)}</td>
-    <td class="col-actions"><button class="btn btn-neutral" onclick="unban('${esc(b.ban_id)}')">Unban</button></td>
+    <td class="col-actions">${window._me && window._me.role === 'super_admin' ? `<button class="btn btn-neutral" onclick="unban('${esc(b.ban_id)}')">Unban</button>` : '<span style="color:var(--text-muted)">--</span>'}</td>
   </tr>`).join('') + '</tbody></table>';
 }
 async function unban(banId) {
