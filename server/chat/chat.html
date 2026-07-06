@@ -3481,14 +3481,17 @@ async function openMeetupMapPicker() {
   overlay.addEventListener('click', closeMeetupMapPicker);
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('open'));
-  const tileUrl = _maptilerKey
+  const isMT = !!_maptilerKey;
+  const tileUrl = isMT
     ? 'https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=' + encodeURIComponent(_maptilerKey)
     : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-  const attribution = _maptilerKey
-    ? '© MapTiler © OpenStreetMap contributors'
-    : '© OpenStreetMap contributors';
-  _meetupMap = L.map('meetup-map').setView(center, 16);
-  L.tileLayer(tileUrl, { attribution, maxZoom: 19 }).addTo(_meetupMap);
+  // MapTiler raster tiles are 512px; tell Leaflet (default 256) so labels render
+  // at the right size and the zoom level is correct.
+  const tileOpts = isMT
+    ? { attribution: '© MapTiler © OpenStreetMap contributors', tileSize: 512, zoomOffset: -1, minZoom: 3, maxZoom: 20, crossOrigin: true }
+    : { attribution: '© OpenStreetMap contributors', maxZoom: 19 };
+  _meetupMap = L.map('meetup-map').setView(center, 17);
+  L.tileLayer(tileUrl, tileOpts).addTo(_meetupMap);
   _meetupMarker = L.marker(center, { draggable: true }).addTo(_meetupMap);
   _meetupMap.on('click', e => _meetupMarker.setLatLng(e.latlng));
   setTimeout(() => { try { _meetupMap && _meetupMap.invalidateSize(); } catch (e) {} }, 120);
