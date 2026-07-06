@@ -409,6 +409,38 @@ class TestMeetups:
         assert r.status_code == 200
         assert auth_client.get(f"/chat/api/meetups/{meetup['id']}").status_code == 404
 
+    def test_cancel_meetup_deletes_invite_from_group_room(
+        self, auth_client, user1, stage_room
+    ):
+        """Cancelling a meetup must delete its invite message from the origin
+        group room so it disappears from room history (no client-side state)."""
+        future = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+        meetup = create_meetup(
+            _test_db, user1["id"], "test-event", "grand-hall", "InviteGone", future
+        )
+        invite_content = json.dumps(
+            {
+                "meetup_id": meetup["id"],
+                "title": "InviteGone",
+                "meetup_time": future,
+                "label": "",
+                "note": "",
+            }
+        )
+        create_message(
+            _test_db, "grand-hall", user1["id"], "meetup_invite", invite_content
+        )
+        msgs_before = auth_client.get("/chat/api/rooms/grand-hall/messages").json()
+        invite_before = [m for m in msgs_before if m["type"] == "meetup_invite"]
+        assert len(invite_before) == 1
+
+        r = auth_client.delete(f"/chat/api/meetups/{meetup['id']}")
+        assert r.status_code == 200
+
+        msgs_after = auth_client.get("/chat/api/rooms/grand-hall/messages").json()
+        invite_after = [m for m in msgs_after if m["type"] == "meetup_invite"]
+        assert len(invite_after) == 0, "Invite message must be deleted from group room"
+
 
 # --- DMs ---
 

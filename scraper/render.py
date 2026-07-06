@@ -284,7 +284,6 @@ def render_output_html(
     parts.append('  <link rel="stylesheet" href="/shared.css">')
     parts.append('  <link rel="manifest" href="/manifest.json">')
     parts.append('  <meta name="mobile-web-app-capable" content="yes">')
-    parts.append('  <meta name="apple-mobile-web-app-capable" content="yes">')
     parts.append(
         '  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
     )

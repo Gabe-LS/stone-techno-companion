@@ -534,9 +534,10 @@ def _parse_kml_pois(kml_text: str) -> list:
             label = m.group(2).strip()
         else:
             tag, label = "", raw
-        ptype = _POI_TAG_TO_TYPE.get(tag, "other")
+        base = _POI_TAG_TO_TYPE.get(tag, "other")
         if not label:
             label = _POI_TAG_DISPLAY.get(tag) or (tag.title() if tag else "Point")
+        ptype = _normalize_poi_category(base, label)
         out.append({"type": ptype, "name": label, "lat": lat, "lng": lng})
     return out
 
@@ -578,12 +579,34 @@ _POI_CAT_ALIASES = {
     "shuttle": "services", "transport": "services",
 }
 
+# Name-based sub-type overrides for icon mapping.  Checked AFTER the category
+# alias, so "drinks" + "Wine bar" -> "wine_bar".  The client maps sub-types to
+# icons and falls back to the base type for the color.
+_POI_SUBTYPE_RULES: list[tuple[str, str, str]] = [
+    # (name_contains_lower, base_type_or_any, sub_type)
+    ("wine",       "drinks",   "wine_bar"),
+    ("entrance",   "",         "entrance"),
+    ("locker",     "",         "locker"),
+    ("first aid",  "",         "first_aid"),
+    ("lost",       "",         "lost_found"),
+    ("vinyl",      "shop",     "vinyl_shop"),
+    ("merch",      "shop",     "merch_shop"),
+    ("shuttle",    "",         "shuttle"),
+    ("awareness",  "",         "awareness"),
+    ("science",    "",         "science"),
+]
 
-def _normalize_poi_category(cat) -> str:
+
+def _normalize_poi_category(cat, name="") -> str:
     c = (cat or "").strip().lower()
     if not c:
         return "other"
-    return _POI_CAT_ALIASES.get(c, c)
+    base = _POI_CAT_ALIASES.get(c, c)
+    nl = (name or "").lower()
+    for needle, base_match, sub in _POI_SUBTYPE_RULES:
+        if needle in nl and (not base_match or base_match == base):
+            return sub
+    return base
 
 
 def _parse_geojson_pois(gj: dict) -> list:
@@ -602,8 +625,11 @@ def _parse_geojson_pois(gj: dict) -> list:
         except (TypeError, ValueError):
             continue
         props = f.get("properties") or {}
-        ptype = _normalize_poi_category(props.get("Category") or props.get("category"))
-        name = (props.get("name") or "").strip() or ptype.title()
+        raw_name = (props.get("name") or "").strip()
+        ptype = _normalize_poi_category(
+            props.get("Category") or props.get("category"), raw_name
+        )
+        name = raw_name or ptype.title()
         out.append({"type": ptype, "name": name, "lat": lat, "lng": lng})
     return out
 
@@ -1572,12 +1598,20 @@ async def cancel_meetup_endpoint(meetup_id: str, request: Request):
             raise HTTPException(404, "Meetup not found")
         if m["creator_id"] != user["id"]:
             raise HTTPException(403, "Only the creator can cancel this meetup.")
-        delete_meetup(db, meetup_id)
+        deleted_invites = delete_meetup(db, meetup_id)
+        logger.info(
+            "[MEETUP] cancel %s: deleted_invites=%s",
+            meetup_id, deleted_invites,
+        )
         from chat_ws import manager
 
         await manager.broadcast_to_room(
             meetup_id, {"event": "meetup_expired", "meetup_id": meetup_id}
         )
+        for inv in deleted_invites:
+            payload = {"event": "message_removed", "id": inv["id"], "room_id": inv["room_id"]}
+            logger.info("[MEETUP] broadcasting message_removed to room %s: %s", inv["room_id"], payload)
+            await manager.broadcast_to_room(inv["room_id"], payload)
         manager.rooms.pop(meetup_id, None)
         manager._room_meta.pop(meetup_id, None)
         await manager.broadcast_to_all({"event": "rooms_changed"})
@@ -3218,13 +3252,24 @@ async def admin_delete_meetup(meetup_id: str, request: Request):
     actor = _require_admin(request)
     db = _get_db()
     try:
-        if not delete_meetup(db, meetup_id):
+        deleted_invites = delete_meetup(db, meetup_id)
+        if deleted_invites is None:
             raise HTTPException(404, "Meetup not found")
         log_admin_action(
             db, actor["label"], "delete_room", target_room_id=meetup_id, detail="meetup"
         )
         from chat_ws import manager
 
+        await manager.broadcast_to_room(
+            meetup_id, {"event": "meetup_expired", "meetup_id": meetup_id}
+        )
+        for inv in deleted_invites:
+            await manager.broadcast_to_room(
+                inv["room_id"],
+                {"event": "message_removed", "id": inv["id"], "room_id": inv["room_id"]},
+            )
+        manager.rooms.pop(meetup_id, None)
+        manager._room_meta.pop(meetup_id, None)
         asyncio.create_task(manager.broadcast_to_all({"event": "rooms_changed"}))
         return {"ok": True}
     finally:

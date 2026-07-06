@@ -10,7 +10,7 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/favicon.png">
 <link rel="manifest" href="/manifest.json">
-<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="stylesheet" href="/shared.css">
 <script src="/shared.js"></script>
@@ -112,20 +112,36 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .meetup-join { display: inline-block; padding: var(--space-xs) var(--space-md); border: 1px solid var(--color-accent); border-radius: var(--radius-pill); font-size: var(--font-xs); font-weight: 600; cursor: pointer; background: none; color: var(--color-accent); font-family: inherit; margin-top: var(--space-sm); }
 .meetup-join.joined { background: var(--color-accent); color: #fff; }
 .meetup-join.meetup-cancel { border-color: #c0392b; color: #c0392b; }
-.meetup-details { flex: 0 0 auto; margin: var(--space-sm); padding: var(--space-md); background: var(--user-1-bg); border-radius: var(--radius-md); box-shadow: inset 0 0 0 1px var(--color-accent); font-size: var(--font-sm); }
-.meetup-details .md-row { margin-bottom: var(--space-xs); word-break: break-word; }
-.meetup-details .md-k { font-weight: 700; color: var(--color-accent); margin-right: var(--space-xs); text-transform: uppercase; font-size: var(--font-xs); }
-.meetup-details .md-map { display: inline-block; margin-top: var(--space-xs); color: var(--color-accent); font-weight: 600; font-size: var(--font-sm); }
-.meetup-details .md-photo { display: block; max-width: 100%; max-height: 200px; border-radius: var(--radius-md); margin-top: var(--space-xs); }
+.meetup-details { position: sticky; top: 0; z-index: 2; display: flex; align-items: stretch; gap: var(--space-sm); padding: var(--space-sm) var(--space-lg); background: var(--color-surface); border-bottom: 1px solid var(--color-border); font-size: var(--font-xs); line-height: 1; box-sizing: border-box; }
+.meetup-details .md-rows { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.meetup-details .md-row { white-space: nowrap; overflow-x: clip; overflow-y: visible; text-overflow: ellipsis; line-height: 1; }
+.meetup-details .md-k { color: var(--color-muted); font-weight: 600; text-transform: uppercase; font-size: 10px; letter-spacing: 0.3px; margin-right: var(--space-xs); }
+.meetup-details .md-v { color: var(--color-text); font-weight: 600; }
+.meetup-details .md-note-v { color: var(--color-muted); }
+.meetup-details .md-link { color: var(--color-accent); font-weight: 600; text-decoration: none; }
+.meetup-details .md-thumb { width: 36px; border-radius: var(--radius-sm); background-size: cover; background-position: center; cursor: pointer; flex-shrink: 0; }
+.meetup-details .md-cancel { padding: 2px var(--space-sm); border: 1px solid #c0392b; color: #c0392b; background: none; border-radius: var(--radius-pill); font-family: inherit; font-size: var(--font-xxs); font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; align-self: center; }
 .poi-dot-marker { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; box-sizing: border-box; cursor: pointer; }
-.poi-label-marker { display: none; background: rgba(49,46,129,.9); color: #fff; font-size: 12px; font-weight: 600; padding: 1px 6px; border-radius: 5px; white-space: nowrap; pointer-events: none; }
+.poi-dot-marker svg { display: none; }
+.poi-icons-on .poi-dot-marker { width: 30px; height: 30px; border-radius: 6px; border: none; display: flex; align-items: center; justify-content: center; padding: 5px; box-sizing: border-box; }
+.poi-icons-on .poi-dot-marker svg { display: block; width: 100%; height: 100%; }
+.poi-label-marker { display: none; background: rgba(50,50,50,.9); color: #fff; font-size: 12px; font-weight: 600; padding: 1px 6px; border-radius: 5px; white-space: nowrap; pointer-events: none; }
 .poi-labels-on .poi-label-marker, .poi-label-marker.hover { display: block; }
 /* Custom attribution: the "i" is absolutely pinned to the corner and CANNOT
    move; the credit text is a SEPARATE absolute box positioned to its left. */
 .meetup-attrib-i { position: absolute; right: 8px; bottom: 8px; z-index: 4; width: 22px; height: 22px; padding: 0; border: none; border-radius: 50%; background: rgba(255,255,255,.9); color: #333; font: italic 700 13px/22px Georgia, serif; text-align: center; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
-.meetup-attrib-text { position: absolute; right: 38px; bottom: 8px; z-index: 4; display: none; max-width: 240px; background: rgba(255,255,255,.92); color: #333; font-size: 10px; line-height: 1.4; padding: 4px 8px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.meetup-attrib-text { position: absolute; left: 8px; right: 38px; bottom: 8px; z-index: 4; display: none; background: rgba(255,255,255,.92); color: #333; font-size: 10px; line-height: 1.4; padding: 4px 8px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
 .meetup-attrib.open .meetup-attrib-text { display: block; }
-.meetup-details .md-cancel { display: block; margin-top: var(--space-sm); padding: var(--space-xs) var(--space-md); border: 1px solid #c0392b; color: #c0392b; background: none; border-radius: var(--radius-pill); font-family: inherit; font-size: var(--font-xs); font-weight: 600; cursor: pointer; }
+/* "Locate me" button — drops the meeting pin on the user's exact GPS position. */
+.meetup-locate-btn { position: absolute; right: 8px; top: 8px; z-index: 4; width: 34px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center; border: none; border-radius: 8px; background: rgba(255,255,255,.92); color: #333; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.meetup-locate-btn:hover { background: #fff; }
+.meetup-locate-btn.loading { opacity: .55; pointer-events: none; }
+.meetup-locate-btn svg { width: 20px; height: 20px; display: block; }
+.meetup-photo-upload { width: 100%; aspect-ratio: 21/9; border-radius: var(--radius-md); background: var(--color-surface); border: 2px dashed var(--color-border); display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; position: relative; }
+.meetup-photo-upload img { width: 100%; height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; }
+.meetup-photo-upload svg { width: 32px; height: 32px; color: var(--color-disabled); }
+.meetup-photo-upload.has-photo { border-style: solid; border-color: transparent; }
+.meetup-photo-upload.uploading { opacity: .55; pointer-events: none; }
 .meetup-going { font-weight: 400; }
 .meetup-join-wide { width: 260px; max-width: 100%; box-sizing: border-box; display: block; margin-top: var(--space-xs); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-md); font-size: var(--font-sm); }
 .msg-card.card-location { background: var(--user-5-bg); box-shadow: inset 0 0 0 1px var(--color-success); }
@@ -243,6 +259,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .modal-input { padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--font-sm); outline: none; width: 100%; font-family: inherit; }
 .modal-input:focus { border-color: var(--gray-400); }
 .modal-textarea { padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--font-sm); outline: none; resize: vertical; width: 100%; font-family: inherit; }
+.modal-input.overlimit, .modal-input.overlimit:focus { border-color: #e53935; }
 .modal-footer { padding: var(--space-md) var(--space-lg); border-top: 1px solid var(--color-border); }
 .modal-btn-primary { width: 100%; padding: var(--space-md); background: var(--gray-900); color: #fff; border: none; border-radius: var(--radius-md); font-size: var(--font-base); cursor: pointer; font-weight: 600; font-family: inherit; }
 .modal-btn-secondary { padding: var(--space-md); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--font-sm); cursor: pointer; white-space: nowrap; font-family: inherit; }
@@ -1289,7 +1306,8 @@ async function handleWSEvent(data) {
       if (currentUser && !data.online.find(u => u.user_id === currentUser.id))
         onlineByRoom[data.room_id].push({ user_id: currentUser.id, display_name: currentUser.display_name, username: currentUser.username, color_index: currentUser.color_index, avatar_url: currentUser.avatar_url, country: currentUser.country });
       verify('room_history', data.messages, data.messages.length + ' messages for ' + data.room_id);
-      dbg('[CHAT] room_history received, room=' + data.room_id + ' currentRoom=' + currentRoom + ' msgs=' + data.messages.length);
+      const _inviteCount = data.messages.filter(m => m.type === 'meetup_invite').length;
+      dbg('[CHAT] room_history received, room=' + data.room_id + ' currentRoom=' + currentRoom + ' msgs=' + data.messages.length + ' meetup_invites=' + _inviteCount);
       if (currentRoom === data.room_id) {
         renderMessages();
         _setupReadObserver();
@@ -1372,10 +1390,13 @@ async function handleWSEvent(data) {
       break;
     }
     case 'message_removed': {
+      dbg('[WS] message_removed id=' + data.id + ' room=' + data.room_id + ' currentRoom=' + currentRoom);
       const msgs2 = messagesByRoom[data.room_id] || [];
       const idx2 = msgs2.findIndex(m => m.id === data.id);
+      dbg('[WS] message_removed cache hit=' + (idx2 !== -1) + ' cached_msgs=' + msgs2.length);
       if (idx2 !== -1) msgs2.splice(idx2, 1);
       const removedEl = document.querySelector(`[data-msg-id="${data.id}"]`);
+      dbg('[WS] message_removed dom_el=' + !!removedEl);
       removedEl?.remove();
       if (replyTo && replyTo.id === data.id) cancelReply();
       if (data.user_id !== currentUser?.id) showToast(data.reason || 'Message removed');
@@ -1549,8 +1570,17 @@ async function handleWSEvent(data) {
     }
     case 'meetup_expired': {
       const mid = data.meetup?.id || data.meetup_id;
-      document.querySelectorAll(`[data-meetup-id="${mid}"]`).forEach(el => { el.style.opacity = '0.5'; });
-      document.querySelectorAll(`.meetup-join[data-meetup-id="${mid}"]`).forEach(btn => btn.remove());
+      dbg('[WS] meetup_expired mid=' + mid + ' currentRoom=' + currentRoom);
+      for (const [rid, msgs] of Object.entries(messagesByRoom)) {
+        const before = msgs.length;
+        messagesByRoom[rid] = msgs.filter(m => !(m.type === 'meetup_invite' && m.content && m.content.includes(mid)));
+        if (messagesByRoom[rid].length < before) dbg('[MEETUP] purged invite from cached room ' + rid);
+      }
+      if (currentRoom === mid) {
+        dbg('[MEETUP] current meetup cancelled, redirecting to main room');
+        const main = rooms.find(r => r.is_main) || rooms[0];
+        if (main) openRoom(main.id, main.name, main.type);
+      }
       break;
     }
     case 'reaction_updated': {
@@ -1901,10 +1931,6 @@ function fmtMeetupWhen(iso) {
 }
 
 function meetupRowClick(id, title, isCreator) {
-  if (id === currentRoom && isCreator) {
-    showConfirm('Cancel meetup?', 'This removes the meetup and its chat for everyone.', () => cancelMeetup(id, true), 'Cancel meetup');
-    return;
-  }
   openRoom(id, title, 'meetup');
 }
 
@@ -2113,13 +2139,30 @@ async function renderMeetupDetails(roomId) {
       banner.className = 'meetup-details';
       scroll.insertBefore(banner, scroll.firstChild);
     }
-    const parts = ['<div class="md-row"><span class="md-k">When</span>' + escapeHtml(fmtMeetupWhen(m.meetup_time)) + '</div>'];
-    if (m.location_label) parts.push('<div class="md-row"><span class="md-k">Where</span>' + escapeHtml(m.location_label) + '</div>');
-    if (m.note) parts.push('<div class="md-row">' + escapeHtml(m.note) + '</div>');
-    if (m.photo_url && _UPLOAD_URL_RE.test(m.photo_url)) parts.push('<img class="md-photo" src="' + m.photo_url + '" alt="Meeting point">');
-    if (m.location_lat != null && m.location_lng != null) parts.push('<a class="md-map" href="https://maps.google.com/?q=' + m.location_lat + ',' + m.location_lng + '" target="_blank" rel="noopener">Open in Maps</a>');
-    if (m.is_creator) parts.push('<button type="button" class="md-cancel" onclick="cancelMeetup(\'' + roomId + '\')">Cancel meetup</button>');
-    banner.innerHTML = parts.join('');
+    const hasCoords = m.location_lat != null && m.location_lng != null;
+    const mapsUrl = hasCoords
+      ? (/iPhone|iPad|iPod/.test(navigator.userAgent)
+        ? 'maps://?ll=' + m.location_lat + ',' + m.location_lng
+        : 'https://www.google.com/maps?q=' + m.location_lat + ',' + m.location_lng)
+      : '';
+    const rows = [];
+    rows.push('<div class="md-row"><span class="md-k">When</span><span class="md-v">' + escapeHtml(fmtMeetupWhen(m.meetup_time)) + '</span></div>');
+    if (m.location_label) {
+      const label = escapeHtml(m.location_label);
+      rows.push('<div class="md-row"><span class="md-k">Where</span>' + (hasCoords
+        ? '<a class="md-link" href="' + esc(mapsUrl) + '" target="_blank" rel="noopener">' + label + '</a>'
+        : '<span class="md-v">' + label + '</span>') + '</div>');
+    } else if (hasCoords) {
+      rows.push('<div class="md-row"><span class="md-k">Where</span><a class="md-link" href="' + esc(mapsUrl) + '" target="_blank" rel="noopener">Open in Maps</a></div>');
+    }
+    if (m.note) rows.push('<div class="md-row"><span class="md-k">Note</span><span class="md-note-v" title="' + esc(m.note) + '">' + escapeHtml(m.note) + '</span></div>');
+    let html = '';
+    if (m.photo_url && _UPLOAD_URL_RE.test(m.photo_url)) {
+      html += '<div class="md-thumb" role="img" aria-label="Meeting point" style="background-image:url(' + esc(m.photo_url) + ')" onclick="event.stopPropagation();openImageViewer(\'' + esc(m.photo_url).replace(/'/g, "&#39;") + '\')"></div>';
+    }
+    html += '<div class="md-rows">' + rows.join('') + '</div>';
+    if (m.is_creator) html += '<button type="button" class="md-cancel" onclick="cancelMeetup(\'' + roomId + '\')">Cancel</button>';
+    banner.innerHTML = html;
   } catch (e) { dbg('[MEETUP] renderMeetupDetails error', e && e.message); }
 }
 
@@ -2185,7 +2228,6 @@ function renderChatView(roomName) {
         <div class="header">
           <div class="header-info">
             <span class="title">${esc(roomName)}</span>
-            ${currentRoomType !== 'dm' ? `<span class="online">${countText}</span>` : ''}
           </div>
           ${headerAvatar}
         </div>
@@ -3286,8 +3328,9 @@ async function pickMeetupPhoto() {
   input.onchange = async () => {
     const file = input.files[0];
     if (!file) return;
-    const btn = document.getElementById('meetup-photo-btn');
-    if (btn) { btn.disabled = true; btn.textContent = 'Uploading…'; }
+    const el = document.getElementById('meetup-photo-upload');
+    if (!el) return;
+    el.classList.add('uploading');
     try {
       const resized = await resizeImage(file, 1500);
       const form = new FormData(); form.append('file', resized);
@@ -3296,10 +3339,14 @@ async function pickMeetupPhoto() {
       const result = await resp.json();
       if (!result.url) throw new Error('upload');
       _meetupPhotoUrl = result.url;
-      const prev = document.getElementById('meetup-photo-preview');
-      if (prev) { prev.src = result.url; prev.style.display = 'block'; }
-      if (btn) { btn.textContent = 'Change photo'; btn.disabled = false; }
-    } catch (e) { showToast('Photo upload failed'); if (btn) { btn.textContent = 'Add photo'; btn.disabled = false; } }
+      el.innerHTML = '<img src="' + esc(result.url) + '" alt="Meeting point">';
+      el.classList.add('has-photo');
+      dbg('[MEETUP] meetup photo uploaded', result.url);
+    } catch (e) {
+      dbg('[MEETUP] meetup photo upload failed', e);
+      showToast('Photo upload failed');
+    }
+    el.classList.remove('uploading');
   };
   input.click();
 }
@@ -3353,12 +3400,21 @@ async function toggleMeetupJoin(meetupId, btn) {
 
 async function cancelMeetup(meetupId, skipConfirm) {
   dbg('[MEETUP] cancelMeetup', meetupId);
-  if (!skipConfirm && !confirm('Cancel this meetup? This removes it and its chat for everyone.')) return;
+  if (!skipConfirm) { showConfirm('Cancel meetup?', 'This removes the meetup and its chat for everyone.', () => cancelMeetup(meetupId, true), 'Cancel meetup'); return; }
   try {
+    dbg('[MEETUP] cancelMeetup DELETE sent, awaiting response');
     await api('/meetups/' + meetupId, { method: 'DELETE' });
+    dbg('[MEETUP] cancelMeetup DELETE returned, currentRoom=' + currentRoom);
     showToast('Meetup cancelled');
     const at = document.querySelector('.tabs button.active');
     if (at && /meetup/i.test(at.textContent)) loadMeetups();
+    if (currentRoom === meetupId) {
+      dbg('[MEETUP] still in meetup room, redirecting to main');
+      const main = rooms.find(r => r.is_main) || rooms[0];
+      if (main) openRoom(main.id, main.name, main.type);
+    } else {
+      dbg('[MEETUP] already redirected (currentRoom=' + currentRoom + ')');
+    }
   } catch (e) { showToast(e.message); }
 }
 
@@ -3393,14 +3449,14 @@ function openMeetupModal() {
       <label class="modal-label" for="meetup-location">Location</label>
       <div style="display:flex;gap:8px">
         <input id="meetup-location" class="modal-input" placeholder="e.g. Main bar area" style="flex:1">
-        <button type="button" id="meetup-gps-btn" class="modal-btn-secondary" onclick="useMeetupGPS()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="vertical-align:middle"><path d="M4 10.1433C4 5.64588 7.58172 2 12 2C16.4183 2 20 5.64588 20 10.1433C20 14.6055 17.4467 19.8124 13.4629 21.6744C12.5343 22.1085 11.4657 22.1085 10.5371 21.6744C6.55332 19.8124 4 14.6055 4 10.1433Z" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="10" r="3" stroke="currentColor" stroke-width="1.5"/></svg> GPS</button>
-        <button type="button" class="modal-btn-secondary" onclick="openMeetupMapPicker()">Map</button>
+        <button type="button" class="modal-btn-secondary" onclick="openMeetupMapPicker()" aria-label="Pick location on map"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="vertical-align:middle;position:relative;top:-1px"><path d="M4 10.1433C4 5.64588 7.58172 2 12 2C16.4183 2 20 5.64588 20 10.1433C20 14.6055 17.4467 19.8124 13.4629 21.6744C12.5343 22.1085 11.4657 22.1085 10.5371 21.6744C6.55332 19.8124 4 14.6055 4 10.1433Z" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="10" r="3" stroke="currentColor" stroke-width="1.5"/></svg></button>
       </div>
       <label class="modal-label" for="meetup-note">Note (optional)</label>
-      <textarea id="meetup-note" class="modal-textarea" placeholder="Any extra info..." rows="2"></textarea>
+      <input id="meetup-note" class="modal-input" placeholder="Any extra info..." maxlength="100" oninput="this.classList.toggle('overlimit', this.value.length > 80)">
       <label class="modal-label">Meeting point photo (optional)</label>
-      <button type="button" id="meetup-photo-btn" class="modal-btn-secondary" onclick="pickMeetupPhoto()">Add photo</button>
-      <img id="meetup-photo-preview" alt="Meeting point" style="display:none;max-width:100%;max-height:140px;border-radius:var(--radius-md);margin-top:var(--space-xs)">
+      <div class="meetup-photo-upload" id="meetup-photo-upload" onclick="pickMeetupPhoto()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12C2 7.28595 2 4.92893 3.46447 3.46447C4.92893 2 7.28595 2 12 2C16.714 2 19.0711 2 20.5355 3.46447C22 4.92893 22 7.28595 22 12C22 16.714 22 19.0711 20.5355 20.5355C19.0711 22 16.714 22 12 22C7.28595 22 4.92893 22 3.46447 20.5355C2 19.0711 2 16.714 2 12Z"/><circle cx="16" cy="8" r="2"/><path d="M2 12.5L3.752 10.9463C4.828 9.95597 6.474 10.0085 7.485 11.0654L11.06 14.8375C11.858 15.672 13.14 15.7744 14.06 15.0773L14.343 14.8614C15.508 13.9713 17.131 14.0541 18.199 15.0568L22 18.5" stroke-linecap="round"/></svg>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="modal-btn-primary" onclick="submitMeetup()">Create Meetup</button>
@@ -3431,24 +3487,6 @@ function openMeetupModal() {
   _loadFestivalPois().catch(() => {});
 }
 
-function useMeetupGPS() {
-  dbg('[MEETUP] useMeetupGPS');
-  if (!navigator.geolocation) { showToast('Geolocation not available'); return; }
-  const btn = document.getElementById('meetup-gps-btn');
-  const orig = btn ? btn.innerHTML : '';
-  if (btn) { btn.disabled = true; btn.textContent = 'Locating…'; }
-  const restore = () => { if (btn) { btn.disabled = false; btn.innerHTML = orig; } };
-  navigator.geolocation.getCurrentPosition(pos => {
-    _meetupCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-    document.getElementById('meetup-location').value = `${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`;
-    showToast('Location set');
-    restore();
-  }, err => {
-    showToast(err && err.code === err.PERMISSION_DENIED ? 'Location permission denied — check browser settings' : 'Could not get location');
-    restore();
-  }, { timeout: 10000, maximumAge: 60000 });
-}
-
 let _maplibreLoading = null;
 function _loadMaplibre() {
   if (window.maplibregl) return Promise.resolve();
@@ -3477,7 +3515,31 @@ async function _loadFestivalPois() {
 // gets a stable vivid colour from here, so the system is ready for 12 categories.
 const POI_PALETTE = ['#f97316', '#f59e0b', '#eab308', '#84cc16', '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#ec4899'];
 // Explicit vivid colours for the categories in use (no grey/black/alarm-red).
-const POI_COLORS = { stage: '#8b5cf6', drinks: '#f59e0b', food: '#22c55e', wc: '#3b82f6', water: '#06b6d4', services: '#f97316', shop: '#ec4899', other: '#d946ef' };
+const POI_COLORS = {
+  stage: '#8b5cf6', drinks: '#f59e0b', food: '#22c55e', wc: '#3b82f6',
+  water: '#06b6d4', services: '#f97316', shop: '#ec4899', other: '#d946ef',
+  wine_bar: '#f59e0b', entrance: '#d946ef', locker: '#f97316',
+  first_aid: '#b91c1c', lost_found: '#f97316', vinyl_shop: '#ec4899',
+  merch_shop: '#ec4899', shuttle: '#f97316', awareness: '#d946ef', science: '#d946ef',
+};
+const POI_ICONS = {
+  stage: {vb: '61 62 486 486', d: 'M532 71C539.6 77.1 544 86.3 544 96L544 400C544 444.2 501 480 448 480C395 480 352 444.2 352 400C352 355.8 395 320 448 320C459.2 320 470 321.6 480 324.6L480 207.9L256 257.7L256 464C256 508.2 213 544 160 544C107 544 64 508.2 64 464C64 419.8 107 384 160 384C171.2 384 182 385.6 192 388.6L192 160C192 145 202.4 132 217.1 128.8L505.1 64.8C514.6 62.7 524.5 65 532.1 71.1z'},
+  drinks: {vb: '59 93 522 486', d: 'M66.4 115.8C71.4 103.8 83.1 96 96 96L544 96C556.9 96 568.6 103.8 573.6 115.8C578.6 127.8 575.8 141.5 566.7 150.7L352 365.3L352 512L416 512C433.7 512 448 526.3 448 544C448 561.7 433.7 576 416 576L224 576C206.3 576 192 561.7 192 544C192 526.3 206.3 512 224 512L288 512L288 365.3L73.4 150.7C64.2 141.5 61.5 127.7 66.4 115.8zM418.7 208L466.7 160L173.2 160L221.2 208L418.7 208z'},
+  wine_bar: {vb: '157 61 326 550', d: 'M192.6 89.7C195.6 74.8 208.7 64 224 64L416 64C431.3 64 444.4 74.8 447.4 89.7L476.8 237C478.9 247.5 480 258.2 480 269L480 272C480 349.4 425 414 352 428.8L352 544L416 544C433.7 544 448 558.3 448 576C448 593.7 433.7 608 416 608L224 608C206.3 608 192 593.7 192 576C192 558.3 206.3 544 224 544L288 544L288 428.8C215 414 160 349.4 160 272L160 269C160 258.3 161.1 247.6 163.2 237L192.6 89.7zM237.4 192L402.5 192L389.7 128L250.2 128L237.4 192z'},
+  food: {vb: '77 61 470 518', d: 'M127.9 78.4C127.1 70.2 120.2 64 112 64C103.8 64 96.9 70.2 96 78.3L81.9 213.7C80.6 219.7 80 225.8 80 231.9C80 277.8 115.1 315.5 160 319.6L160 544C160 561.7 174.3 576 192 576C209.7 576 224 561.7 224 544L224 319.6C268.9 315.5 304 277.8 304 231.9C304 225.8 303.4 219.7 302.1 213.7L287.9 78.3C287.1 70.2 280.2 64 272 64C263.8 64 256.9 70.2 256.1 78.4L242.5 213.9C241.9 219.6 237.1 224 231.4 224C225.6 224 220.8 219.6 220.2 213.8L207.9 78.6C207.2 70.3 200.3 64 192 64C183.7 64 176.8 70.3 176.1 78.6L163.8 213.8C163.3 219.6 158.4 224 152.6 224C146.8 224 142 219.6 141.5 213.9L127.9 78.4zM512 64C496 64 384 96 384 240L384 352C384 387.3 412.7 416 448 416L480 416L480 544C480 561.7 494.3 576 512 576C529.7 576 544 561.7 544 544L544 96C544 78.3 529.7 64 512 64z'},
+  wc: {vb: '-6 61 648 518', d: 'M80 112C80 85.5 101.5 64 128 64C154.5 64 176 85.5 176 112C176 138.5 154.5 160 128 160C101.5 160 80 138.5 80 112zM120 416L120 544C120 561.7 105.7 576 88 576C70.3 576 56 561.7 56 544L56 389.2C47.9 398.4 34.9 402.4 22.5 398.6C5.6 393.3-3.8 375.4 1.5 358.5L31.2 263.3C44.4 220.9 83.6 192 128 192C172.4 192 211.6 220.9 224.8 263.2L254.5 358.4C259.8 375.3 250.4 393.2 233.5 398.5C221.1 402.4 208.1 398.3 200 389.1L200 544C200 561.7 185.7 576 168 576C150.3 576 136 561.7 136 544L136 416L120 416zM320 64C333.3 64 344 74.7 344 88L344 552C344 565.3 333.3 576 320 576C306.7 576 296 565.3 296 552L296 88C296 74.7 306.7 64 320 64zM464 112C464 85.5 485.5 64 512 64C538.5 64 560 85.5 560 112C560 138.5 538.5 160 512 160C485.5 160 464 138.5 464 112zM440 544L440 448L422.2 448C411.3 448 403.6 437.3 407 426.9L416 400C412.8 400 409.6 399.5 406.5 398.5C389.6 393.2 380.2 375.3 385.5 358.4L415.2 263.2C428.4 220.9 467.6 192 512 192C556.4 192 595.6 220.9 608.8 263.2L638.5 358.4C643.8 375.3 634.4 393.2 617.5 398.5C614.3 399.5 611.1 400 608 400L617 426.9C620.5 437.3 612.7 448 601.8 448L584 448L584 544C584 561.7 569.7 576 552 576C534.3 576 520 561.7 520 544L520 448L504 448L504 544C504 561.7 489.7 576 472 576C454.3 576 440 561.7 440 544z'},
+  water: {vb: '125 61 390 518', d: 'M160 64C151.1 64 142.6 67.7 136.6 74.2C130.6 80.7 127.4 89.4 128.1 98.3L156.9 501.7C159.9 543.6 194.7 576 236.7 576L403.3 576C445.3 576 480.1 543.6 483.1 501.7L511.9 98.3C512.5 89.4 509.5 80.7 503.4 74.2C497.3 67.7 488.9 64 480 64L160 64zM211 361.5L194.4 128L445.6 128L429 361.5L416 368C395.9 378.1 372.1 378.1 352 368C331.9 357.9 308.1 357.9 288 368C267.9 378.1 244.1 378.1 224 368L211 361.5zM384 260C384 236 350.3 189.9 331.8 166.5C325.7 158.8 314.3 158.8 308.2 166.5C289.7 189.9 256 236 256 260C256 293.1 284.7 320 320 320C355.3 320 384 293.1 384 260z'},
+  first_aid: {vb: '61 61 518 486', d: 'M264 112L376 112C380.4 112 384 115.6 384 120L384 160L256 160L256 120C256 115.6 259.6 112 264 112zM208 120L208 160L128 160C92.7 160 64 188.7 64 224L64 480C64 515.3 92.7 544 128 544L512 544C547.3 544 576 515.3 576 480L576 224C576 188.7 547.3 160 512 160L432 160L432 120C432 89.1 406.9 64 376 64L264 64C233.1 64 208 89.1 208 120zM288 280C288 271.2 295.2 264 304 264L336 264C344.8 264 352 271.2 352 280L352 320L392 320C400.8 320 408 327.2 408 336L408 368C408 376.8 400.8 384 392 384L352 384L352 424C352 432.8 344.8 440 336 440L304 440C295.2 440 288 432.8 288 424L288 384L248 384C239.2 384 232 376.8 232 368L232 336C232 327.2 239.2 320 248 320L288 320L288 280z'},
+  services: {vb: '61 61 518 486', d: 'M264 112L376 112C380.4 112 384 115.6 384 120L384 160L256 160L256 120C256 115.6 259.6 112 264 112zM208 120L208 160L128 160C92.7 160 64 188.7 64 224L64 480C64 515.3 92.7 544 128 544L512 544C547.3 544 576 515.3 576 480L576 224C576 188.7 547.3 160 512 160L432 160L432 120C432 89.1 406.9 64 376 64L264 64C233.1 64 208 89.1 208 120zM288 280C288 271.2 295.2 264 304 264L336 264C344.8 264 352 271.2 352 280L352 320L392 320C400.8 320 408 327.2 408 336L408 368C408 376.8 400.8 384 392 384L352 384L352 424C352 432.8 344.8 440 336 440L304 440C295.2 440 288 432.8 288 424L288 384L248 384C239.2 384 232 376.8 232 368L232 336C232 327.2 239.2 320 248 320L288 320L288 280z'},
+  locker: {vb: '125 29 390 550', d: 'M256 160L256 224L384 224L384 160C384 124.7 355.3 96 320 96C284.7 96 256 124.7 256 160zM192 224L192 160C192 89.3 249.3 32 320 32C390.7 32 448 89.3 448 160L448 224C483.3 224 512 252.7 512 288L512 512C512 547.3 483.3 576 448 576L192 576C156.7 576 128 547.3 128 512L128 288C128 252.7 156.7 224 192 224z'},
+  entrance: {vb: '61 93 518 454', d: 'M416 160L480 160C497.7 160 512 174.3 512 192L512 448C512 465.7 497.7 480 480 480L416 480C398.3 480 384 494.3 384 512C384 529.7 398.3 544 416 544L480 544C533 544 576 501 576 448L576 192C576 139 533 96 480 96L416 96C398.3 96 384 110.3 384 128C384 145.7 398.3 160 416 160zM406.6 342.6C419.1 330.1 419.1 309.8 406.6 297.3L278.6 169.3C266.1 156.8 245.8 156.8 233.3 169.3C220.8 181.8 220.8 202.1 233.3 214.6L306.7 288L96 288C78.3 288 64 302.3 64 320C64 337.7 78.3 352 96 352L306.7 352L233.3 425.4C220.8 437.9 220.8 458.2 233.3 470.7C245.8 483.2 266.1 483.2 278.6 470.7L406.6 342.7z'},
+  merch_shop: {vb: '10 93 620 486', d: 'M320.2 176C364.4 176 400.2 140.2 400.2 96L453.7 96C470.7 96 487 102.7 499 114.7L617.6 233.4C630.1 245.9 630.1 266.2 617.6 278.7L566.9 329.4C554.4 341.9 534.1 341.9 521.6 329.4L480.2 288L480.2 512C480.2 547.3 451.5 576 416.2 576L224.2 576C188.9 576 160.2 547.3 160.2 512L160.2 288L118.8 329.4C106.3 341.9 86 341.9 73.5 329.4L22.9 278.6C10.4 266.1 10.4 245.8 22.9 233.3L141.5 114.7C153.5 102.7 169.8 96 186.8 96L240.3 96C240.3 140.2 276.1 176 320.3 176z'},
+  vinyl_shop: {vb: '61 61 518 518', d: 'M64 320C64 178.6 178.6 64 320 64C461.4 64 576 178.6 576 320C576 461.4 461.4 576 320 576C178.6 576 64 461.4 64 320zM320 224C373 224 416 267 416 320C416 373 373 416 320 416C267 416 224 373 224 320C224 267 267 224 320 224zM320 464C399.5 464 464 399.5 464 320C464 240.5 399.5 176 320 176C240.5 176 176 240.5 176 320C176 399.5 240.5 464 320 464zM320 352C337.7 352 352 337.7 352 320C352 302.3 337.7 288 320 288C302.3 288 288 302.3 288 320C288 337.7 302.3 352 320 352z'},
+  awareness: {vb: '61 93 518 454', d: 'M305 151.1L320 171.8L335 151.1C360 116.5 400.2 96 442.9 96C516.4 96 576 155.6 576 229.1L576 231.7C576 343.9 436.1 474.2 363.1 529.9C350.7 539.3 335.5 544 320 544C304.5 544 289.2 539.4 276.9 529.9C203.9 474.2 64 343.9 64 231.7L64 229.1C64 155.6 123.6 96 197.1 96C239.8 96 280 116.5 305 151.1z'},
+  science: {vb: '83 61 474 518', d: 'M320 462.8C308.2 467.9 296.6 472.5 285.1 476.3C301.8 510.1 316.1 512 320 512C323.9 512 338.1 510.1 354.9 476.3C343.5 472.4 331.8 467.9 320 462.8zM510 320C543 365.2 554.3 410.9 533.6 448C513.4 484.3 471.1 497.3 418.4 491.2C396.4 543.3 362.7 576 320 576C277.3 576 243.6 543.3 221.6 491.2C168.9 497.3 126.6 484.3 106.4 448C85.7 410.9 97 365.2 130 320C97 274.8 85.7 229.1 106.4 192C126.6 155.7 168.9 142.7 221.6 148.8C243.6 96.7 277.2 64 320 64C362.8 64 396.4 96.7 418.4 148.8C471.1 142.7 513.4 155.6 533.6 192C554.3 229.1 543 274.8 510 320zM444.2 387.4C442.5 401.6 440.3 415.4 437.5 428.6C469.3 430 476.1 419.9 477.7 416.9C480 412.7 484.7 399 465.8 368.8C459 375.1 451.8 381.3 444.2 387.4zM437.5 211.5C440.3 224.6 442.5 238.4 444.2 252.7C451.8 258.8 459 265 465.8 271.3C484.7 241.1 480 227.3 477.7 223.2C476.1 220.3 469.3 210.2 437.5 211.5zM354.9 163.7C338.1 129.9 323.9 128 320 128C316.1 128 301.9 129.9 285.1 163.7C296.5 167.6 308.2 172.1 320 177.2C331.8 172.1 343.4 167.5 354.9 163.7zM195.9 252.6C197.6 238.3 199.8 224.6 202.6 211.4C170.8 210 164 220.1 162.4 223.1C160.1 227.3 155.4 241 174.3 271.2C181.1 264.9 188.3 258.7 195.9 252.6zM174.2 368.8C155.3 399 160 412.8 162.3 416.9C163.9 419.8 170.7 429.9 202.5 428.6C199.7 415.5 197.5 401.7 195.8 387.4C188.2 381.3 181 375.1 174.2 368.8zM400 320C400 275.8 364.2 240 320 240C275.8 240 240 275.8 240 320C240 364.2 275.8 400 320 400C364.2 400 400 364.2 400 320zM320 288C337.7 288 352 302.3 352 320C352 337.7 337.7 352 320 352C302.3 352 288 337.7 288 320C288 302.3 302.3 288 320 288z'},
+  shuttle: {vb: '93 61 454 518', d: 'M192 64C139 64 96 107 96 160L96 448C96 477.8 116.4 502.9 144 510L144 544C144 561.7 158.3 576 176 576L192 576C209.7 576 224 561.7 224 544L224 512L416 512L416 544C416 561.7 430.3 576 448 576L464 576C481.7 576 496 561.7 496 544L496 510C523.6 502.9 544 477.8 544 448L544 160C544 107 501 64 448 64L192 64zM160 192C160 174.3 174.3 160 192 160L448 160C465.7 160 480 174.3 480 192L480 288C480 305.7 465.7 320 448 320L192 320C174.3 320 160 305.7 160 288L160 192zM192 384C209.7 384 224 398.3 224 416C224 433.7 209.7 448 192 448C174.3 448 160 433.7 160 416C160 398.3 174.3 384 192 384zM448 384C465.7 384 480 398.3 480 416C480 433.7 465.7 448 448 448C430.3 448 416 433.7 416 416C416 398.3 430.3 384 448 384z'},
+  lost_found: {vb: '61 61 518 518', d: 'M320 576C461.4 576 576 461.4 576 320C576 178.6 461.4 64 320 64C178.6 64 64 178.6 64 320C64 461.4 178.6 576 320 576zM320 240C302.3 240 288 254.3 288 272C288 285.3 277.3 296 264 296C250.7 296 240 285.3 240 272C240 227.8 275.8 192 320 192C364.2 192 400 227.8 400 272C400 319.2 364 339.2 344 346.5L344 350.3C344 363.6 333.3 374.3 320 374.3C306.7 374.3 296 363.6 296 350.3L296 342.2C296 321.7 310.8 307 326.1 302C332.5 299.9 339.3 296.5 344.3 291.7C348.6 287.5 352 281.7 352 272.1C352 254.4 337.7 240.1 320 240.1zM288 432C288 414.3 302.3 400 320 400C337.7 400 352 414.3 352 432C352 449.7 337.7 464 320 464C302.3 464 288 449.7 288 432z'},
+};
 function _poiColor(type) {
   if (POI_COLORS[type]) return POI_COLORS[type];
   let h = 0; const t = String(type || '');
@@ -3507,8 +3569,9 @@ let _meetupMap = null, _meetupMarker = null;
 // POI name labels only show at (near) the closest zoom, to avoid clutter.
 function _updatePoiLabels() {
   if (!_meetupMap) return;
-  const on = _meetupMap.getZoom() >= _meetupMap.getMaxZoom();
-  _meetupMap.getContainer().classList.toggle('poi-labels-on', on);
+  const z = _meetupMap.getZoom(), maxZ = _meetupMap.getMaxZoom();
+  _meetupMap.getContainer().classList.toggle('poi-icons-on', z >= maxZ - 2);
+  _meetupMap.getContainer().classList.toggle('poi-labels-on', z >= maxZ - 2);
 }
 // Venue bounding box [[south, west], [north, east]] — panning is locked to this.
 // Loaded from the DB (chat_settings.meetup_bbox) via /config; this is the fallback.
@@ -3565,32 +3628,75 @@ async function openMeetupMapPicker() {
     // a SEPARATE box to its left on click.
     const _aw = document.createElement('div');
     _aw.className = 'meetup-attrib';
-    _aw.innerHTML = '<div class="meetup-attrib-text">© Geobasis NRW (dl-de/by-2-0), © OpenStreetMap contributors</div><button type="button" class="meetup-attrib-i" aria-label="Map attribution">i</button>';
+    _aw.innerHTML = '<div class="meetup-attrib-text">© Geobasis NRW (dl-de/by-2-0), © OpenFreeMap, © OpenStreetMap contributors, © MapLibre</div><button type="button" class="meetup-attrib-i" aria-label="Map attribution">i</button>';
     _meetupMap.getContainer().appendChild(_aw);
     _aw.querySelector('.meetup-attrib-i').addEventListener('click', (e) => { e.stopPropagation(); _aw.classList.toggle('open'); e.currentTarget.blur(); });
     // Any click on the map (the "i" stops propagation) closes the credit box.
     _meetupMap.getContainer().addEventListener('click', () => _aw.classList.remove('open'));
     _updatePoiLabels();
+    // "Locate me" button — drops the pin on the user's exact GPS position.
+    const _locBtn = document.createElement('button');
+    _locBtn.type = 'button';
+    _locBtn.className = 'meetup-locate-btn';
+    _locBtn.setAttribute('aria-label', 'Use my location');
+    _locBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 1.25C12.4142 1.25 12.75 1.58579 12.75 2V3.28169C16.9842 3.64113 20.3589 7.01581 20.7183 11.25H22C22.4142 11.25 22.75 11.5858 22.75 12C22.75 12.4142 22.4142 12.75 22 12.75H20.7183C20.3589 16.9842 16.9842 20.3589 12.75 20.7183V22C12.75 22.4142 12.4142 22.75 12 22.75C11.5858 22.75 11.25 22.4142 11.25 22V20.7183C7.01581 20.3589 3.64113 16.9842 3.28169 12.75H2C1.58579 12.75 1.25 12.4142 1.25 12C1.25 11.5858 1.58579 11.25 2 11.25H3.28169C3.64113 7.01581 7.01581 3.64113 11.25 3.28169V2C11.25 1.58579 11.5858 1.25 12 1.25ZM12 4.75C7.99594 4.75 4.75 7.99594 4.75 12C4.75 16.0041 7.99594 19.25 12 19.25C16.0041 19.25 19.25 16.0041 19.25 12C19.25 7.99594 16.0041 4.75 12 4.75ZM12 9.75C10.7574 9.75 9.75 10.7574 9.75 12C9.75 13.2426 10.7574 14.25 12 14.25C13.2426 14.25 14.25 13.2426 14.25 12C14.25 10.7574 13.2426 9.75 12 9.75ZM8.25 12C8.25 9.92893 9.92893 8.25 12 8.25C14.0711 8.25 15.75 9.92893 15.75 12C15.75 14.0711 14.0711 15.75 12 15.75C9.92893 15.75 8.25 14.0711 8.25 12Z"/></svg>';
+    _meetupMap.getContainer().appendChild(_locBtn);
+    _locBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dbg('[MEETUP] locate-me tapped');
+      if (!navigator.geolocation) { showToast('Geolocation not available'); return; }
+      _locBtn.classList.add('loading');
+      navigator.geolocation.getCurrentPosition(p => {
+        _locBtn.classList.remove('loading');
+        const lng = p.coords.longitude, lat = p.coords.latitude;
+        dbg('[MEETUP] locate-me got position ' + lat.toFixed(5) + ',' + lng.toFixed(5));
+        if (!inBounds(lng, lat)) { showToast('You seem to be outside the festival area'); return; }
+        _userMoved = true;
+        _meetupMarker.setLngLat([lng, lat]);
+        _meetupMap.easeTo({ center: [lng, lat] });
+      }, err => {
+        _locBtn.classList.remove('loading');
+        dbg('[MEETUP] locate-me error ' + (err && err.code));
+        showToast(err && err.code === err.PERMISSION_DENIED ? 'Location permission denied — check browser settings' : 'Could not get location');
+      }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
+    });
     // Festival POIs as HTML markers (coloured dot + hover/max-zoom name label).
     _loadFestivalPois().then(pois => {
       if (!_meetupMap || !Array.isArray(pois)) return;
-      pois.forEach(p => {
-        if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return;
-        // Dot and label are SEPARATE markers so we can layer them independently:
-        // dots (z1) < pin (z2) < labels (z3), so labels never hide behind a dot.
+      const valid = pois.filter(p => typeof p.lat === 'number' && typeof p.lng === 'number');
+      // Project POIs at the zoom where labels appear to detect collisions.
+      // map.project() uses the current view; scale the result to the label zoom.
+      const scaleFactor = Math.pow(2, (_meetupMap.getMaxZoom() - 2) - _meetupMap.getZoom());
+      const projected = valid.map(p => {
+        const px = _meetupMap.project([p.lng, p.lat]);
+        return { p, x: px.x * scaleFactor, y: px.y * scaleFactor };
+      });
+      const LABEL_W = 100, LABEL_H = 20, GAP = 18;
+      projected.forEach(a => {
+        let placeRight = true;
+        for (const b of projected) {
+          if (a === b) continue;
+          const dx = b.x - a.x, dy = Math.abs(b.y - a.y);
+          if (dx > 0 && dx < GAP + LABEL_W && dy < LABEL_H) { placeRight = false; break; }
+        }
+        a.anchor = placeRight ? 'left' : 'right';
+        a.offset = placeRight ? [GAP, 0] : [-GAP, 0];
+      });
+      projected.forEach(({ p, anchor, offset }) => {
         const dot = document.createElement('div');
         dot.className = 'poi-dot-marker';
         dot.style.background = _poiColor(p.type);
         dot.style.zIndex = '1';
+        const iconDef = POI_ICONS[p.type];
+        if (iconDef) dot.innerHTML = '<svg viewBox="' + iconDef.vb + '" fill="#fff"><path d="' + iconDef.d + '"/></svg>';
         const label = document.createElement('div');
         label.className = 'poi-label-marker';
         label.textContent = String(p.name || '');
         label.style.zIndex = '3';
         new maplibregl.Marker({ element: dot, anchor: 'center' }).setLngLat([p.lng, p.lat]).addTo(_meetupMap);
-        new maplibregl.Marker({ element: label, anchor: 'left', offset: [10, 0] }).setLngLat([p.lng, p.lat]).addTo(_meetupMap);
+        new maplibregl.Marker({ element: label, anchor, offset }).setLngLat([p.lng, p.lat]).addTo(_meetupMap);
         dot.addEventListener('mouseenter', () => label.classList.add('hover'));
         dot.addEventListener('mouseleave', () => label.classList.remove('hover'));
-        // Tapping a POI drops the meeting pin exactly on it.
         dot.addEventListener('click', (e) => { e.stopPropagation(); _userMoved = true; _meetupMarker.setLngLat([p.lng, p.lat]); });
       });
     });
@@ -3635,6 +3741,8 @@ function submitMeetup() {
   const locationLabel = document.getElementById('meetup-location').value.trim();
   const note = document.getElementById('meetup-note').value.trim();
   if (!title) { showToast('Please enter a title'); return; }
+  if (!_meetupCoords && !locationLabel) { showToast('Please enter a location'); return; }
+  if (note.length > 80) { showToast('Note is too long'); return; }
   if (!dateVal) { showToast('Please pick a date'); return; }
   const meetupDate = new Date(`${dateVal}T${String(hour).padStart(2,'0')}:${String(min).padStart(2,'0')}:00`);
   if (meetupDate <= new Date()) { showToast('Pick a time in the future'); return; }

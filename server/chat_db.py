@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import sqlite3
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 CHAT_DB_PATH = Path(
     os.environ.get("CHAT_DB_PATH")
@@ -1351,69 +1354,57 @@ def get_all_meetups(db: sqlite3.Connection) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def delete_meetup(db: sqlite3.Connection, meetup_id: str) -> bool:
+def delete_meetup(db: sqlite3.Connection, meetup_id: str) -> list[dict]:
+    """Delete a meetup, its room, and its invite messages from origin rooms.
+
+    Returns a list of ``{"id": msg_id, "room_id": room_id}`` dicts for the
+    deleted invite messages so the caller can broadcast ``message_removed``."""
     row = db.execute(
         "SELECT id, photo_url FROM meetups WHERE id = ?", (meetup_id,)
     ).fetchone()
     if not row:
-        return False
+        return None
     photo_url = row["photo_url"] if "photo_url" in row.keys() else None
-    # Delete meetup rows first, then the room LAST: delete_room's single commit
-    # flushes attendee/meetup/room deletes as one atomic transaction, so a crash
-    # can't leave a meetups row pointing at an already-deleted room (ghost meetup).
+    like_pat = f'%"meetup_id": "{meetup_id}"%'
+    invite_rows = [
+        {"id": r["id"], "room_id": r["room_id"]}
+        for r in db.execute(
+            "SELECT id, room_id FROM messages WHERE type = 'meetup_invite' AND content LIKE ?",
+            (like_pat,),
+        ).fetchall()
+    ]
+    logger.info(
+        "[MEETUP] delete_meetup %s: found %d invite(s) with LIKE %r",
+        meetup_id, len(invite_rows), like_pat,
+    )
+    for inv in invite_rows:
+        db.execute("DELETE FROM messages WHERE id = ?", (inv["id"],))
+        logger.info("[MEETUP] deleted invite msg %s from room %s", inv["id"], inv["room_id"])
     db.execute("DELETE FROM meetup_attendees WHERE meetup_id = ?", (meetup_id,))
     db.execute("DELETE FROM meetups WHERE id = ?", (meetup_id,))
-    delete_room(db, meetup_id)  # meetup room id equals the meetup id; commits here
+    delete_room(db, meetup_id)
     if photo_url:
         uploads_dir = Path(__file__).resolve().parent / "chat" / "uploads"
         _unlink_media_if_orphaned(db, uploads_dir, photo_url)
-    return True
+    return invite_rows
 
 
-def purge_expired_meetups(db: sqlite3.Connection) -> list[str]:
+def purge_expired_meetups(
+    db: sqlite3.Connection,
+) -> list[tuple[str, list[dict]]]:
+    """Purge expired meetups. Returns ``[(meetup_id, deleted_invites), ...]``."""
     now = _now()
-    expired = db.execute(
-        "SELECT id, photo_url FROM meetups WHERE expires_at <= ?", (now,)
-    ).fetchall()
-    expired_ids = [m["id"] for m in expired]
-
-    media_urls: list[str] = [
-        m["photo_url"]
-        for m in expired
-        if "photo_url" in m.keys() and m["photo_url"]
-    ]
-    for mid in expired_ids:
-        msgs = db.execute(
-            "SELECT type, content, media_url FROM messages WHERE room_id = ?",
-            (mid,),
+    expired_ids = [
+        r["id"]
+        for r in db.execute(
+            "SELECT id FROM meetups WHERE expires_at <= ?", (now,)
         ).fetchall()
-        for msg in msgs:
-            if msg["type"] in ("image", "video"):
-                url = msg["media_url"] or ""
-                if not url:
-                    import json
-
-                    try:
-                        url = json.loads(msg["content"]).get("url", "")
-                    except (json.JSONDecodeError, TypeError):
-                        url = ""
-                if url:
-                    media_urls.append(url)
-        db.execute("DELETE FROM messages WHERE room_id = ?", (mid,))
-        db.execute("DELETE FROM rooms WHERE id = ?", (mid,))
-
-    if expired_ids:
-        placeholders = ",".join("?" * len(expired_ids))
-        db.execute(
-            f"DELETE FROM meetups WHERE id IN ({placeholders})", expired_ids
-        )
-        db.commit()
-
-    uploads_dir = Path(__file__).resolve().parent / "chat" / "uploads"
-    for url in media_urls:
-        _unlink_media_if_orphaned(db, uploads_dir, url)
-
-    return expired_ids
+    ]
+    results = []
+    for mid in expired_ids:
+        deleted_invites = delete_meetup(db, mid)
+        results.append((mid, deleted_invites))
+    return results
 
 
 # --- DMs ---

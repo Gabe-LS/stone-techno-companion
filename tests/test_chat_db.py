@@ -308,7 +308,8 @@ class TestMeetups:
         create_message(db, meetup["id"], user["id"], "text", '{"text":"in meetup"}')
 
         expired = purge_expired_meetups(db)
-        assert meetup["id"] in expired
+        expired_ids = [mid for mid, _ in expired]
+        assert meetup["id"] in expired_ids
         assert get_room(db, meetup["id"]) is None
         assert get_room_messages(db, meetup["id"]) == []
 

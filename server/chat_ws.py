@@ -2161,10 +2161,15 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                             else None
                         )
                         if _mrow and _mrow["creator_id"] == user_id:
-                            delete_meetup(db, _mid)
+                            _del_invites = delete_meetup(db, _mid)
                             await manager.broadcast_to_room(
                                 _mid, {"event": "meetup_expired", "meetup_id": _mid}
                             )
+                            for _inv in _del_invites:
+                                await manager.broadcast_to_room(
+                                    _inv["room_id"],
+                                    {"event": "message_removed", "id": _inv["id"], "room_id": _inv["room_id"]},
+                                )
                             manager.rooms.pop(_mid, None)
                             manager._room_meta.pop(_mid, None)
                             await manager.broadcast_to_all({"event": "rooms_changed"})
@@ -2320,7 +2325,7 @@ async def purge_loop() -> None:
                 )
 
             expired_meetups = purge_expired_meetups(db)
-            for meetup_id in expired_meetups:
+            for meetup_id, deleted_invites in expired_meetups:
                 await manager.broadcast_to_room(
                     meetup_id,
                     {
@@ -2328,6 +2333,11 @@ async def purge_loop() -> None:
                         "meetup_id": meetup_id,
                     },
                 )
+                for _inv in deleted_invites:
+                    await manager.broadcast_to_room(
+                        _inv["room_id"],
+                        {"event": "message_removed", "id": _inv["id"], "room_id": _inv["room_id"]},
+                    )
                 manager.rooms.pop(meetup_id, None)
                 manager._room_meta.pop(meetup_id, None)
 
