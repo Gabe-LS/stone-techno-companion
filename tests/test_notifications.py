@@ -1268,13 +1268,12 @@ class TestClientAppBadge:
             navigator.setAppBadge = function(n) { window._badgeCalls.push({action: 'set', value: n}); };
             navigator.clearAppBadge = function() { window._badgeCalls.push({action: 'clear'}); };
             unreadByRoom = { 'room1': 3, 'room2': 5 };
-            _hiddenUnread = 2;
             _updateAppBadge();
         """)
         calls = chat_page.evaluate("window._badgeCalls")
         assert len(calls) == 1
         assert calls[0]["action"] == "set"
-        assert calls[0]["value"] == 10  # 3 + 5 + 2
+        assert calls[0]["value"] == 8  # 3 + 5
 
     def test_badge_cleared_when_all_read(self, chat_page):
         """Badge is cleared when unread count is 0."""
@@ -1283,7 +1282,6 @@ class TestClientAppBadge:
             navigator.setAppBadge = function(n) { window._badgeCalls.push({action: 'set', value: n}); };
             navigator.clearAppBadge = function() { window._badgeCalls.push({action: 'clear'}); };
             unreadByRoom = {};
-            _hiddenUnread = 0;
             _updateAppBadge();
         """)
         calls = chat_page.evaluate("window._badgeCalls")
