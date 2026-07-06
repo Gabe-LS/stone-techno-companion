@@ -3494,6 +3494,8 @@ async function openMeetupMapPicker() {
   const retina = (window.devicePixelRatio || 1) > 1 ? '@2x' : ''; // sharper tiles on hi-dpi screens
   _meetupMap = L.map('meetup-map', { minZoom, maxZoom: isMT ? 20 : 19, maxBoundsViscosity: 1.0 }).setView(center, startZoom);
   _meetupMap.setMaxBounds(_vb);
+  const bases = {};
+  let defaultLayer = null;
   if (isMT) {
     // MapTiler raster tiles are 512px; tell Leaflet (default 256) so labels render
     // at the right size and the zoom level is correct.
@@ -3501,13 +3503,21 @@ async function openMeetupMapPicker() {
       `https://api.maptiler.com/maps/${style}/{z}/{x}/{y}${retina}.${ext}?key=` + encodeURIComponent(_maptilerKey),
       { attribution: '© MapTiler © OpenStreetMap contributors', tileSize: 512, zoomOffset: -1, minZoom, maxZoom: 20, crossOrigin: true }
     );
-    const satellite = mkMT('hybrid', 'jpg');
-    const streets = mkMT('streets-v2', 'png');
-    satellite.addTo(_meetupMap); // default layer
-    L.control.layers({ 'Satellite': satellite, 'Streets': streets }, null, { collapsed: false }).addTo(_meetupMap);
+    bases['Satellite'] = mkMT('hybrid', 'jpg');
+    bases['Streets'] = mkMT('streets-v2', 'png');
+    defaultLayer = bases['Satellite'];
   } else {
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors', minZoom, maxZoom: 19 }).addTo(_meetupMap);
+    bases['Streets'] = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors', minZoom, maxZoom: 19 });
   }
+  // NRW open 10cm aerial (Geobasis NRW, dl-de/by-2-0) — high-res and license-clean
+  // to cache/host offline. Rendered on demand via WMS, so it works at every zoom.
+  bases['Aerial HD (10cm)'] = L.tileLayer.wms('https://www.wms.nrw.de/geobasis/wms_nw_dop', {
+    layers: 'nw_dop_rgb', format: 'image/png', version: '1.3.0',
+    attribution: '© Geobasis NRW (dl-de/by-2-0)', minZoom, maxZoom: isMT ? 20 : 19, detectRetina: true
+  });
+  if (!defaultLayer) defaultLayer = bases['Aerial HD (10cm)'];
+  defaultLayer.addTo(_meetupMap);
+  L.control.layers(bases, null, { collapsed: false }).addTo(_meetupMap);
   _meetupMarker = L.marker(center, { draggable: true }).addTo(_meetupMap);
   let _userMoved = false;
   _meetupMarker.on('dragstart', () => { _userMoved = true; });
