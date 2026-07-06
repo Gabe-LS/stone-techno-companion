@@ -441,25 +441,32 @@ async def get_config():
         msg_limit = int(get_setting(db, "msg_char_limit", "1000"))
     except (ValueError, TypeError):
         msg_limit = 1000
-    # Meetup map bounds: raw exact "west,south,east,north" plus a padding setting
-    # (metres), applied here -> Leaflet [[S,W],[N,E]]. Change the padding number
-    # in chat_settings and the app re-derives the bounds; no recomputing coords.
+    # Meetup map bounds: auto-derived from the POI extent + a padding setting
+    # (metres) -> [[S,W],[N,E]]. A non-empty meetup_bbox setting ("west,south,
+    # east,north") overrides the auto fit. Padding is one number; the app re-derives.
     meetup_bounds = None
     try:
+        import math
+
+        try:
+            pad_m = float(get_setting(db, "meetup_bbox_padding_m", "0") or 0)
+        except (ValueError, TypeError):
+            pad_m = 0.0
         raw = get_setting(db, "meetup_bbox", "")
         if raw:
-            import math
-
             w, s, e, n = (float(x) for x in raw.split(","))
-            try:
-                pad_m = float(get_setting(db, "meetup_bbox_padding_m", "0") or 0)
-            except (ValueError, TypeError):
-                pad_m = 0.0
-            if pad_m:
-                lat_pad = pad_m / 111320.0
-                lng_pad = pad_m / (111320.0 * math.cos(math.radians((s + n) / 2)))
-                w, e, s, n = w - lng_pad, e + lng_pad, s - lat_pad, n + lat_pad
-            meetup_bounds = [[round(s, 6), round(w, 6)], [round(n, 6), round(e, 6)]]
+        else:
+            pois = await _pois_data()
+            if not pois:
+                raise ValueError("no POIs to derive bounds")
+            lats = [p["lat"] for p in pois]
+            lngs = [p["lng"] for p in pois]
+            s, n, w, e = min(lats), max(lats), min(lngs), max(lngs)
+        if pad_m:
+            lat_pad = pad_m / 111320.0
+            lng_pad = pad_m / (111320.0 * math.cos(math.radians((s + n) / 2)))
+            w, e, s, n = w - lng_pad, e + lng_pad, s - lat_pad, n + lat_pad
+        meetup_bounds = [[round(s, 6), round(w, 6)], [round(n, 6), round(e, 6)]]
     except (ValueError, TypeError):
         meetup_bounds = None
     db.close()
@@ -599,12 +606,11 @@ _pois_cache = {"at": 0.0, "data": None}
 _POIS_TTL = 120  # seconds — live edits in MapTiler appear within this window
 
 
-@router.get("/pois")
-async def list_pois():
-    """Festival points of interest for the map picker. Prefers a published
-    MapTiler dataset (MAPTILER_DATASET_ID) fetched server-side + cached, so the
-    key stays off the client and edits appear live; falls back to the cached copy
-    on error, then to a local KMZ/KML/JSON in server/static/."""
+async def _pois_data() -> list:
+    """Festival POI list. Prefers a published MapTiler dataset
+    (MAPTILER_DATASET_ID) fetched server-side + cached (so the key stays off the
+    client and edits appear live); falls back to the cached copy on error, then
+    to a local KMZ/KML/JSON in server/static/."""
     import time
 
     ds = os.environ.get("MAPTILER_DATASET_ID")
@@ -628,6 +634,11 @@ async def list_pois():
             if _pois_cache["data"] is not None:
                 return _pois_cache["data"]
     return _load_pois()
+
+
+@router.get("/pois")
+async def list_pois():
+    return await _pois_data()
 
 
 @router.post("/auth/google")

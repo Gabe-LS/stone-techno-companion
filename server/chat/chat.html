@@ -3508,7 +3508,7 @@ function _updatePoiLabels() {
 }
 // Venue bounding box [[south, west], [north, east]] — panning is locked to this.
 // Loaded from the DB (chat_settings.meetup_bbox) via /config; this is the fallback.
-let _meetupVenueBounds = [[51.485402, 7.029828], [51.492088, 7.041297]];
+let _meetupVenueBounds = [[51.486962, 7.02983], [51.492088, 7.041295]];
 async function openMeetupMapPicker() {
   dbg('[MEETUP] openMeetupMapPicker (maplibre)');
   try { await _loadMaplibre(); } catch (e) { showToast('Could not load map'); return; }
@@ -3520,7 +3520,7 @@ async function openMeetupMapPicker() {
   const center = (_meetupCoords && inBounds(_meetupCoords.lng, _meetupCoords.lat))
     ? [_meetupCoords.lng, _meetupCoords.lat]
     : [(west + east) / 2, (south + north) / 2];
-  const startZoom = 18, minZoom = startZoom - 3, maxZoom = 20;
+  const startZoom = 18, maxZoom = 20;
   document.getElementById('meetup-map-overlay')?.remove();
   const overlay = document.createElement('div');
   overlay.id = 'meetup-map-overlay';
@@ -3542,7 +3542,7 @@ async function openMeetupMapPicker() {
   _meetupMap = new maplibregl.Map({
     container: 'meetup-map',
     style: _meetupMapStyle(),
-    center, zoom: startZoom, minZoom, maxZoom,
+    center, zoom: startZoom, minZoom: 1, maxZoom,
     maxBounds: [[west, south], [east, north]],
     attributionControl: { compact: true },
     dragRotate: false, pitchWithRotate: false, touchPitch: false
@@ -3550,6 +3550,12 @@ async function openMeetupMapPicker() {
   _meetupMap.touchZoomRotate.disableRotation();
   _meetupMap.on('zoom', _updatePoiLabels);
   _meetupMap.on('load', () => {
+    // Auto min-zoom = the zoom at which the whole POI area (bounds) just fits,
+    // so users can zoom out to see everything but no further.
+    try {
+      const cam = _meetupMap.cameraForBounds([[west, south], [east, north]], { padding: 0 });
+      if (cam && typeof cam.zoom === 'number') _meetupMap.setMinZoom(Math.max(1, Math.min(cam.zoom, startZoom)));
+    } catch (e) { dbg('[MEETUP] cameraForBounds failed', e && e.message); }
     _updatePoiLabels();
     // Festival POIs as HTML markers (coloured dot + hover/max-zoom name label).
     _loadFestivalPois().then(pois => {
