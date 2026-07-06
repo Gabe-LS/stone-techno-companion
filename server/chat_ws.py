@@ -112,7 +112,7 @@ def _preview_from_content(msg_type: str, content: str) -> str:
         return "Sent a video"
     if msg_type == "location":
         return "Shared a location"
-    if msg_type == "meetup_card":
+    if msg_type == "meetup_invite":
         return "Shared a meetup"
     return ""
 
@@ -1137,7 +1137,7 @@ async def _moderate_and_broadcast(
             text_preview = "Sent a video"
         elif msg_type == "location":
             text_preview = "Shared a location"
-        elif msg_type == "meetup_card":
+        elif msg_type == "meetup_invite":
             text_preview = "Shared a meetup"
 
         if meta.get("type") == "dm":
