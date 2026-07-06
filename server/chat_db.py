@@ -193,7 +193,7 @@ def init_chat_db(db: sqlite3.Connection) -> None:
 
         CREATE TABLE IF NOT EXISTS strikes (
             id         TEXT PRIMARY KEY,
-            user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            user_id    TEXT NOT NULL,
             reason     TEXT NOT NULL,
             detail     TEXT,
             created_at TEXT NOT NULL,
@@ -347,6 +347,36 @@ def _migrate_chat_db(db: sqlite3.Connection) -> None:
                 FROM reports;
             DROP TABLE reports;
             ALTER TABLE reports_new RENAME TO reports;
+            COMMIT;
+            """
+        )
+        db.execute("PRAGMA foreign_keys=ON")
+        db.commit()
+
+    # Drop the ON DELETE CASCADE FK on strikes so moderation history
+    # (surfaced in the admin Logs timeline) survives user deletion, like
+    # reports and bans, which are deliberately FK-less.
+    if db.execute("PRAGMA foreign_key_list(strikes)").fetchall():
+        db.commit()
+        db.execute("PRAGMA foreign_keys=OFF")
+        db.executescript(
+            """
+            BEGIN;
+            CREATE TABLE strikes_new (
+                id         TEXT PRIMARY KEY,
+                user_id    TEXT NOT NULL,
+                reason     TEXT NOT NULL,
+                detail     TEXT,
+                created_at TEXT NOT NULL,
+                expires_at TEXT
+            );
+            INSERT INTO strikes_new
+                SELECT id, user_id, reason, detail, created_at, expires_at
+                FROM strikes;
+            DROP TABLE strikes;
+            ALTER TABLE strikes_new RENAME TO strikes;
+            CREATE INDEX IF NOT EXISTS idx_strikes_user ON strikes(user_id);
+            CREATE INDEX IF NOT EXISTS idx_strikes_expires ON strikes(expires_at);
             COMMIT;
             """
         )

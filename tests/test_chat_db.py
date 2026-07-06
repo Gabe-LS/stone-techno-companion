@@ -423,10 +423,17 @@ class TestStrikes:
         count = add_strike(db, user["id"], "ai_moderation", "toxic")
         assert count == 2
 
-    def test_strikes_cascade_on_delete(self, db, user):
+    def test_strikes_survive_user_delete(self, db, user):
+        # Strikes are FK-less (like bans/reports) so the moderation history
+        # survives account deletion and stays in the admin Logs timeline.
         add_strike(db, user["id"], "word_filter")
         delete_user(db, user["id"])
-        assert get_strike_count(db, user["id"]) == 0
+        assert (
+            db.execute(
+                "SELECT COUNT(*) FROM strikes WHERE user_id = ?", (user["id"],)
+            ).fetchone()[0]
+            == 1
+        )
 
 
 # --- Wipe ---
