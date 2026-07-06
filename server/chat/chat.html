@@ -120,12 +120,11 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .poi-dot-marker { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; box-sizing: border-box; cursor: pointer; }
 .poi-label-marker { display: none; background: rgba(49,46,129,.9); color: #fff; font-size: 12px; font-weight: 600; padding: 1px 6px; border-radius: 5px; white-space: nowrap; pointer-events: none; }
 .poi-labels-on .poi-label-marker, .poi-label-marker.hover { display: block; }
-/* Attribution: same right padding collapsed/expanded so the "i" stays put;
-   roomier text box; smaller text; no lingering focus ring. */
-#meetup-map .maplibregl-ctrl-attrib.maplibregl-compact { padding: 4px 26px 4px 0; min-height: 24px; }
-#meetup-map .maplibregl-ctrl-attrib.maplibregl-compact-show { padding: 6px 26px 6px 12px; }
-#meetup-map .maplibregl-ctrl-attrib-inner { font-size: 10px; line-height: 1.4; }
-#meetup-map .maplibregl-ctrl-attrib-button:focus { box-shadow: none; outline: none; }
+/* Custom attribution: fixed "i" (bottom-right); credit text opens to its LEFT. */
+.meetup-attrib { position: absolute; right: 8px; bottom: 8px; z-index: 3; display: flex; align-items: center; gap: 6px; pointer-events: none; }
+.meetup-attrib-i { pointer-events: auto; flex: 0 0 auto; width: 22px; height: 22px; padding: 0; border: none; border-radius: 50%; background: rgba(255,255,255,.9); color: #333; font: italic 700 13px/22px Georgia, serif; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.meetup-attrib-text { pointer-events: auto; display: none; max-width: 250px; background: rgba(255,255,255,.92); color: #333; font-size: 10px; line-height: 1.4; padding: 4px 8px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.meetup-attrib.open .meetup-attrib-text { display: block; }
 .meetup-details .md-cancel { display: block; margin-top: var(--space-sm); padding: var(--space-xs) var(--space-md); border: 1px solid #c0392b; color: #c0392b; background: none; border-radius: var(--radius-pill); font-family: inherit; font-size: var(--font-xs); font-weight: 600; cursor: pointer; }
 .meetup-going { font-weight: 400; }
 .meetup-join-wide { width: 260px; max-width: 100%; box-sizing: border-box; display: block; margin-top: var(--space-xs); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-md); font-size: var(--font-sm); }
@@ -3549,7 +3548,7 @@ async function openMeetupMapPicker() {
     bounds: [[west, south], [east, north]],
     fitBoundsOptions: { padding: 12, animate: false },
     minZoom: 1, maxZoom,
-    attributionControl: { compact: true },
+    attributionControl: false,
     dragRotate: false, pitchWithRotate: false, touchPitch: false
   });
   _meetupMap.touchZoomRotate.disableRotation();
@@ -3562,10 +3561,15 @@ async function openMeetupMapPicker() {
     _meetupMap.setMinZoom(_meetupMap.getZoom());
     _meetupMap.setMaxBounds(_meetupMap.getBounds());
     // Collapse the attribution to just the "i" on load (it defaults open).
-    const _attrib = _meetupMap.getContainer().querySelector('details.maplibregl-ctrl-attrib');
-    if (_attrib) { _attrib.open = false; _attrib.classList.remove('maplibregl-compact-show'); }
-    const _attribBtn = _meetupMap.getContainer().querySelector('.maplibregl-ctrl-attrib-button');
-    if (_attribBtn) _attribBtn.addEventListener('click', () => setTimeout(() => _attribBtn.blur(), 0));
+    // Custom attribution: a FIXED "i" that never moves; the credit text opens as
+    // a SEPARATE box to its left on click.
+    const _aw = document.createElement('div');
+    _aw.className = 'meetup-attrib';
+    _aw.innerHTML = '<div class="meetup-attrib-text">© Geobasis NRW (dl-de/by-2-0), © OpenStreetMap contributors</div><button type="button" class="meetup-attrib-i" aria-label="Map attribution">i</button>';
+    _meetupMap.getContainer().appendChild(_aw);
+    _aw.querySelector('.meetup-attrib-i').addEventListener('click', (e) => { e.stopPropagation(); _aw.classList.toggle('open'); e.currentTarget.blur(); });
+    // Any click on the map (the "i" stops propagation) closes the credit box.
+    _meetupMap.getContainer().addEventListener('click', () => _aw.classList.remove('open'));
     _updatePoiLabels();
     // Festival POIs as HTML markers (coloured dot + hover/max-zoom name label).
     _loadFestivalPois().then(pois => {
