@@ -1877,6 +1877,10 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                         },
                     },
                 )
+                await manager.send_to_user(
+                    user_id,
+                    {"event": "meetup_created_ack", "meetup_id": meetup["id"]},
+                )
 
             elif event == "join_meetup":
                 mod_result = await check_ban_mute(db, user_id)

@@ -1500,6 +1500,22 @@ async function handleWSEvent(data) {
       if (at && /meetup/i.test(at.textContent)) loadMeetups();
       break;
     }
+    case 'meetup_created_ack': {
+      if (_meetupPending) {
+        _meetupPending = false;
+        clearTimeout(_meetupAckTimer);
+        closeMeetupModal();
+        showToast('Meetup created!');
+      }
+      break;
+    }
+    case 'create_meetup_error': {
+      _meetupPending = false;
+      clearTimeout(_meetupAckTimer);
+      _resetMeetupSubmitBtn();
+      showToast(data.reason || 'Could not create meetup');
+      break;
+    }
     case 'meetup_updated': {
       if (data.attendees) {
         const count = data.attendees.length;
@@ -3193,6 +3209,8 @@ function openEmoji() { dbg('[CHAT] openEmoji'); showToast('Emoji picker coming i
 
 // --- Meetup modal ---
 let _meetupCoords = null;
+let _meetupPending = false;
+let _meetupAckTimer = null;
 
 async function loadMeetupJoinState(meetupId) {
   dbg('[MEETUP] loadMeetupJoinState', meetupId);
@@ -3347,11 +3365,26 @@ function submitMeetup() {
   if (_meetupCoords) { payload.lat = _meetupCoords.lat; payload.lng = _meetupCoords.lng; }
   if (locationLabel) payload.label = locationLabel;
   if (note) payload.note = note;
+  if (!ws || ws.readyState !== 1) { showToast('Not connected — try again'); return; }
+  const sBtn = document.querySelector('#meetup-modal .modal-btn-primary');
+  if (sBtn) { sBtn.disabled = true; sBtn.textContent = 'Creating…'; }
+  _meetupPending = true;
   wsSend('create_meetup', payload);
   dbg('submitMeetup: sent', payload.title, payload.meetup_time);
   verify('submitMeetup', true, 'meetup "' + payload.title + '" submitted');
-  closeMeetupModal();
-  showToast('Meetup created!');
+  clearTimeout(_meetupAckTimer);
+  _meetupAckTimer = setTimeout(() => {
+    if (!_meetupPending) return;
+    _meetupPending = false;
+    const b = document.querySelector('#meetup-modal .modal-btn-primary');
+    if (b) { b.disabled = false; b.textContent = 'Create Meetup'; }
+    showToast('Could not create meetup — check your connection');
+  }, 6000);
+}
+
+function _resetMeetupSubmitBtn() {
+  const b = document.querySelector('#meetup-modal .modal-btn-primary');
+  if (b) { b.disabled = false; b.textContent = 'Create Meetup'; }
 }
 
 function showConfirm(title, detail, onConfirm, btnLabel) {
