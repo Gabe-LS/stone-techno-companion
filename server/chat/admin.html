@@ -178,11 +178,12 @@ let currentTab = 'reports';
 let expandedUser = null;
 let logOffset = 0;
 let logItems = [];
-let onlineOnly = false;
-let searchQuery = '';
+let onlineOnly = storageGet('admin_users_online', 'false') === 'true';
+let searchQuery = storageGet('admin_users_q', '');
 let searchTimer = null;
 let statsInterval = null;
-let reportStatus = 'pending';
+let reportStatus = storageGet('admin_reports_status', 'pending');
+if (!['pending', 'actioned', 'dismissed', 'all'].includes(reportStatus)) reportStatus = 'pending';
 
 function renderLogin() {
   dbg('[AUTH] renderLogin');
@@ -361,9 +362,9 @@ const render = {
       const bans = await api('/bans');
       window._bansData = bans;
       el.innerHTML = `<div class="toolbar">
-        <input type="text" id="ban-search" placeholder="Search bans" oninput="filterBans(this.value)">
+        <input type="text" id="ban-search" placeholder="Search bans" value="${esc(_banFilter)}" oninput="filterBans(this.value)">
       </div><div id="ban-list"></div>`;
-      filterBans('');
+      filterBans(_banFilter);
     } catch { el.innerHTML = '<div class="empty">Failed to load bans</div>'; }
   },
 
@@ -373,7 +374,7 @@ const render = {
     logOffset = 0;
     logItems = [];
     el.innerHTML = `<div class="toolbar">
-      <input type="text" id="log-search" placeholder="Search log" oninput="filterLog(this.value)">
+      <input type="text" id="log-search" placeholder="Search log" value="${esc(storageGet('admin_log_q', ''))}" oninput="filterLog(this.value)">
     </div><div id="log-list"></div>`;
     await loadMoreLog();
   },
@@ -406,7 +407,20 @@ const render = {
       const starPath = 'M9.15 5.41C10.42 3.14 11.05 2 12 2s1.58 1.14 2.85 3.41l.33.59c.36.65.54.97.82 1.18.28.21.63.29 1.33.45l.64.14c2.46.56 3.69.84 3.98 1.78.29.94-.55 1.92-2.22 3.88l-.43.51c-.48.56-.72.84-.82 1.18-.11.34-.07.72 0 1.46l.07.68c.25 2.62.38 3.92-.39 4.5-.77.58-1.92.05-4.22-.89l-.6-.27c-.65-.3-.98-.45-1.33-.45s-.67.15-1.33.45l-.6.27c-2.3 1.06-3.45 1.59-4.22 1.01-.77-.58-.64-1.89-.39-4.5l.07-.68c.07-.74.1-1.12 0-1.46-.11-.34-.35-.62-.82-1.18l-.43-.51C2.6 11.47 1.76 10.49 2.06 9.55c.29-.94 1.52-1.22 3.98-1.78l.64-.14c.7-.16 1.05-.24 1.33-.45.28-.21.46-.53.82-1.18l.33-.59Z';
       el.innerHTML = html + `<table class="tbl"><thead><tr>
         <th class="col-narrow"></th><th class="col-narrow"></th><th>Name</th><th class="col-narrow">Type</th><th class="col-narrow">TTL</th><th class="col-narrow">Members</th><th class="col-narrow">Online</th><th>Flags</th><th class="col-narrow">Last activity</th><th class="col-actions">Actions</th>
-      </tr></thead><tbody id="rooms-tbody">` + rooms.map(r => { const isGroup = r.type === 'general' || r.type === 'stage'; return `<tr draggable="${isGroup ? 'true' : 'false'}" data-room-id="${esc(r.id)}" ondragstart="onDragStart(event)" ondragover="onDragOver(event)" ondrop="onDrop(event)" ondragend="onDragEnd(event)" ondragleave="onDragLeave(event)">
+      </tr></thead><tbody id="rooms-tbody">` + rooms.map(r => {
+        const isGroup = r.type === 'general' || r.type === 'stage';
+        const isSuper = window._me && window._me.role === 'super_admin';
+        const acts = [];
+        if (isGroup) {
+          acts.push(`<button class="dropdown-item" onclick="openRoomModal('${esc(r.id)}')">Edit</button>`);
+          acts.push(`<button class="dropdown-item" onclick="viewRoomMessages('${esc(r.id)}')">Messages</button>`);
+          if (!r.is_main && isSuper) acts.push(`<button class="dropdown-item danger" onclick="deleteRoom('${esc(r.id)}')">Delete room</button>`);
+        }
+        if (r.type === 'meetup') acts.push(`<button class="dropdown-item danger" onclick="deleteMeetup('${esc(r.id)}')">Delete meetup</button>`);
+        const actionsCell = acts.length
+          ? `<div class="dropdown" onclick="event.stopPropagation();toggleDropdown(this)"><button class="btn btn-neutral kebab" title="Actions" aria-label="Actions">...</button><div class="dropdown-menu">${acts.join('')}</div></div>`
+          : '';
+        return `<tr draggable="${isGroup ? 'true' : 'false'}" data-room-id="${esc(r.id)}" ondragstart="onDragStart(event)" ondragover="onDragOver(event)" ondrop="onDrop(event)" ondragend="onDragEnd(event)" ondragleave="onDragLeave(event)">
         <td class="col-narrow">${isGroup ? '<span class="drag-handle"><svg width="18" height="18" viewBox="0 0 24 24" fill="var(--text-muted)"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg></span>' : ''}</td>
         ${isGroup ? `<td class="col-narrow star-cell" onclick="event.stopPropagation();setMainRoom('${esc(r.id)}')" title="${r.is_main ? 'Main room' : 'Set as main room'}"><svg width="18" height="18" viewBox="0 0 24 24" ${r.is_main ? 'fill="var(--amber)" stroke="var(--amber)"' : 'fill="none" stroke="var(--text-muted)"'} stroke-width="1.5"><path d="${starPath}"/></svg></td>` : '<td class="col-narrow"></td>'}
         <td>${esc(r.name)}${r.description ? '<div style="color:var(--text-muted);font-size:12px">' + esc(r.description) + '</div>' : ''}</td>
@@ -416,24 +430,19 @@ const render = {
         <td class="col-narrow" style="color:var(--green)">${r.online_count}</td>
         <td>${flagPills(r)}</td>
         <td class="col-narrow" style="color:var(--text-muted)">${ago(r.last_message_at)}</td>
-        <td class="col-actions"><div class="btn-group">
-          ${r.type !== 'dm' && r.type !== 'meetup' ? `<button class="btn btn-neutral" onclick="openRoomModal('${esc(r.id)}')">Edit</button>` : ''}
-          ${r.type !== 'dm' && r.type !== 'meetup' ? `<button class="btn btn-neutral" onclick="viewRoomMessages('${esc(r.id)}')">Messages</button>` : ''}
-          ${r.type === 'meetup' ? `<button class="btn btn-neutral" onclick="deleteMeetup('${esc(r.id)}')">Delete</button>` : ''}
-          ${!r.is_main && r.type !== 'dm' && r.type !== 'meetup' && window._me && window._me.role === 'super_admin' ? `<button class="btn btn-neutral" onclick="deleteRoom('${esc(r.id)}')">Delete</button>` : ''}
-        </div></td>
+        <td class="col-actions">${actionsCell}</td>
       </tr>`; }).join('') + '</tbody></table>';
     } catch { el.innerHTML = '<div class="empty">Failed to load rooms</div>'; }
   },
 };
 
 // --- Audit ---
-let auditOffset = 0, auditItems = [], _auditFilter = '';
+let auditOffset = 0, auditItems = [], _auditFilter = storageGet('admin_audit_q', '').toLowerCase();
 render.audit = async () => {
   dbg('[RENDER] audit');
   const el = document.getElementById('content');
   auditOffset = 0; auditItems = [];
-  el.innerHTML = `<div class="toolbar"><input type="text" id="audit-search" placeholder="Search audit" oninput="filterAudit(this.value)"></div><div id="audit-list"></div>`;
+  el.innerHTML = `<div class="toolbar"><input type="text" id="audit-search" placeholder="Search audit" value="${esc(storageGet('admin_audit_q', ''))}" oninput="filterAudit(this.value)"></div><div id="audit-list"></div>`;
   await loadMoreAudit();
 };
 async function loadMoreAudit() {
@@ -462,7 +471,7 @@ function renderAudit(hasMore) {
     </tr>`).join('') + '</tbody></table>' +
     (hasMore && !_auditFilter ? '<div class="load-more"><button onclick="loadMoreAudit()">Load more</button></div>' : '');
 }
-function filterAudit(q) { dbg('[FILTER] audit:', q); _auditFilter = q.toLowerCase(); renderAudit(auditOffset > 0 && auditItems.length === auditOffset); }
+function filterAudit(q) { dbg('[FILTER] audit:', q); _auditFilter = q.toLowerCase(); storageSet('admin_audit_q', q); renderAudit(auditOffset > 0 && auditItems.length === auditOffset); }
 
 // --- Admins ---
 render.admins = async () => {
@@ -540,7 +549,7 @@ async function saveSettings() {
 }
 
 // --- Reports ---
-function reloadReports(s) { dbg('[FILTER] reportStatus:', s); reportStatus = s; render.reports(); }
+function reloadReports(s) { dbg('[FILTER] reportStatus:', s); reportStatus = s; storageSet('admin_reports_status', s); render.reports(); }
 function jumpToUser(userId) {
   if (!userId) return;
   dbg('[ACTION] jumpToUser', userId);
@@ -571,8 +580,8 @@ async function reportAction(reportId, action) {
 }
 
 // --- Users ---
-function onUserSearch(q) { dbg('[SEARCH]', q); searchQuery = q; clearTimeout(searchTimer); searchTimer = setTimeout(loadUsers, 300); }
-function toggleOnline() { dbg('[FILTER] online:', !onlineOnly); onlineOnly = !onlineOnly; document.querySelector('.toggle')?.classList.toggle('on', onlineOnly); loadUsers(); }
+function onUserSearch(q) { dbg('[SEARCH]', q); searchQuery = q; storageSet('admin_users_q', q); clearTimeout(searchTimer); searchTimer = setTimeout(loadUsers, 300); }
+function toggleOnline() { dbg('[FILTER] online:', !onlineOnly); onlineOnly = !onlineOnly; storageSet('admin_users_online', onlineOnly ? 'true' : 'false'); document.querySelector('.toggle')?.classList.toggle('on', onlineOnly); loadUsers(); }
 
 async function loadUsers() {
   dbg('[USERS] load q:', searchQuery, 'online:', onlineOnly);
@@ -755,6 +764,8 @@ async function adminDeleteUser(userId) {
 // --- Banned ---
 function filterBans(q) {
   dbg('[FILTER] bans:', q);
+  _banFilter = q;
+  storageSet('admin_bans_q', q);
   const el = document.getElementById('ban-list');
   if (!el || !window._bansData) return;
   const lq = q.toLowerCase();
@@ -785,7 +796,8 @@ async function unban(banId) {
 }
 
 // --- Log ---
-let _logFilter = '';
+let _logFilter = storageGet('admin_log_q', '').toLowerCase();
+let _banFilter = storageGet('admin_bans_q', '');
 async function loadMoreLog() {
   dbg('[LOG] load offset:', logOffset);
   try {
@@ -815,7 +827,7 @@ function renderLog(hasMore) {
   </tr>`).join('') + '</tbody></table>' +
     (hasMore && !_logFilter ? '<div class="load-more"><button onclick="loadMoreLog()">Load more</button></div>' : '');
 }
-function filterLog(q) { dbg('[FILTER] log:', q); _logFilter = q.toLowerCase(); renderLog(logOffset > 0 && logItems.length === logOffset); }
+function filterLog(q) { dbg('[FILTER] log:', q); _logFilter = q.toLowerCase(); storageSet('admin_log_q', q); renderLog(logOffset > 0 && logItems.length === logOffset); }
 
 // --- Rooms ---
 let _modalRoomId = '';

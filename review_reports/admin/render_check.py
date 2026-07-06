@@ -45,6 +45,22 @@ MOCK_USER = {
     "muted_until": None,
     "mute_count": 0,
 }
+MOCK_ROOM = {
+    "id": "party",
+    "name": "Party",
+    "type": "general",
+    "description": "",
+    "is_main": False,
+    "is_moderated": True,
+    "is_read_only": False,
+    "auto_join": False,
+    "allows_media": True,
+    "ttl_minutes": 1440,
+    "online_count": 0,
+    "member_count": 2,
+    "message_count": 3,
+    "last_message_at": None,
+}
 
 
 def run_for_role(role):
@@ -133,6 +149,8 @@ def check_persistence_and_menu():
                 return route.fulfill(status=200, content_type="application/json", body=_json(me))
             if "/chat/api/admin/settings" in url:
                 return route.fulfill(status=200, content_type="application/json", body=_json(SETTINGS))
+            if "/chat/api/admin/rooms" in url:
+                return route.fulfill(status=200, content_type="application/json", body=_json([MOCK_ROOM]))
             if "/chat/api/admin/users" in url:
                 return route.fulfill(status=200, content_type="application/json", body=_json([MOCK_USER]))
             if "/chat/api/admin/" in url:
@@ -162,6 +180,32 @@ def check_persistence_and_menu():
         seps = menu.count("dropdown-sep")
         if seps < 2:
             problems.append(f"menu not grouped (only {seps} separators)")
+
+        # Rooms actions should now be a "..." kebab menu with Edit / Messages.
+        page.click('.tab[data-tab="rooms"]')
+        page.wait_for_selector("#rooms-tbody", timeout=5000)
+        room_kebab = page.query_selector("#rooms-tbody .col-actions .kebab")
+        if not room_kebab:
+            problems.append("rooms actions not a kebab menu")
+        rmenu_el = page.query_selector("#rooms-tbody .col-actions .dropdown-menu")
+        rmenu = rmenu_el.inner_html() if rmenu_el else ""
+        for label in ("Edit", "Messages", "Delete room"):
+            if label not in rmenu:
+                problems.append(f"rooms menu missing '{label}'")
+
+        # Filter persistence: toggle Users online-only, reload, expect it to stick.
+        page.click('.tab[data-tab="users"]')
+        page.wait_for_selector(".toggle", timeout=5000)
+        page.click(".toggle")  # turn online-only on
+        page.wait_for_selector(".toggle.on", timeout=5000)
+        page.goto("https://example.test/admin-panel")
+        page.wait_for_selector(".tab.active", timeout=5000)
+        stored = page.evaluate("() => localStorage.getItem('admin_users_online')")
+        if stored != "true":
+            problems.append(f"online-only toggle not persisted (stored={stored})")
+        toggle = page.query_selector(".toggle")
+        if toggle and "on" not in (toggle.get_attribute("class") or ""):
+            problems.append("online-only toggle not restored as active")
         browser.close()
     return problems
 
