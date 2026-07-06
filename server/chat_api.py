@@ -455,12 +455,12 @@ _KML_NS = "{http://www.opengis.net/kml/2.2}"
 # Category tag (from a "[TAG] name" placemark) -> our POI type. Unknown -> "other".
 _POI_TAG_TO_TYPE = {
     "FLOOR": "stage", "STAGE": "stage",
-    "BAR": "bar", "WINE BAR": "winebar",
+    "BAR": "drinks", "WINE BAR": "drinks", "DRINKS": "drinks",
     "FOOD": "food",
     "WC": "wc", "TOILET": "wc", "TOILETS": "wc",
     "TAP WATER": "water", "WATER": "water",
     "ENTRANCE": "entrance",
-    "FIRST AID": "firstaid", "AWARENESS": "awareness",
+    "FIRST AID": "firstaid",
     "LOCKER": "services", "LOST & FOUND": "services", "LOST AND FOUND": "services",
     "SHUTTLE": "transport",
     "VINYL SHOP": "shop", "MERCH STORE": "shop", "SHOP": "shop", "MERCH": "shop",
