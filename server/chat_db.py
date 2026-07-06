@@ -1363,7 +1363,7 @@ def delete_meetup(db: sqlite3.Connection, meetup_id: str) -> list[dict]:
         "SELECT id, photo_url FROM meetups WHERE id = ?", (meetup_id,)
     ).fetchone()
     if not row:
-        return None
+        return []
     photo_url = row["photo_url"] if "photo_url" in row.keys() else None
     like_pat = f'%"meetup_id": "{meetup_id}"%'
     invite_rows = [

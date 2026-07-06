@@ -1527,6 +1527,12 @@ async def create_meetup_endpoint(request: Request):
         if _mtext.strip() and _wf.check(_mtext):
             raise HTTPException(400, "That meetup contains content that isn't allowed.")
 
+        stage_id = body.get("stage_id")
+        if stage_id:
+            _target = get_room(db, stage_id)
+            if not _target or _target["type"] not in ("stage", "general") or _target["is_read_only"]:
+                stage_id = None
+
         from chat_ws import validate_meetup_photo
 
         try:
@@ -1538,7 +1544,7 @@ async def create_meetup_endpoint(request: Request):
             db,
             user["id"],
             DEFAULT_EVENT_ID,
-            body.get("stage_id"),
+            stage_id,
             title,
             meetup_time,
             location_lat=body.get("lat"),
@@ -2765,6 +2771,7 @@ async def admin_unmute_user(user_id: str, request: Request):
         user = get_user(db, user_id)
         if not user:
             raise HTTPException(404, "User not found")
+        _guard_target(db, actor, user_id)
         db.execute("UPDATE users SET muted_until = NULL WHERE id = ?", (user_id,))
         db.commit()
         log_admin_action(db, actor["label"], "unmute", target_user_id=user_id)
@@ -2841,6 +2848,7 @@ async def admin_clear_warnings(user_id: str, request: Request):
         user = get_user(db, user_id)
         if not user:
             raise HTTPException(404, "User not found")
+        _guard_target(db, actor, user_id)
         db.execute("DELETE FROM strikes WHERE user_id = ?", (user_id,))
         db.execute(
             "UPDATE users SET muted_until = NULL, mute_count = 0 WHERE id = ?",
@@ -3256,11 +3264,11 @@ async def admin_delete_meetup(meetup_id: str, request: Request):
     actor = _require_admin(request)
     db = _get_db()
     try:
-        deleted_invites = delete_meetup(db, meetup_id)
-        if deleted_invites is None:
+        if not db.execute("SELECT 1 FROM meetups WHERE id = ?", (meetup_id,)).fetchone():
             raise HTTPException(404, "Meetup not found")
+        deleted_invites = delete_meetup(db, meetup_id)
         log_admin_action(
-            db, actor["label"], "delete_room", target_room_id=meetup_id, detail="meetup"
+            db, actor["label"], "delete_meetup", target_room_id=meetup_id
         )
         from chat_ws import manager
 
