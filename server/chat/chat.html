@@ -120,7 +120,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .poi-marker { background: none; border: none; }
 .leaflet-tooltip.poi-tip { display: none; background: rgba(20,20,20,.82); color: #fff; border: none; box-shadow: none; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 5px; white-space: nowrap; }
 .leaflet-tooltip.poi-tip::before { display: none; }
-.poi-labels-on .leaflet-tooltip.poi-tip { display: block; }
+.poi-labels-on .leaflet-tooltip.poi-tip, .leaflet-tooltip.poi-tip.poi-hover { display: block; }
 .meetup-details .md-cancel { display: block; margin-top: var(--space-sm); padding: var(--space-xs) var(--space-md); border: 1px solid #c0392b; color: #c0392b; background: none; border-radius: var(--radius-pill); font-family: inherit; font-size: var(--font-xs); font-weight: 600; cursor: pointer; }
 .meetup-going { font-weight: 400; }
 .meetup-join-wide { width: 260px; max-width: 100%; box-sizing: border-box; display: block; margin-top: var(--space-xs); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-md); font-size: var(--font-sm); }
@@ -3486,7 +3486,8 @@ function _updatePoiLabels() {
   _meetupMap.getContainer().classList.toggle('poi-labels-on', on);
 }
 // Venue bounding box [[south, west], [north, east]] — panning is locked to this.
-const MEETUP_VENUE_BOUNDS = [[51.486247, 7.025843], [51.492693, 7.046281]];
+// (E-W trimmed 400 m per side from the original to drop the empty margins.)
+const MEETUP_VENUE_BOUNDS = [[51.486247, 7.031614], [51.492693, 7.04051]];
 async function openMeetupMapPicker() {
   dbg('[MEETUP] openMeetupMapPicker, maptiler=' + !!_maptilerKey);
   try { await _loadLeaflet(); } catch (e) { showToast('Could not load map'); return; }
@@ -3564,9 +3565,13 @@ async function openMeetupMapPicker() {
     const poiLayer = L.layerGroup();
     pois.forEach(p => {
       if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return;
-      L.marker([p.lat, p.lng], { icon: _poiIcon(p.type), keyboard: false })
-        .bindTooltip(String(p.name || p.type || ''), { permanent: true, direction: 'right', className: 'poi-tip', offset: [8, 0] })
-        .addTo(poiLayer);
+      const mk = L.marker([p.lat, p.lng], { icon: _poiIcon(p.type), keyboard: false })
+        .bindTooltip(String(p.name || p.type || ''), { permanent: true, direction: 'right', className: 'poi-tip', offset: [8, 0] });
+      // Reveal the label on hover (works at any zoom), in addition to the
+      // always-on labels at max zoom.
+      mk.on('mouseover', () => { const el = mk.getTooltip() && mk.getTooltip().getElement(); if (el) el.classList.add('poi-hover'); });
+      mk.on('mouseout', () => { const el = mk.getTooltip() && mk.getTooltip().getElement(); if (el) el.classList.remove('poi-hover'); });
+      mk.addTo(poiLayer);
     });
     poiLayer.addTo(_meetupMap);
     layersCtl.addOverlay(poiLayer, 'Festival POIs');
