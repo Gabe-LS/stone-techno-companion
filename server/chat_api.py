@@ -451,6 +451,21 @@ async def get_config():
     }
 
 
+@router.get("/pois")
+async def list_pois():
+    """Festival points of interest (stages, bars, entrances, ...) for the map
+    picker. Editable without redeploy via server/static/festival-pois.json (the
+    static dir is bind-mounted). Returns [] if the file is missing/invalid."""
+    path = Path(__file__).resolve().parent / "static" / "festival-pois.json"
+    if not path.is_file():
+        return []
+    try:
+        data = json.loads(path.read_text())
+        return data if isinstance(data, list) else []
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
 @router.post("/auth/google")
 async def auth_google(request: Request, response: Response):
     _check_auth_rate(request)

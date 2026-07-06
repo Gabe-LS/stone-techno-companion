@@ -1,0 +1,10 @@
+[
+  { "type": "stage",    "name": "Koksofenbatterie", "lat": 51.48980, "lng": 7.03560 },
+  { "type": "stage",    "name": "Werksschwimmbad",  "lat": 51.48910, "lng": 7.03700 },
+  { "type": "bar",      "name": "Main Bar",         "lat": 51.48945, "lng": 7.03610 },
+  { "type": "food",     "name": "Food Court",       "lat": 51.48900, "lng": 7.03500 },
+  { "type": "entrance", "name": "Main Entrance",    "lat": 51.48870, "lng": 7.03620 },
+  { "type": "wc",       "name": "Toilets",          "lat": 51.48960, "lng": 7.03480 },
+  { "type": "firstaid", "name": "First Aid",        "lat": 51.48925, "lng": 7.03760 },
+  { "type": "info",     "name": "Info Point",       "lat": 51.48890, "lng": 7.03650 }
+]

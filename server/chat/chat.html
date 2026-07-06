@@ -117,6 +117,9 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .meetup-details .md-k { font-weight: 700; color: var(--color-accent); margin-right: var(--space-xs); text-transform: uppercase; font-size: var(--font-xs); }
 .meetup-details .md-map { display: inline-block; margin-top: var(--space-xs); color: var(--color-accent); font-weight: 600; font-size: var(--font-sm); }
 .meetup-details .md-photo { display: block; max-width: 100%; max-height: 200px; border-radius: var(--radius-md); margin-top: var(--space-xs); }
+.poi-marker { background: none; border: none; }
+.leaflet-tooltip.poi-tip { background: rgba(20,20,20,.82); color: #fff; border: none; box-shadow: none; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 5px; white-space: nowrap; }
+.leaflet-tooltip.poi-tip::before { display: none; }
 .meetup-details .md-cancel { display: block; margin-top: var(--space-sm); padding: var(--space-xs) var(--space-md); border: 1px solid #c0392b; color: #c0392b; background: none; border-radius: var(--radius-pill); font-family: inherit; font-size: var(--font-xs); font-weight: 600; cursor: pointer; }
 .meetup-going { font-weight: 400; }
 .meetup-join-wide { width: 260px; max-width: 100%; box-sizing: border-box; display: block; margin-top: var(--space-xs); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-md); font-size: var(--font-sm); }
@@ -3416,9 +3419,10 @@ function openMeetupModal() {
     verify('openMeetupModal', document.getElementById('meetup-location'), 'location input exists');
   });
   document.getElementById('meetup-title').focus();
-  // Warm the Leaflet library in the background so the map opens instantly if the
-  // user taps "Map" while filling out the form.
+  // Warm the Leaflet library + festival POIs in the background so the map opens
+  // instantly if the user taps "Map" while filling out the form.
   _loadLeaflet().catch(() => {});
+  _loadFestivalPois().catch(() => {});
 }
 
 function useMeetupGPS() {
@@ -3455,6 +3459,22 @@ function _loadLeaflet() {
     document.head.appendChild(s);
   });
   return _leafletLoading;
+}
+
+let _festivalPois = null;
+async function _loadFestivalPois() {
+  if (_festivalPois) return _festivalPois;
+  try { _festivalPois = await api('/pois'); } catch (e) { _festivalPois = []; }
+  return _festivalPois || [];
+}
+const POI_COLORS = { stage: '#8b5cf6', bar: '#f59e0b', food: '#10b981', wc: '#3b82f6', entrance: '#14b8a6', firstaid: '#ef4444', info: '#6b7280', atm: '#059669' };
+function _poiIcon(type) {
+  const c = POI_COLORS[type] || '#6b7280';
+  return L.divIcon({
+    className: 'poi-marker',
+    html: `<span style="display:block;width:14px;height:14px;border-radius:50%;background:${c};border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.45)"></span>`,
+    iconSize: [14, 14], iconAnchor: [7, 7]
+  });
 }
 
 let _meetupMap = null, _meetupMarker = null;
@@ -3528,7 +3548,20 @@ async function openMeetupMapPicker() {
     attribution: '© CARTO © OpenStreetMap contributors', subdomains: 'abcd', pane: 'labels',
     minZoom, maxNativeZoom: 18, maxZoom: isMT ? 20 : 19
   });
-  L.control.layers(bases, { 'Street names': labels }, { collapsed: false }).addTo(_meetupMap);
+  const layersCtl = L.control.layers(bases, { 'Street names': labels }, { collapsed: false }).addTo(_meetupMap);
+  // Festival points of interest (stages, bars, entrances...) as a toggleable layer.
+  _loadFestivalPois().then(pois => {
+    if (!_meetupMap || !Array.isArray(pois) || !pois.length) return;
+    const poiLayer = L.layerGroup();
+    pois.forEach(p => {
+      if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return;
+      L.marker([p.lat, p.lng], { icon: _poiIcon(p.type), keyboard: false })
+        .bindTooltip(String(p.name || p.type || ''), { permanent: true, direction: 'right', className: 'poi-tip', offset: [8, 0] })
+        .addTo(poiLayer);
+    });
+    poiLayer.addTo(_meetupMap);
+    layersCtl.addOverlay(poiLayer, 'Festival POIs');
+  });
   _meetupMarker = L.marker(center, { draggable: true }).addTo(_meetupMap);
   let _userMoved = false;
   _meetupMarker.on('dragstart', () => { _userMoved = true; });
