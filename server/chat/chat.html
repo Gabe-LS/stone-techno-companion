@@ -3486,7 +3486,7 @@ async function openMeetupMapPicker() {
   const minZoom = startZoom - 1;
   const retina = (window.devicePixelRatio || 1) > 1 ? '@2x' : ''; // sharper tiles on hi-dpi screens
   const tileUrl = isMT
-    ? `https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}${retina}.png?key=` + encodeURIComponent(_maptilerKey)
+    ? `https://api.maptiler.com/maps/hybrid/{z}/{x}/{y}${retina}.jpg?key=` + encodeURIComponent(_maptilerKey)
     : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
   // MapTiler raster tiles are 512px; tell Leaflet (default 256) so labels render
   // at the right size and the zoom level is correct.
