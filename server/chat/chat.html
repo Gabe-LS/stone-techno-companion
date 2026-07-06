@@ -117,10 +117,10 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .meetup-details .md-k { font-weight: 700; color: var(--color-accent); margin-right: var(--space-xs); text-transform: uppercase; font-size: var(--font-xs); }
 .meetup-details .md-map { display: inline-block; margin-top: var(--space-xs); color: var(--color-accent); font-weight: 600; font-size: var(--font-sm); }
 .meetup-details .md-photo { display: block; max-width: 100%; max-height: 200px; border-radius: var(--radius-md); margin-top: var(--space-xs); }
-.poi-marker { background: none; border: none; }
-.leaflet-tooltip.poi-tip { display: none; background: rgba(49,46,129,.9); color: #fff; border: none; box-shadow: none; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 5px; white-space: nowrap; }
-.leaflet-tooltip.poi-tip::before { display: none; }
-.poi-labels-on .leaflet-tooltip.poi-tip, .leaflet-tooltip.poi-tip.poi-hover { display: block; }
+.poi-marker-wrap { position: relative; width: 14px; height: 14px; }
+.poi-marker-wrap .poi-dot { display: block; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; box-sizing: border-box; }
+.poi-marker-wrap .poi-tip { display: none; position: absolute; left: 18px; top: 50%; transform: translateY(-50%); background: rgba(49,46,129,.9); color: #fff; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 5px; white-space: nowrap; pointer-events: none; }
+.poi-labels-on .poi-marker-wrap .poi-tip, .poi-marker-wrap:hover .poi-tip { display: block; }
 .meetup-details .md-cancel { display: block; margin-top: var(--space-sm); padding: var(--space-xs) var(--space-md); border: 1px solid #c0392b; color: #c0392b; background: none; border-radius: var(--radius-pill); font-family: inherit; font-size: var(--font-xs); font-weight: 600; cursor: pointer; }
 .meetup-going { font-weight: 400; }
 .meetup-join-wide { width: 260px; max-width: 100%; box-sizing: border-box; display: block; margin-top: var(--space-xs); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-md); font-size: var(--font-sm); }
@@ -3421,9 +3421,9 @@ function openMeetupModal() {
     verify('openMeetupModal', document.getElementById('meetup-location'), 'location input exists');
   });
   document.getElementById('meetup-title').focus();
-  // Warm the Leaflet library + festival POIs in the background so the map opens
+  // Warm the map library + festival POIs in the background so the map opens
   // instantly if the user taps "Map" while filling out the form.
-  _loadLeaflet().catch(() => {});
+  _loadMaplibre().catch(() => {});
   _loadFestivalPois().catch(() => {});
 }
 
@@ -3445,22 +3445,22 @@ function useMeetupGPS() {
   }, { timeout: 10000, maximumAge: 60000 });
 }
 
-let _leafletLoading = null;
-function _loadLeaflet() {
-  if (window.L) return Promise.resolve();
-  if (_leafletLoading) return _leafletLoading;
-  _leafletLoading = new Promise((resolve, reject) => {
+let _maplibreLoading = null;
+function _loadMaplibre() {
+  if (window.maplibregl) return Promise.resolve();
+  if (_maplibreLoading) return _maplibreLoading;
+  _maplibreLoading = new Promise((resolve, reject) => {
     const css = document.createElement('link');
     css.rel = 'stylesheet';
-    css.href = '/vendor/leaflet/leaflet.css';
+    css.href = '/vendor/maplibre/maplibre-gl.css';
     document.head.appendChild(css);
     const s = document.createElement('script');
-    s.src = '/vendor/leaflet/leaflet.js';
+    s.src = '/vendor/maplibre/maplibre-gl.js';
     s.onload = () => resolve();
-    s.onerror = () => { _leafletLoading = null; reject(new Error('leaflet')); };
+    s.onerror = () => { _maplibreLoading = null; reject(new Error('maplibre')); };
     document.head.appendChild(s);
   });
-  return _leafletLoading;
+  return _maplibreLoading;
 }
 
 let _festivalPois = null;
@@ -3480,13 +3480,23 @@ function _poiColor(type) {
   for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0;
   return POI_PALETTE[h % POI_PALETTE.length];
 }
-function _poiIcon(type) {
-  const c = _poiColor(type);
-  return L.divIcon({
-    className: 'poi-marker',
-    html: `<span style="display:block;width:14px;height:14px;border-radius:50%;background:${c};border:2px solid #fff"></span>`,
-    iconSize: [14, 14], iconAnchor: [7, 7]
-  });
+// Single hybrid style: self-hosted NRW aerial (cached via /dop) + OpenFreeMap
+// vector roads/place labels drawn on top. One view, no basemap switcher.
+function _meetupMapStyle() {
+  return {
+    version: 8,
+    glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
+    sources: {
+      aerial: { type: 'raster', tiles: [location.origin + '/dop/{z}/{x}/{y}.jpg'], tileSize: 256, minzoom: 12, maxzoom: 20, attribution: '© Geobasis NRW (dl-de/by-2-0), © OpenStreetMap contributors' },
+      ofm: { type: 'vector', url: 'https://tiles.openfreemap.org/planet' }
+    },
+    layers: [
+      { id: 'aerial', type: 'raster', source: 'aerial' },
+      { id: 'roads', type: 'line', source: 'ofm', 'source-layer': 'transportation', paint: { 'line-color': 'rgba(255,255,255,0.5)', 'line-width': ['interpolate', ['linear'], ['zoom'], 14, 0.4, 20, 2.5] } },
+      { id: 'road-labels', type: 'symbol', source: 'ofm', 'source-layer': 'transportation_name', layout: { 'text-field': ['coalesce', ['get', 'name:latin'], ['get', 'name']], 'symbol-placement': 'line', 'text-font': ['Noto Sans Regular'], 'text-size': 11 }, paint: { 'text-color': '#fff', 'text-halo-color': '#1e1b4b', 'text-halo-width': 1.4 } },
+      { id: 'place-labels', type: 'symbol', source: 'ofm', 'source-layer': 'place', layout: { 'text-field': ['coalesce', ['get', 'name:latin'], ['get', 'name']], 'text-font': ['Noto Sans Regular'], 'text-size': ['interpolate', ['linear'], ['zoom'], 12, 10, 18, 14] }, paint: { 'text-color': '#fff', 'text-halo-color': '#1e1b4b', 'text-halo-width': 1.4 } }
+    ]
+  };
 }
 
 let _meetupMap = null, _meetupMarker = null;
@@ -3500,15 +3510,17 @@ function _updatePoiLabels() {
 // Loaded from the DB (chat_settings.meetup_bbox) via /config; this is the fallback.
 let _meetupVenueBounds = [[51.485402, 7.029828], [51.492088, 7.041297]];
 async function openMeetupMapPicker() {
-  dbg('[MEETUP] openMeetupMapPicker, maptiler=' + !!_maptilerKey);
-  try { await _loadLeaflet(); } catch (e) { showToast('Could not load map'); return; }
-  const _vb = L.latLngBounds(_meetupVenueBounds);
+  dbg('[MEETUP] openMeetupMapPicker (maplibre)');
+  try { await _loadMaplibre(); } catch (e) { showToast('Could not load map'); return; }
+  const b = _meetupVenueBounds; // [[S,W],[N,E]]
+  const south = b[0][0], west = b[0][1], north = b[1][0], east = b[1][1];
+  const inBounds = (lng, lat) => lng >= west && lng <= east && lat >= south && lat <= north;
   // Open instantly on the existing pin (if on-site) or the venue centre — never
-  // block the map on a slow GPS fix. If there's no pin yet, we jump to the user's
-  // GPS in the background once it resolves (below).
-  const center = (_meetupCoords && _vb.contains(L.latLng([_meetupCoords.lat, _meetupCoords.lng])))
-    ? [_meetupCoords.lat, _meetupCoords.lng]
-    : [_vb.getCenter().lat, _vb.getCenter().lng];
+  // block on GPS; jump to GPS in the background below if there's no pin yet.
+  const center = (_meetupCoords && inBounds(_meetupCoords.lng, _meetupCoords.lat))
+    ? [_meetupCoords.lng, _meetupCoords.lat]
+    : [(west + east) / 2, (south + north) / 2];
+  const startZoom = 18, minZoom = startZoom - 1, maxZoom = 20;
   document.getElementById('meetup-map-overlay')?.remove();
   const overlay = document.createElement('div');
   overlay.id = 'meetup-map-overlay';
@@ -3521,92 +3533,55 @@ async function openMeetupMapPicker() {
     </div>
     <div class="modal-footer"><button type="button" class="modal-btn-primary" onclick="confirmMeetupMapPin()">Use this location</button></div>
   </div>`;
-  // Close only on a genuine backdrop click — a press that both starts AND ends on
-  // the overlay itself. A map pan that releases over the backdrop must NOT close.
+  // Close only on a genuine backdrop click (press starts AND ends on the overlay),
+  // so a map pan that releases over the backdrop doesn't dismiss it.
   overlay.addEventListener('pointerdown', (e) => { overlay._downOnBackdrop = (e.target === overlay); });
   overlay.addEventListener('click', (e) => { if (e.target === overlay && overlay._downOnBackdrop) closeMeetupMapPicker(); });
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('open'));
-  const isMT = !!_maptilerKey;
-  const startZoom = 18;
-  const minZoom = startZoom - 1;
-  const retina = (window.devicePixelRatio || 1) > 1 ? '@2x' : ''; // sharper tiles on hi-dpi screens
-  _meetupMap = L.map('meetup-map', { minZoom, maxZoom: isMT ? 20 : 19, maxBoundsViscosity: 1.0 }).setView(center, startZoom);
-  _meetupMap.setMaxBounds(_vb);
-  _meetupMap.on('zoomend', _updatePoiLabels);
-  _updatePoiLabels();
-  const bases = {};
-  let defaultLayer = null;
-  if (isMT) {
-    // MapTiler raster tiles are 512px; tell Leaflet (default 256) so labels render
-    // at the right size and the zoom level is correct.
-    const mkMT = (style, ext) => L.tileLayer(
-      `https://api.maptiler.com/maps/${style}/{z}/{x}/{y}${retina}.${ext}?key=` + encodeURIComponent(_maptilerKey),
-      { attribution: '© MapTiler © OpenStreetMap contributors', tileSize: 512, zoomOffset: -1, minZoom, maxZoom: 20, crossOrigin: true }
-    );
-    bases['Satellite'] = mkMT('hybrid', 'jpg');
-    bases['Streets'] = mkMT('streets-v2', 'png');
-    defaultLayer = bases['Satellite'];
-  } else {
-    bases['Streets'] = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors', minZoom, maxZoom: 19 });
-  }
-  // NRW open 10cm aerial (Geobasis NRW, dl-de/by-2-0) — high-res and license-clean
-  // to cache/host offline. Rendered on demand via WMS, so it works at every zoom.
-  bases['Aerial HD (10cm)'] = L.tileLayer.wms('https://www.wms.nrw.de/geobasis/wms_nw_dop', {
-    layers: 'nw_dop_rgb', format: 'image/png', version: '1.3.0',
-    attribution: '© Geobasis NRW (dl-de/by-2-0)', minZoom, maxZoom: isMT ? 20 : 19, detectRetina: true
+  _meetupMap = new maplibregl.Map({
+    container: 'meetup-map',
+    style: _meetupMapStyle(),
+    center, zoom: startZoom, minZoom, maxZoom,
+    maxBounds: [[west, south], [east, north]],
+    attributionControl: { compact: true },
+    dragRotate: false, pitchWithRotate: false, touchPitch: false
   });
-  if (!defaultLayer) defaultLayer = bases['Aerial HD (10cm)'];
-  defaultLayer.addTo(_meetupMap);
-  // Optional transparent street/place-name overlay — toggle in the layer control,
-  // sits above the base tiles but below the marker. CAVEAT: CARTO labels are free
-  // for NON-COMMERCIAL use only and cap at z18 (overzoomed above); for a
-  // license-clean/offline overlay, swap for self-hosted OSM labels.
-  _meetupMap.createPane('labels');
-  _meetupMap.getPane('labels').style.zIndex = 350;
-  _meetupMap.getPane('labels').style.pointerEvents = 'none';
-  const labels = L.tileLayer(`https://{s}.basemaps.cartocdn.com/rastertiles/light_only_labels/{z}/{x}/{y}${retina}.png`, {
-    attribution: '© CARTO © OpenStreetMap contributors', subdomains: 'abcd', pane: 'labels',
-    minZoom, maxNativeZoom: 18, maxZoom: isMT ? 20 : 19
-  });
-  const layersCtl = L.control.layers(bases, { 'Street names': labels }, { collapsed: false }).addTo(_meetupMap);
-  // Festival points of interest (stages, bars, entrances...) as a toggleable layer.
-  _loadFestivalPois().then(pois => {
-    if (!_meetupMap || !Array.isArray(pois) || !pois.length) return;
-    const poiLayer = L.layerGroup();
-    pois.forEach(p => {
-      if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return;
-      const mk = L.marker([p.lat, p.lng], { icon: _poiIcon(p.type), keyboard: false })
-        .bindTooltip(String(p.name || p.type || ''), { permanent: true, direction: 'right', className: 'poi-tip', offset: [8, 0] });
-      // Reveal the label on hover (works at any zoom), in addition to the
-      // always-on labels at max zoom.
-      mk.on('mouseover', () => { const el = mk.getTooltip() && mk.getTooltip().getElement(); if (el) el.classList.add('poi-hover'); });
-      mk.on('mouseout', () => { const el = mk.getTooltip() && mk.getTooltip().getElement(); if (el) el.classList.remove('poi-hover'); });
-      mk.addTo(poiLayer);
+  _meetupMap.touchZoomRotate.disableRotation();
+  _meetupMap.on('zoom', _updatePoiLabels);
+  _meetupMap.on('load', () => {
+    _updatePoiLabels();
+    // Festival POIs as HTML markers (coloured dot + hover/max-zoom name label).
+    _loadFestivalPois().then(pois => {
+      if (!_meetupMap || !Array.isArray(pois)) return;
+      pois.forEach(p => {
+        if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return;
+        const el = document.createElement('div');
+        el.className = 'poi-marker-wrap';
+        el.innerHTML = `<span class="poi-dot" style="background:${_poiColor(p.type)}"></span><span class="poi-tip">${escapeHtml(String(p.name || ''))}</span>`;
+        new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([p.lng, p.lat]).addTo(_meetupMap);
+      });
     });
-    poiLayer.addTo(_meetupMap);
-    layersCtl.addOverlay(poiLayer, 'Festival POIs');
   });
-  _meetupMarker = L.marker(center, { draggable: true }).addTo(_meetupMap);
+  _meetupMarker = new maplibregl.Marker({ draggable: true, color: '#4f46e5' }).setLngLat(center).addTo(_meetupMap);
   let _userMoved = false;
   _meetupMarker.on('dragstart', () => { _userMoved = true; });
-  _meetupMap.on('click', e => { _userMoved = true; _meetupMarker.setLatLng(e.latlng); });
-  setTimeout(() => { try { _meetupMap && _meetupMap.invalidateSize(); } catch (e) {} }, 120);
-  // No pin yet: fetch GPS in the background and recenter to it if it's on-site
-  // and the user hasn't already placed the pin themselves.
+  _meetupMap.on('click', (e) => { _userMoved = true; _meetupMarker.setLngLat(e.lngLat); });
+  // No pin yet: fetch GPS in the background and recentre if it's on-site and the
+  // user hasn't already placed the pin.
   if (!_meetupCoords && navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(p => {
-      const ll = L.latLng(p.coords.latitude, p.coords.longitude);
-      if (!_userMoved && _meetupMap && _vb.contains(ll)) {
-        _meetupMap.setView(ll, startZoom);
-        _meetupMarker.setLatLng(ll);
+      const lng = p.coords.longitude, lat = p.coords.latitude;
+      if (!_userMoved && _meetupMap && inBounds(lng, lat)) {
+        _meetupMap.easeTo({ center: [lng, lat], zoom: startZoom });
+        _meetupMarker.setLngLat([lng, lat]);
       }
     }, () => {}, { timeout: 8000, maximumAge: 60000 });
   }
 }
 function confirmMeetupMapPin() {
   if (_meetupMarker) {
-    const ll = _meetupMarker.getLatLng();
+    const ll = _meetupMarker.getLngLat();
     _meetupCoords = { lat: ll.lat, lng: ll.lng };
     const field = document.getElementById('meetup-location');
     if (field && !field.value.trim()) field.value = ll.lat.toFixed(4) + ', ' + ll.lng.toFixed(4);
