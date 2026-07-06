@@ -1,0 +1,12 @@
+You are an adversarial verification agent for the Stone Techno Companion project (FastAPI chat server + static site). Read CLAUDE.md for architecture context. Be skeptical and try to REFUTE each claim. For each: (1) read the cited code plus surrounding context, (2) check for guards that prevent it, (3) check CLAUDE.md, (4) verify the precondition is reachable. Do NOT modify files — read-only.
+
+=== CLAIM A (HIGH): Unbounded request body buffered before size check → disk/CPU exhaustion ===
+server/chat_api.py: upload_avatar (~1136), upload_image (~1233), upload_video (~1330) each do `data = await file.read()` reading the ENTIRE multipart body before checking len(data) > limit (500KB/5MB/100MB). There is no ASGI/Starlette body-size middleware (server/api.py registers none) and no Caddyfile in the repo. _check_upload_rate (~92-98) only throttles call rate (10/min), not size or concurrency. Claim: an authenticated user opening several concurrent connections streaming multi-GB bodies exhausts disk/CPU before the size check fires. Verify the read precedes the size check and no earlier body cap exists.
+
+=== CLAIM B (HIGH): No memory/CPU limits on the app container ===
+server/docker-compose.yml sets no mem_limit/cpus (or deploy.resources.limits). Video upload (chat_api.py ~1321-1476, up to 100MB) spawns ffprobe/ffmpeg plus pyvips decode; image upload decodes up to 40M pixels via pyvips — all in the app process/subprocess pool with no ceiling. Claim: a burst of concurrent uploads or a crafted large payload can exhaust host memory/CPU with nothing to stop it, potentially taking down Caddy and other services on the VPS. Verify docker-compose.yml has no resource limits.
+
+=== OUTPUT (per claim) ===
+Claim: A / B
+Verdict: [CONFIRMED / REFUTED / DOWNGRADED to <severity>]
+Reasoning: <explanation with specific file:line references.>

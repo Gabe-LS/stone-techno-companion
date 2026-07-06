@@ -1,0 +1,577 @@
+diff --git a/.gitignore b/.gitignore
+index 714b538..f301de4 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -26,6 +26,7 @@ server/chat/tmp/
+ server/static/bios.json
+ server/static/index.html
+ server/static/photos/
++server/static/thumbs
+ server/static/timetable.json
+ lineup.db.bak
+ lineup.db.bak-shm
+diff --git a/deploy.sh b/deploy.sh
+index afc3374..2334126 100755
+--- a/deploy.sh
++++ b/deploy.sh
+@@ -27,7 +27,9 @@ run() {
+ }
+ 
+ # Vars to sync to production (exclude dev-only: CHAT_BASE_URL, CHAT_ADMIN_TOKEN)
+-PROD_VARS="OPENAI_API_KEY MAILEROO_API_KEY VAPID_PRIVATE_KEY VAPID_PUBLIC_KEY VAPID_CLAIMS_EMAIL GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET CHAT_ADMIN_EMAILS"
++PROD_VARS="OPENAI_API_KEY MAILEROO_API_KEY VAPID_PRIVATE_KEY VAPID_PUBLIC_KEY VAPID_CLAIMS_EMAIL GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET"
++# Optional vars: synced when present, never block the deploy
++OPTIONAL_VARS="CHAT_ADMIN_EMAILS CHAT_EMAIL_FROM CHAT_EVENT_ID"
+ 
+ if [ "$DRY_RUN" = true ]; then
+     echo "=== Stone Techno Deploy (DRY RUN) ==="
+@@ -65,29 +67,68 @@ for var in $PROD_VARS; do
+     fi
+     PROD_ENV="${PROD_ENV}${var}=${val}\n"
+ done
+-# Add CHAT_EVENT_ID if present
+-eid=$(grep "^CHAT_EVENT_ID=" "$LOCAL_ENV" 2>/dev/null | cut -d= -f2- || true)
+-if [ -n "$eid" ]; then
+-    PROD_ENV="${PROD_ENV}CHAT_EVENT_ID=${eid}\n"
+-fi
++# Add optional vars if present
++for var in $OPTIONAL_VARS; do
++    val=$(grep "^${var}=" "$LOCAL_ENV" 2>/dev/null | cut -d= -f2- || true)
++    if [ -n "$val" ]; then
++        PROD_ENV="${PROD_ENV}${var}=${val}\n"
++    fi
++done
+ 
++NVARS=$(printf "%b" "$PROD_ENV" | grep -c '=' | tr -d ' ')
+ if [ "$DRY_RUN" = true ]; then
+-    echo "  [DRY RUN] Would sync $(echo $PROD_VARS | wc -w | tr -d ' ') vars to VPS .env"
++    echo "  [DRY RUN] Would sync $NVARS vars to VPS .env"
+ else
+-    printf "%b" "$PROD_ENV" | ssh "$VPS" "cat > $VPS_DIR/server/.env"
+-    echo "  Synced $(echo $PROD_VARS | wc -w | tr -d ' ') vars to VPS"
++    # Atomic write: temp file + size check + mv, so a dropped connection
++    # can never leave a truncated .env in place
++    ENV_BYTES=$(printf "%b" "$PROD_ENV" | wc -c | tr -d ' ')
++    printf "%b" "$PROD_ENV" | ssh "$VPS" \
++        "cat > $VPS_DIR/server/.env.tmp \
++         && [ \$(wc -c < $VPS_DIR/server/.env.tmp) -eq $ENV_BYTES ] \
++         && mv $VPS_DIR/server/.env.tmp $VPS_DIR/server/.env"
++    echo "  Synced $NVARS vars to VPS"
+ fi
+ 
+ # --- Step 1: Backup VPS data locally ---
+ echo ""
+ echo "[1/6] Downloading VPS data backup..."
++# Checkpoint WAL-mode SQLite DBs first so the copied .db files are
++# self-contained and consistent (committed data may otherwise live only
++# in -wal sidecars captured at a different instant)
++if [ "$DRY_RUN" = true ]; then
++    echo "  [DRY RUN] Would checkpoint SQLite WALs on VPS"
++else
++    ssh "$VPS" "python3 - <<'PY'
++import glob, sqlite3
++for db in glob.glob('$VPS_DIR/server/data/*.db'):
++    try:
++        c = sqlite3.connect(db, timeout=10)
++        c.execute('PRAGMA wal_checkpoint(TRUNCATE)')
++        c.close()
++        print('  checkpointed ' + db)
++    except Exception as e:
++        print('  WARN: checkpoint failed for %s: %s' % (db, e))
++PY"
++fi
+ run mkdir -p "$LOCAL_BACKUPS"
+-run rsync -az --info=progress2 \
++run rsync -az --progress \
+     "$VPS:$VPS_DIR/server/data/" \
+     "$LOCAL_BACKUPS/$TIMESTAMP/"
+ if [ "$DRY_RUN" = false ]; then
+     echo "  Saved to $LOCAL_BACKUPS/$TIMESTAMP/"
+     ls -lh "$LOCAL_BACKUPS/$TIMESTAMP/"
++    # Verify the downloaded backup is restorable before anything destructive
++    for db in "$LOCAL_BACKUPS/$TIMESTAMP"/*.db; do
++        [ -f "$db" ] || continue
++        CHECK=$(python3 -c "import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute('PRAGMA quick_check').fetchone()[0])" "$db" 2>&1 || echo "error")
++        if [ "$CHECK" = "ok" ]; then
++            echo "  Integrity ok: $(basename "$db")"
++        else
++            echo "  ERROR: backup integrity check failed for $(basename "$db"): $CHECK"
++            echo "  Aborting before any change to the VPS."
++            exit 1
++        fi
++    done
+ fi
+ 
+ # --- Step 2: Backup on VPS (timestamped, keeps previous) ---
+diff --git a/server/api.py b/server/api.py
+index fb1e404..58dae98 100644
+--- a/server/api.py
++++ b/server/api.py
+@@ -396,6 +396,10 @@ async def _push_notification_scheduler() -> None:
+                                     # endpoint), which breaks pushes to any other
+                                     # push service in the same loop.
+                                     vapid_claims=dict(vapid_claims),
++                                    # pywebpush defaults to TTL=0 (deliver
++                                    # instantly or discard) -- a briefly
++                                    # disconnected browser loses the push.
++                                    ttl=300,
+                                     timeout=10,
+                                 )
+                                 any_sent = True
+diff --git a/server/chat/chat.html b/server/chat/chat.html
+index def93fb..7a3c97c 100644
+--- a/server/chat/chat.html
++++ b/server/chat/chat.html
+@@ -238,6 +238,8 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
+ .auth-screen p { margin: 0; color: var(--color-muted); font-size: var(--font-sm); text-align: center; }
+ .auth-btn { display: flex; align-items: center; justify-content: center; gap: var(--space-md); width: 280px; padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg); font-size: var(--font-base); cursor: pointer; font-family: inherit; }
+ .auth-btn:active { background: var(--color-surface); }
++.auth-btn.sent { background: var(--color-success); border-color: var(--color-success); color: #fff; pointer-events: none; }
++.auth-btn.sent svg { display: block; }
+ .auth-input { width: 280px; padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--font-base); outline: none; text-align: center; font-family: inherit; }
+ .auth-input:focus { border-color: var(--gray-400); }
+ 
+@@ -505,7 +507,7 @@ async function renderAuth() {
+       <p>Choose how to sign in. No passwords needed.</p>
+       ${googleSection}
+       <input class="auth-input" id="email-input" type="email" placeholder="your@email.com" onkeydown="if(event.key==='Enter')authEmail()">
+-      <button class="auth-btn" onclick="authEmail()">Send magic link</button>
++      <button class="auth-btn" id="email-send-btn" onclick="authEmail()">Send magic link</button>
+     </div>`;
+   if (_googleClientId) _ensureGoogleInit();
+   verify('renderAuth', document.querySelector('.auth-screen'), 'auth screen rendered');
+@@ -590,14 +592,33 @@ function authGoogle() {
+ async function authEmail() {
+   dbg('[AUTH] authEmail');
+   const input = document.getElementById('email-input');
++  const btn = document.getElementById('email-send-btn');
++  if (btn.disabled) { dbg('[AUTH] send blocked: cooldown active'); return; }
+   const email = input.value.trim();
+   if (!email) { showToast('Please enter your email'); return; }
+   const emailRegex = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
+   if (!emailRegex.test(email)) { showToast('Please enter a valid email address'); input.focus(); return; }
++  btn.disabled = true;
++  dbg('[AUTH] send button disabled, requesting magic link');
+   try {
+     await api('/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
++    dbg('[AUTH] magic link sent, showing success state for 10s');
+     showToast('Check your email for the sign-in link');
+-  } catch (e) { showToast(e.message); }
++    btn.classList.add('sent');
++    btn.setAttribute('aria-label', 'Link sent');
++    btn.innerHTML = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
++    setTimeout(() => {
++      dbg('[AUTH] send button cooldown over, restoring');
++      btn.classList.remove('sent');
++      btn.removeAttribute('aria-label');
++      btn.textContent = 'Send magic link';
++      btn.disabled = false;
++    }, 10000);
++  } catch (e) {
++    dbg('[AUTH] magic link request failed: ' + e.message);
++    showToast(e.message);
++    btn.disabled = false;
++  }
+ }
+ 
+ const COUNTRIES = [
+@@ -1292,8 +1313,8 @@ async function handleWSEvent(data) {
+         if (wasAtBottom) scrollToBottom();
+       }
+       if (document.hidden && data.user_id !== currentUser?.id) {
+-        _hiddenUnread = (_hiddenUnread || 0) + 1;
+-        _updateTitleBadge();
++        // Title badge is driven solely by server badge_update events --
++        // counting here too double-counted every hidden-tab message.
+         if (Notification.permission === 'granted') {
+           let preview = '';
+           if (_wasE2ee) { preview = 'Sent you a message'; }
+@@ -1518,7 +1539,6 @@ async function handleWSEvent(data) {
+       roomTypeLookup[data.room_id] = {type: data.type, name: data.name};
+       if (data.count === 0) {
+         delete unreadByRoom[data.room_id];
+-        _hiddenUnread = 0;
+       } else {
+         unreadByRoom[data.room_id] = data.count;
+         if (Notification.permission === 'granted' && document.hidden) _queueBrowserNotification(data);
+@@ -1814,9 +1834,8 @@ function updateTabBadges() {
+   _updateTitleBadge();
+ }
+ 
+-let _hiddenUnread = 0;
+ function _updateTitleBadge() {
+-  const total = Object.values(unreadByRoom).reduce((s, c) => s + c, 0) + _hiddenUnread;
++  const total = Object.values(unreadByRoom).reduce((s, c) => s + c, 0);
+   const _titleBase = _siteShort ? 'Chat · ' + _siteShort : 'Chat';
+   document.title = total > 0 ? `(${total}) ${_titleBase}` : _titleBase;
+ }
+@@ -3988,6 +4007,55 @@ function closeNotificationsModal() {
+   if (el) { el.classList.remove('open'); setTimeout(() => el.remove(), 200); }
+ }
+ 
++// First-run notification prompt: shown once when notifications are off,
++// never again after the user answers (either way) or explicitly disables.
++let _notifPromptChecked = false;
++function _maybePromptNotifications() {
++  if (_notifPromptChecked) return;
++  _notifPromptChecked = true;
++  if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
++    dbg('[NOTIFY] first-run prompt skipped: push unsupported here');
++    return;
++  }
++  if (storageGet('notif_prompt_done') === '1') { dbg('[NOTIFY] first-run prompt skipped: already answered'); return; }
++  if (Notification.permission === 'denied') { dbg('[NOTIFY] first-run prompt skipped: permission denied in browser'); return; }
++  if (storageGet('push_enabled') === '1' || (Notification.permission === 'granted' && _pushSubscribed)) {
++    dbg('[NOTIFY] first-run prompt skipped: already enabled');
++    return;
++  }
++  dbg('[NOTIFY] showing first-run enable prompt');
++  document.getElementById('notif-prompt-modal')?.remove();
++  const overlay = document.createElement('div');
++  overlay.id = 'notif-prompt-modal';
++  overlay.className = 'modal-overlay';
++  overlay.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="notif-prompt-title" onclick="event.stopPropagation()">
++    <div class="modal-header">
++      <span class="modal-title" id="notif-prompt-title">Enable notifications?</span>
++      <button class="modal-close" onclick="_answerNotifPrompt(false)">&times;</button>
++    </div>
++    <div class="modal-body" style="text-align:center">
++      <p style="color:var(--color-muted);font-size:var(--font-sm);margin:0">
++        Get notified when new messages arrive in your DMs, meetups, and rooms &mdash; even when the app is closed.
++      </p>
++    </div>
++    <div class="modal-footer" style="display:flex;flex-direction:column;gap:8px">
++      <button class="modal-btn-primary" onclick="_answerNotifPrompt(true)">Enable notifications</button>
++      <button class="modal-btn-secondary" style="width:100%" onclick="_answerNotifPrompt(false)">Not now</button>
++    </div>
++  </div>`;
++  overlay.addEventListener('click', () => _answerNotifPrompt(false));
++  document.body.appendChild(overlay);
++  requestAnimationFrame(() => overlay.classList.add('open'));
++}
++
++function _answerNotifPrompt(enable) {
++  dbg('[NOTIFY] first-run prompt answered:', enable ? 'enable' : 'skip');
++  storageSet('notif_prompt_done', '1');
++  const el = document.getElementById('notif-prompt-modal');
++  if (el) { el.classList.remove('open'); setTimeout(() => el.remove(), 200); }
++  if (enable) _enableAllNotifications();
++}
++
+ async function _enableAllNotifications() {
+   dbg('[NOTIFY] enableAllNotifications');
+   const perm = await Notification.requestPermission();
+@@ -4030,6 +4098,9 @@ async function _disableAllNotifications() {
+   }
+   _pushSubscribed = false;
+   storageRemove('push_enabled');
++  // An explicit disable counts as answering the first-run prompt --
++  // never nag this user about enabling again.
++  storageSet('notif_prompt_done', '1');
+   showToast('Notifications disabled. Disable in-app alerts in browser settings.');
+   closeNotificationsModal();
+ }
+@@ -4504,6 +4575,7 @@ async function route() {
+   }
+   await loadBlockedUsers();
+   await loadRooms();
++  setTimeout(_maybePromptNotifications, 1500);
+ 
+   if (pathMsg) {
+     try {
+@@ -4602,11 +4674,9 @@ document.addEventListener('visibilitychange', () => {
+   if (!document.hidden) {
+     dbg('[NOTIFY] tab visible');
+     _pushNavRetry();
+-    _hiddenUnread = 0;
+     _nw = null;
+     if (_nwTimer) { clearTimeout(_nwTimer); _nwTimer = null; }
+     _updateTitleBadge();
+-    if (_hiddenUnread > 0 && currentRoom) { renderMessages(); scrollToBottom(); }
+     _setupReadObserver();
+   } else {
+     _flushMarkRead();
+@@ -4623,15 +4693,27 @@ if ('serviceWorker' in navigator) {
+   });
+ }
+ var _visibleInterval = null;
++function _sendVisibleSignal() {
++  // The server treats this event as user activity (resets the 30s idle
++  // clock that gates push eligibility). A visible-but-unfocused window
++  // (behind another app, second monitor) must NOT send it, or the user
++  // can never go idle and never receives a push while the window is open.
++  if (!document.hasFocus()) { dbg('[VIS] keepalive skipped: window not focused'); return; }
++  if (ws && ws.readyState === 1) wsSend('visible', {});
++}
+ function _startVisibleKeepalive() {
+   if (_visibleInterval || document.hidden) return;
+-  if (ws && ws.readyState === 1) wsSend('visible', {});
++  _sendVisibleSignal();
+   _visibleInterval = setInterval(function() {
+-    if (ws && ws.readyState === 1) wsSend('visible', {});
+-    else if (document.hidden) { clearInterval(_visibleInterval); _visibleInterval = null; }
++    if (document.hidden) { clearInterval(_visibleInterval); _visibleInterval = null; return; }
++    _sendVisibleSignal();
+   }, 20000);
+ }
+ _startVisibleKeepalive();
++window.addEventListener('focus', function() {
++  dbg('[VIS] window focused, sending visible signal');
++  _sendVisibleSignal();
++});
+ document.addEventListener('visibilitychange', function() {
+   if (document.hidden) {
+     try { navigator.sendBeacon('/chat/api/push/idle'); } catch(e) {}
+@@ -4668,7 +4750,7 @@ function _clearRoomNotifications(roomId) {
+ 
+ function _updateAppBadge() {
+   if (!navigator.setAppBadge) return;
+-  var total = Object.values(unreadByRoom).reduce(function(s, n) { return s + n; }, 0) + _hiddenUnread;
++  var total = Object.values(unreadByRoom).reduce(function(s, n) { return s + n; }, 0);
+   if (total > 0) navigator.setAppBadge(total);
+   else navigator.clearAppBadge();
+ }
+diff --git a/server/chat_api.py b/server/chat_api.py
+index 2c2c898..ecde459 100644
+--- a/server/chat_api.py
++++ b/server/chat_api.py
+@@ -99,10 +99,12 @@ def _check_upload_rate(user_id: str, max_uploads: int = 10, window: int = 60):
+ 
+ 
+ _SITE_SHORT = ""
++# Fallback for production, where lineup.db is not inside the container
++_SITE_NAME = "Stone Techno"
+ 
+ 
+ def _load_site_short() -> None:
+-    global _SITE_SHORT
++    global _SITE_SHORT, _SITE_NAME
+     lineup_db = Path(__file__).resolve().parent.parent / "lineup.db"
+     if not lineup_db.exists():
+         return
+@@ -110,15 +112,62 @@ def _load_site_short() -> None:
+         db = sqlite3.connect(str(lineup_db))
+         db.row_factory = sqlite3.Row
+         row = db.execute(
+-            "SELECT short_name FROM events WHERE id = ?", (DEFAULT_EVENT_ID,)
++            "SELECT name, edition, short_name FROM events WHERE id = ?",
++            (DEFAULT_EVENT_ID,),
+         ).fetchone()
+         if row and row["short_name"]:
+             _SITE_SHORT = row["short_name"]
++        if row and row["name"]:
++            _SITE_NAME = row["name"] + (f" {row['edition']}" if row["edition"] else "")
+         db.close()
+     except Exception as e:
+         logger.warning("site_short lookup failed (lineup.db not reachable): %s", e)
+ 
+ 
++def _magic_link_email(site: str, verify_url: str, host: str) -> tuple[str, str, str]:
++    """Build (subject, html, plain) for the sign-in email.
++
++    Deliverability notes: multipart with a real text/plain body, visible link
++    text identical to the href, explanation of why the mail was received, and
++    a plain no-image layout — all of these matter to Outlook's spam filter.
++    """
++    # Colors/radius/font mirror the site design tokens in shared.css
++    # (gray scale, --color-bg white surface, --radius-md 8px, --radius-lg 16px)
++    subject = f"Your sign-in link for {site} Chat"
++    font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
++    html = f"""<!DOCTYPE html>
++<html lang="en">
++<body style="margin:0;padding:0;background-color:#f3f4f6;">
++<div style="max-width:480px;margin:0 auto;padding:32px 16px;font-family:{font};color:#111827;">
++  <div style="background-color:#ffffff;border:1px solid #e5e7eb;border-radius:16px;padding:32px 24px;">
++    <p style="font-size:15px;font-weight:600;margin:0 0 24px;">{site} Companion</p>
++    <p style="font-size:15px;line-height:1.6;margin:0 0 8px;">Here is the sign-in link you requested for the {site} festival chat:</p>
++    <p style="margin:28px 0;"><a href="{verify_url}" style="background-color:#111827;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:600;display:inline-block;">Sign in to the chat</a></p>
++    <p style="font-size:13px;line-height:1.6;margin:0 0 8px;color:#374151;">Or copy and paste this link into your browser:</p>
++    <p style="font-size:13px;line-height:1.6;margin:0 0 24px;"><a href="{verify_url}" style="color:#374151;word-break:break-all;">{verify_url}</a></p>
++    <p style="font-size:13px;line-height:1.6;margin:0 0 8px;color:#374151;">The link expires in 15 minutes and works once. After that, just request a new one.</p>
++    <p style="font-size:13px;line-height:1.6;margin:0 0 24px;color:#6b7280;">Didn't request this email? You can safely ignore it &mdash; no account will be created and you won't hear from us again.</p>
++    <p style="font-size:15px;line-height:1.6;margin:0;">See you on the dancefloor.</p>
++  </div>
++  <p style="font-size:12px;line-height:1.6;color:#9ca3af;margin:16px 8px 0;">{site} Companion &middot; you are receiving this one-time email because this address was entered on {host}.</p>
++</div>
++</body>
++</html>"""
++    plain = (
++        f"Here is the sign-in link you requested for the {site} festival chat:\n\n"
++        f"{verify_url}\n\n"
++        f"The link expires in 15 minutes and works once. "
++        f"After that, just request a new one.\n\n"
++        f"Didn't request this email? You can safely ignore it - "
++        f"no account will be created and you won't hear from us again.\n\n"
++        f"See you on the dancefloor.\n\n"
++        f"--\n"
++        f"{site} Companion - you are receiving this one-time email "
++        f"because this address was entered on {host}.\n"
++    )
++    return subject, html, plain
++
++
+ _ADMIN_EMAIL_HASHES: set[str] = set()
+ 
+ 
+@@ -449,14 +498,16 @@ async def auth_email_start(request: Request):
+             )
+             verify_url = f"{base_url}/chat/v/{token}"
+             from_addr = os.environ.get("CHAT_EMAIL_FROM", "no-reply@deftlab.dev")
++            host = base_url.split("://", 1)[-1].split("/")[0].split(":")[0]
++            subject, html, plain = _magic_link_email(_SITE_NAME, verify_url, host)
+             await asyncio.to_thread(
+                 client.send_basic_email,
+                 {
+-                    "from": EmailAddress(from_addr),
++                    "from": EmailAddress(from_addr, f"{_SITE_NAME} Chat"),
+                     "to": [EmailAddress(email)],
+-                    "subject": "Sign in to Festival Chat",
+-                    "html": f'<p>Click to sign in:</p><p><a href="{verify_url}">{verify_url}</a></p>'
+-                    f"<p>This link expires in 15 minutes.</p>",
++                    "subject": subject,
++                    "html": html,
++                    "plain": plain,
+                 },
+             )
+         except Exception as e:
+diff --git a/server/chat_ws.py b/server/chat_ws.py
+index cd26677..a8fcf36 100644
+--- a/server/chat_ws.py
++++ b/server/chat_ws.py
+@@ -392,9 +392,8 @@ async def _push_or_defer(
+         return
+     _push_debounce[key] = now
+     silent = bool(_push_sent.get(key))
+-    _push_sent[key] = True
+     _push_counter += 1
+-    await _do_send_push(
++    sent = await _do_send_push(
+         user_id,
+         room_id,
+         room_type,
+@@ -405,6 +404,11 @@ async def _push_or_defer(
+         silent=silent,
+         push_index=_push_counter,
+     )
++    # Only escalate to silent follow-ups after a push actually went out.
++    # Marking before the send poisoned the flag when the user had no
++    # subscription yet: their first real push then arrived silent.
++    if sent:
++        _push_sent[key] = True
+ 
+ 
+ async def _flush_push_later(
+@@ -430,18 +434,18 @@ async def _do_send_push(
+     msg_id: str | None,
+     silent: bool,
+     push_index: int,
+-) -> None:
++) -> bool:
+     db = get_chat_db()
+     try:
+         subs = get_push_subscriptions(db, user_id)
+         if not subs:
+-            return
++            return False
+         counts = get_unread_counts(db, user_id)
+         room_counts = counts.get(room_id)
+         count = room_counts["count"] if room_counts else 0
+         total_unread = sum(c["count"] for c in counts.values())
+         if count == 0:
+-            return
++            return False
+         last_read = room_counts["last_read_at"] if room_counts else "1970-01-01"
+         now_iso = datetime.now(timezone.utc).isoformat()
+         row = db.execute(
+@@ -470,10 +474,10 @@ async def _do_send_push(
+ 
+     vapid_private_key = os.environ.get("VAPID_PRIVATE_KEY")
+     if not vapid_private_key:
+-        return
++        return False
+     if "BEGIN" not in vapid_private_key and not os.path.isfile(vapid_private_key):
+         logger.warning("VAPID_PRIVATE_KEY file not found: %s", vapid_private_key)
+-        return
++        return False
+ 
+     if count == 1:
+         if room_type == "dm":
+@@ -520,7 +524,8 @@ async def _do_send_push(
+         from pywebpush import webpush, WebPushException
+     except ImportError:
+         logger.warning("pywebpush not installed, skipping chat push")
+-        return
++        return False
++    sent_any = False
+     for sub in subs:
+         try:
+             await asyncio.to_thread(
+@@ -537,8 +542,14 @@ async def _do_send_push(
+                 # (FCM rejects an apple aud with 403; mixed-service users
+                 # only ever reached the first service).
+                 vapid_claims=dict(vapid_claims),
++                # pywebpush defaults to TTL=0 ("deliver this instant or
++                # discard") -- any momentary push-service disconnect on the
++                # client (Brave's GCM socket idles aggressively) silently
++                # drops the push. Let the service hold it for 5 minutes.
++                ttl=300,
+                 timeout=10,
+             )
++            sent_any = True
+         except WebPushException as e:
+             if (
+                 hasattr(e, "response")
+@@ -552,6 +563,7 @@ async def _do_send_push(
+                 logger.warning("Chat push failed for %s: %s", sub["endpoint"][:60], e)
+         except Exception:
+             logger.exception("Unexpected push error")
++    return sent_any
+ 
+ 
+ class ChatRoom:
+diff --git a/stone_techno_companion.py b/stone_techno_companion.py
+index 7cbb0f1..fc5ffd0 100644
+--- a/stone_techno_companion.py
++++ b/stone_techno_companion.py
+@@ -66,7 +66,7 @@ def deploy_to_vps(output_dir: Path, output_path: Path) -> None:
+             if json_src.exists():
+                 shutil.copy2(json_src, staging_path / json_name)
+         server_static = Path(__file__).resolve().parent / "server" / "static"
+-        for fname in ("manifest.json", "sw.js"):
++        for fname in ("manifest.json", "sw.js", "shared.css", "shared.js"):
+             src = server_static / fname
+             if src.exists():
+                 shutil.copy2(src, staging_path / fname)
+@@ -76,16 +76,31 @@ def deploy_to_vps(output_dir: Path, output_path: Path) -> None:
+         thumbs_src = output_dir / "thumbs"
+         if thumbs_src.is_dir():
+             shutil.copytree(thumbs_src, staging_path / "thumbs")
++        # No global --delete: the VPS static dir is the git worktree's
++        # server/static, which also holds tracked assets not staged here —
++        # a mirror sync would delete them and break the next git pull.
+         subprocess.run(
+             [
+                 "rsync",
+                 "-avz",
+-                "--delete",
+                 f"{staging}/",
+                 f"{VPS_HOST}:{VPS_STATIC_DIR}",
+             ],
+             check=True,
+         )
++        # Prune stale files only inside the fully regenerated directories.
++        for subdir in ("photos", "thumbs"):
++            if (staging_path / subdir).is_dir():
++                subprocess.run(
++                    [
++                        "rsync",
++                        "-avz",
++                        "--delete",
++                        f"{staging}/{subdir}/",
++                        f"{VPS_HOST}:{VPS_STATIC_DIR}{subdir}/",
++                    ],
++                    check=True,
++                )
+     print("Deployed to https://stonetechno.deftlab.dev/")
+ 
+ 

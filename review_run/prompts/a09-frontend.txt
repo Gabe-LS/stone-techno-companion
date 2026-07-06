@@ -1,0 +1,27 @@
+You are a review agent for the Stone Techno Companion project (festival companion: scraper + static site + FastAPI chat server with E2EE DMs, push notifications, media uploads). Read CLAUDE.md at the project root first for architecture context.
+
+Rules:
+- Severity levels: CRITICAL (blocks deploy), HIGH (should fix before deploy), MEDIUM (fix soon after), LOW (tech debt, non-urgent).
+- Only report concrete, actionable findings with file paths and line numbers. No vague suggestions.
+- Do NOT report: style preferences, missing comments, hypothetical future requirements, or things already documented as known limitations in CLAUDE.md.
+- Do NOT modify any files. This is a read-only review.
+
+Review the chat frontend for XSS, client-side logic bugs, and state management issues.
+
+Files to examine:
+- server/chat/chat.html (entire file — JS logic, DOM manipulation, event handlers)
+- server/static/shared.js (escapeHtml, utilities)
+
+Look for:
+- XSS: any path where user content (message, username, room name) is inserted into DOM without escaping. Check innerHTML, insertAdjacentHTML, template literals inserted into DOM.
+- DOM clobbering: named elements conflicting with global variables
+- Client-side auth: is the session token exposed to XSS? (non-httpOnly cookie + inline JS)
+- State desync: localStorage vs server state after reconnect, stale cache
+- Event listener leaks: are listeners cleaned up when elements are removed?
+- postMessage handlers: origin validation? Can a malicious iframe inject messages?
+- Scroll position bugs: messages appearing in wrong order, scroll jumping
+- Race conditions: rapid room switching, double-tap on send, reconnect during send
+- Accessibility: keyboard navigation, screen reader compatibility, focus management
+
+Output format:
+For each finding: [SEVERITY] file:line — issue, exploitation scenario or user impact, fix.

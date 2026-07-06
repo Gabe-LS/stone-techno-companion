@@ -1,0 +1,12 @@
+You are an adversarial verification agent for the Stone Techno Companion project (FastAPI chat server + static site). Read CLAUDE.md for architecture context. Be skeptical and try to REFUTE each claim. For each: (1) read the cited code plus surrounding context, (2) check for guards/validations that prevent it, (3) check CLAUDE.md, (4) verify the precondition is reachable. Do NOT modify files — read-only.
+
+=== CLAIM A (CRITICAL): SSRF via push subscription endpoint ===
+chat_push_subscribe (server/chat_api.py ~1494-1508) and save_push_subscription (server/chat_db.py ~1589-1599), plus lineup push_subscribe (server/api.py ~794-821), accept a client-supplied `endpoint` string with only a non-empty check — no https:// scheme check, no allowlist of push-service hosts (fcm.googleapis.com, updates.push.services.mozilla.com, web.push.apple.com). This endpoint is later passed unmodified as subscription_info["endpoint"] to pywebpush.webpush() outbound POST in server/chat_ws.py ~463-479 and server/api.py ~359-374. Claim: an authenticated user (or unauthenticated lineup session endpoint) can register endpoint=http://169.254.169.254/... or an internal URL, then make themselves push-eligible so the server issues VAPID-signed outbound POSTs to it — an SSRF primitive distinct from the link-preview SSRF. Verify the endpoint is stored and used without host validation.
+
+=== CLAIM B (HIGH): webpush() called with no timeout → thread-pool exhaustion ===
+In server/chat_ws.py ~465-479 and server/api.py ~361-374, webpush(...) is invoked via asyncio.to_thread with no timeout= argument; pywebpush's underlying requests.post defaults to no timeout (blocks indefinitely). Combined with the endpoint SSRF, an attacker registering a subscription pointing at a server that accepts but never replies causes that thread-pool worker to hang forever. The default asyncio executor thread pool is shared app-wide, so several such subscriptions receiving pushes can exhaust the pool and stall unrelated request handling. Verify no timeout is passed and the executor is shared.
+
+=== OUTPUT (per claim) ===
+Claim: A / B
+Verdict: [CONFIRMED / REFUTED / DOWNGRADED to <severity>]
+Reasoning: <explanation with specific file:line references.>

@@ -1,0 +1,23 @@
+All changes verified in place. Final report:
+
+## Changes applied to `server/chat/admin.html`
+
+1. **Identity fetch in `init()`** (lines 214, ~236-248): after the `/stats` call succeeds, fetches `window._me = await api('/me')` with a fallback to `{role:'admin', kind:'cookie', label:'admin'}` on failure — set before the tabs HTML is built so gating below can read it synchronously.
+
+2. **Tab bar + identity chip** (lines 215-229): appended `Audit` tab (all roles) and `Admins` tab (template-conditioned on `window._me.role === 'super_admin'`) after `Logs`; added `<div class="admin-me" id="admin-me">` inside `.tabs`, populated post-render via `renderMeChip()` (lines 236-240). Added `.admin-me` CSS rule and `align-items:center` on `.tabs` (in the `<style>` block, right before the `.tab` rule).
+
+3. **Logout** (lines 242-248): `adminLogout()` — token actor clears sessionStorage + calls `renderLogin()`; cookie actor POSTs `/chat/api/logout` then reloads.
+
+4. **Audit tab** (lines 411-446): `render.audit`, `loadMoreAudit`, `renderAudit`, `filterAudit` — mirrors the existing Logs tab pattern (own offset/items/filter state, load-more, search).
+
+5. **Admins tab** (lines 448-484, super-admin only): `render.admins` lists admins with role/permanent/added-by/created columns and a Remove button (omitted for `permanent` rows); `openAdminModal`/`saveAdmin`/`removeAdmin` reuse the shared `#modal-overlay` without touching `_modalRoomId` or the room Enter-key handler, as instructed.
+
+6. **Role-gated destructive controls** (cosmetic, server enforces regardless):
+   - Rooms Delete button — gated on `window._me.role === 'super_admin'` (line 404).
+   - Users dropdown — "Clear warnings" and "Unban" gated to super-admin only; Strike/Mute/Unmute/Ban unchanged for all admins (the dropdown block near `userRow`).
+   - `loadUserDetail`'s "Delete user" button — gated to super-admin.
+   - Banned tab's Unban button — gated to super-admin, shows a muted `--` otherwise (`filterBans`).
+
+All inline `onclick` handlers introduced pass only ids (`e.email_hash`, `u.id`, `r.id`) or come from confirmed literals (`'admins'`) — no untrusted string was placed in an event-handler attribute; all displayed text (`label`, `actor`, `detail`, `target_name`, etc.) goes through `esc()` in content context, consistent with the Stage-A XSS invariant.
+
+No deviations from the spec. I have not run any tests or opened a browser — per your global instructions I'd normally verify before calling this done, but this task explicitly states "You CANNOT run anything; the orchestrator runs browser/test checks," so I'm reporting the edits only, not a verified-working claim.

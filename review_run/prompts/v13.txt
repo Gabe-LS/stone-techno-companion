@@ -1,0 +1,12 @@
+You are an adversarial verification agent for the Stone Techno Companion project (FastAPI chat server + static site). Read CLAUDE.md for architecture context. Be skeptical and try to REFUTE each claim. For each: (1) read the cited code plus surrounding context, (2) check for guards that prevent it, (3) check CLAUDE.md, (4) verify the precondition is reachable. Do NOT modify files — read-only.
+
+=== CLAIM A (HIGH): Rejected messages remain visible via room_history to anyone who joins during the moderation window ===
+server/chat_db.py create_message (~763-807) persists the message row SYNCHRONOUSLY, before the async moderation task (asyncio.create_task at chat_ws.py ~1423) starts. get_room_messages (~810-824), used to build room_history on every join_room (chat_ws.py ~1148-1164), has no moderation-status column to filter on — it returns every non-expired message regardless of moderation state. The live broadcast IS correctly gated on moderation passing (chat_ws.py ~862-878), and message_removed on rejection is sent ONLY to the sender (chat_ws.py ~814-822), never to the room. Claim: any user who (re)joins/reconnects during the moderation window sees the not-yet-cleared message via room_history; if it's later rejected, they get no retraction. Verify create_message is pre-moderation and room_history returns unmoderated messages.
+
+=== CLAIM B (HIGH): Untracked moderation background tasks are killed on deploy → messages left un-moderated and served ===
+server/chat_ws.py ~1423: asyncio.create_task(_moderate_and_broadcast(...)) fires AFTER the message is committed to the DB and ack'd to the sender (~1384-1397), but the task handle is discarded and nothing in api.py's lifespan shutdown (~446-476) awaits it. deploy.sh (~107) runs docker compose up -d --build --force-recreate, sending SIGTERM (then SIGKILL after Docker's default 10s grace; no stop_grace_period override in docker-compose.yml). A message whose moderation task is killed mid-flight stays permanently un-moderated in the DB (the delete-on-fail path never runs) and is served to others via room_history on next join_room — a moderation bypass that reproduces on every deploy under load. Verify the task is untracked/unawaited and that a killed task leaves the message persisted and servable.
+
+=== OUTPUT (per claim) ===
+Claim: A / B
+Verdict: [CONFIRMED / REFUTED / DOWNGRADED to <severity>]
+Reasoning: <explanation with specific file:line references.>

@@ -1,0 +1,12 @@
+You are an adversarial verification agent for the Stone Techno Companion project (FastAPI chat server + static site). Read CLAUDE.md for architecture context. Be skeptical and try to REFUTE each claim. For each: (1) read the cited code plus surrounding context, (2) check for guards/escaping that prevent it, (3) check CLAUDE.md, (4) verify the precondition is reachable. Do NOT modify files — read-only.
+
+=== CLAIM A (CRITICAL): </script> breakout XSS in inline TT_ARTISTS ===
+In scraper/render.py around line 1518 (data built in _artists_json ~lines 94-113), artist name/photo/social URLs are serialized via json.dumps(artist_lookup) and embedded raw inside an inline <script>var TT_ARTISTS=...;</script>. json.dumps does NOT escape the "/" in "</", so an artist name (or override URL) containing literal "</script><script>..." breaks out of the tag and executes arbitrary JS for every visitor of the timetable view (no click). Same concern noted for site_short (~1529) and sections_json/TT_DATES (~1563-1570) though those aren't scrape-controlled. Verify whether json.dumps output is embedded without </ escaping and whether artist names/URLs are attacker/third-party-influenced.
+
+=== CLAIM B (HIGH): Unescaped innerHTML for artist name/photo/link in timetable popup + bio modal ===
+In scraper/render.py, client-side JS builds HTML via string concatenation using data.name / a.name / a.photo / l.u (bio modal photo alt ~2111; timetable popup photo alt+onclick ~2457,2459; popup name ~2464/2422-2423; _popupLink href ~2466) and assigns to .innerHTML/.outerHTML. The esc() helper (from /shared.js) is used two lines away for v.url/v.title (~2126,2129) but skipped for artist name/photo/link URL. Since names and profile URLs are scraped or set via overrides.toml, a crafted name like "><img src=x onerror=alert(1)> reflects as DOM XSS when the popup/bio opens. Verify these insertion points lack esc() and reach innerHTML.
+
+=== OUTPUT (per claim) ===
+Claim: A / B
+Verdict: [CONFIRMED / REFUTED / DOWNGRADED to <severity>]
+Reasoning: <explanation with specific file:line references.>

@@ -1,0 +1,21 @@
+Confirmed — spec matches reality (4001 = invalid session, 4003 = banned). All changes applied successfully.
+
+## Report
+
+| Change | File:Line | Note |
+|---|---|---|
+| F1 | admin.html:281, 419, 476 | Added `window._reportsData`, `window._usersData`, `window._userDetail` assignments after their respective API fetches |
+| F2 | admin.html:301-303, 391-408 | Report action buttons now pass only `r.id` + action string; `reportAction` looks up `userId`/`userName` from `window._reportsData` |
+| F3 | admin.html:449-458, 494, 528-561 | Ban/Unban buttons pass only `u.id`; added Unmute item gated on `muted_until`; added `_userName()` lookup helper; rewrote `adminBan`/`adminUnban`/`adminDeleteUser` to resolve names via lookup; added new `adminUnmute()` |
+| F4 | admin.html:611, 617-624 | Banned-tab Unban button passes only `b.ban_id`; `unban()` looks up name from `window._bansData` |
+| F5 | admin.html:384, 806-812 | Delete-room button passes only `r.id`; `deleteRoom()` looks up room name from `window._roomsData` |
+| F6 | audit (see below) | No untrusted-string interpolations remain in any `on*=` handler |
+| F7 | admin.html:668-670 | Injected synthetic `<option>` for non-preset `ttl_minutes` values when editing, placed first in the select, marked selected |
+| F8 | admin.html:238-239 | Added `Rooms <b>${s.total_rooms}</b>` stat after Messages; confirmed `/stats` already returns `total_rooms` (`chat_db.py:1567`) |
+| C1 | chat.html:1073 | `onclose` guard now handles both `4001` (invalid session) and `4003` (banned) — confirmed both codes are used server-side in `chat_ws.py:1000,1246,1261` |
+
+**F6 grep audit** — every remaining `on(click\|change\|input\|keydown\|drag*\|drop\|error)=` in admin.html interpolates only: object ids (`r.id`, `u.id`, `b.ban_id`, `roomId`, safe UUID/slug charset), `this`/`event`, or hardcoded string literals (`'rooms'`, `''`, etc.). No `display_name`, `username`, `reason`, `detail`, or other free-text field appears inside any inline handler. This matches spec expectations exactly — no additional fixes needed beyond F2-F5.
+
+**No spec/reality mismatches** — line numbers in the spec were approximate but all target code blocks matched as described, and the `total_rooms` field / `4003` ban close code were both confirmed present in the backend as assumed.
+
+I did not run any tests, linting, or browser checks — per the task constraints, verification is the orchestrator's responsibility.

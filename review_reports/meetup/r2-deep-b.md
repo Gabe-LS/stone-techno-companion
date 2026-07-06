@@ -1,0 +1,53 @@
+- ID: DEEP-B-1
+- Severity: critical
+- Confidence: certain
+- Location: server/chat_api.py:1159-1202 (`GET /chat/api/meetups`), server/chat_db.py:1291-1300 (`get_active_meetups`)
+- Finding: `list_meetups` returns every active meetup for the event — including exact `location_lat`/`location_lng`, `location_label`, `note`, and the full attendee roster (`id` + `display_name`) — to any authenticated chat user, with zero check against `meetup_attendees`, `room_memberships` of the origin `stage_id`, or the `blocks` table. Every other meetup read/write path in the codebase (WS `join_room`, `send_message`, `add_reaction`/`remove_reaction`, report, `/rooms/{id}/messages`, `/rooms/{id}/online`, `_get_room_notification_targets`) explicitly checks `meetup_attendees` before granting access — this is the one place that doesn't, and it's the primary listing endpoint the client calls (`loadMeetups()` in chat.html). A stranger who has never opened the stage room, was never invited, or has blocked/been blocked by the creator gets the creator's precise real-world GPS location, free-text note, and the identity of everyone who RSVP'd, for every meetup at the festival, just by being logged into chat.
+- Recommendation: Filter results to meetups where the requesting user is in `meetup_attendees` for that meetup_id, OR is a member of the origin `stage_id` room (matching the invite-visibility model), and additionally suppress meetups whose creator has blocked the requester (or vice versa). Consider omitting `location_lat`/`location_lng`/`note`/attendee list entirely for non-attendees and returning only title/time/attendee_count, mirroring the minimization already used in `get_all_meetups` (admin view, which omits lat/lng).
+- Effort: M
+- Risk of change: low
+
+- ID: DEEP-B-2
+- Severity: critical
+- Confidence: certain
+- Location: server/chat_api.py:1205-1229 (`GET /chat/api/meetups/{meetup_id}`)
+- Finding: Same gap as DEEP-B-1 but on the single-meetup detail endpoint: no attendee/membership/block check whatsoever before returning `location_lat`, `location_lng`, `location_label`, `note`, and attendees. This directly contradicts the pattern used four lines away in `/rooms/{room_id}/messages` and `/rooms/{room_id}/online` (chat_api.py:1072-1077, 1143-1148), which both gate `type == "meetup"` on `SELECT 1 FROM meetup_attendees WHERE meetup_id = ? AND user_id = ?`. The inconsistency strongly indicates this is an oversight, not an intentional public-detail design — the detail endpoint should be at least as restrictive as the list endpoint it complements.
+- Recommendation: Add the identical `meetup_attendees` (and stage-room-membership) check used in the sibling endpoints before returning location/note/attendee fields; 403 otherwise (or return a minimized public subset: title/time only).
+- Effort: S
+- Risk of change: low
+
+- ID: DEEP-B-3
+- Severity: high
+- Confidence: certain
+- Location: server/chat_ws.py:1809-1832 (`create_meetup` handler, `meetup_created` broadcast)
+- Finding: When a meetup is created with a `stage_id`, the server broadcasts a `meetup_created` WS event carrying the *entire* meetup object — including `location_lat`, `location_lng`, `location_label`, `note`, `creator_id` — to every socket connected to that stage room (or the main room, if no `stage_id`). Unlike DM/meetup rooms, joining a normal group room's WS channel (chat_ws.py:1354-1371) requires no `room_memberships` check, so effectively anyone currently connected to that room receives the full location payload in real time, without ever becoming an attendee. This duplicates DEEP-B-1's exposure through a push channel: even if the REST list/detail endpoints are locked down, this broadcast alone leaks precise GPS + note to bystanders in the room who never joined the meetup. (Note: the separate `meetup_invite` chat message the same handler posts, lines 1772-1824, is properly minimized — it carries only `meetup_id`/`title`/`meetup_time` — so this is specifically about the `meetup_created` event, not the visible invite card.)
+- Recommendation: Strip `location_lat`/`location_lng`/`note`/`creator_id` from the `meetup_created` payload broadcast to the room (send only `id`/`title`/`meetup_time`/`stage_id`), and only deliver the full object to the creator (who already has it) and to users as they actually join the meetup (e.g., on `join_meetup` ack or via the now-gated `GET /meetups/{id}`).
+- Effort: S
+- Risk of change: low
+
+- ID: DEEP-B-4
+- Severity: medium
+- Confidence: certain
+- Location: server/chat_api.py:1094-1117 (`GET /chat/api/messages/{message_id}`)
+- Finding: The message-permalink/context endpoint checks `dm_participants` for DM rooms (line 1104-1109) but has no corresponding check for `type == "meetup"`. It doesn't return message content or location data, but it does return `room_name` (the meetup title) and `room_type` for any `message_id` belonging to a meetup room, to any authenticated user who knows or guesses a message id — regardless of attendance. This is a narrower version of the same asymmetry as DEEP-B-2 (meetup treated less strictly than DM right next to it) and is inconsistent with the attendee-gating pattern applied everywhere else meetup rooms are touched.
+- Recommendation: Add a `meetup_attendees` membership check alongside the existing `dm` check, returning 404 for non-attendees, consistent with the DM branch and with `/rooms/{id}/messages`.
+- Effort: S
+- Risk of change: low
+
+- ID: DEEP-B-5
+- Severity: low
+- Confidence: certain
+- Location: server/chat/chat.html:3266-3273, 3286-3289 (`useMeetupGPS`/`submitMeetup`); server/chat_db.py:1205-1263 (`create_meetup`)
+- Finding: The client sends full-precision `navigator.geolocation` coordinates (`pos.coords.latitude`/`longitude`, effectively sub-meter precision) to the server verbatim, and the server stores/returns them unmodified. Combined with DEEP-B-1/DEEP-B-2's open access, any non-attendee who could read the data gets the creator's location resolved far more precisely than a "meetup" use case (crowd-scale festival gathering point) requires — the display-only `toFixed(4)` in the location input is purely cosmetic and doesn't limit what's transmitted or stored.
+- Recommendation: Once access is properly gated (DEEP-B-1/2), also consider rounding stored/returned coordinates to ~4 decimal places (~11m) server-side as defense-in-depth data minimization, independent of who can see them.
+- Effort: S
+- Risk of change: low
+
+- ID: DEEP-B-6
+- Severity: low
+- Confidence: speculative
+- Location: server/chat_api.py:1267-1286 (`POST/DELETE /chat/api/meetups/{meetup_id}/join`)
+- Finding: Joining/leaving a meetup has no check that the meetup exists, is still active (not expired), or that the requester is a member of the originating `stage_id` room / not blocked by the creator. Since attendee identity is (once DEEP-B-1 is fixed) meant to be a restricted, attendee-only view, allowing any user to add themselves as an "attendee" of any meetup — including ones tied to a stage room they never joined — undermines that boundary from the write side: a stranger can self-insert into the attendee list and thereby appear to other attendees, or (currently) be readable by anyone via DEEP-B-1.
+- Recommendation: Validate the meetup exists and is not expired before insert; consider requiring stage-room membership (or at least not-blocked-by-creator) to join, mirroring the intent behind the attendee-gated read paths.
+- Effort: S
+- Risk of change: medium

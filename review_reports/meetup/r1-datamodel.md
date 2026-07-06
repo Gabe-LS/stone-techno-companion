@@ -1,0 +1,53 @@
+- ID: datamodel-1
+- Severity: high
+- Confidence: certain
+- Location: server/chat_db.py:94-109 (`rooms` schema, no FK to `meetups`), :146-166 (`meetups`/`meetup_attendees`), :532-551 (`delete_user`), :1314-1322 (`delete_meetup`), :1325-1361 (`purge_expired_meetups`)
+- Finding: A meetup's chat room is joined to its `meetups` row only by matching UUID (`room.id == meetup.id`) — there is no `FOREIGN KEY` from `rooms` to `meetups` in either direction, and no `ON DELETE` cascade can ever fire between them. Every one of the three teardown call sites (`delete_meetup`, `purge_expired_meetups`, `delete_user`) has to independently remember to delete the room row. They currently all do, but two of the three (`purge_expired_meetups`, `delete_user`) hand-roll their own subset of `delete_room`'s logic instead of calling it, so any future change to `delete_room` (e.g. an added side table, a new cleanup step) silently stops applying to those two paths. This is a correctness landmine by construction, not by a currently-observed bug: the schema itself allows a `meetups` row to exist with no `rooms` row (or vice versa) and nothing at the DB layer would ever notice or repair it.
+- Recommendation: Make `rooms.id` the actual foreign key target — either add `meetups.room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE` (dropping the "same UUID" convention in favor of an explicit column) so deleting a room cascades to the meetup, or at minimum have `purge_expired_meetups`/`delete_user` call the shared `delete_room()` helper instead of re-implementing it inline.
+- Effort: M
+- Risk of change: medium
+
+- ID: datamodel-2
+- Severity: medium
+- Confidence: certain
+- Location: server/chat_db.py:1219-1224 (`create_meetup`), server/chat_api.py:1245-1248 (`create_meetup_endpoint`), server/chat_ws.py:1756-1759 (`create_meetup` WS handler); compare server/chat/chat.html:3286-3287 (`meetupDate.toISOString()`)
+- Finding: `meetup_time` is accepted from the client as an arbitrary ISO-8601 string and only validated with a bare `datetime.fromisoformat()` try/except — there is no check that the parsed value is timezone-aware. The only shipped client (`chat.html`) always sends a UTC `Z`-suffixed timestamp via `.toISOString()`, so in practice `mt` ends up aware. But nothing enforces this at the API boundary: a naive string (no offset) is silently accepted, and `expires = (mt + timedelta(minutes=meetup_ttl)).isoformat()` then produces a naive `expires_at` string with no timezone suffix. That value is later compared as plain TEXT against `_now()` (`datetime.now(timezone.utc).isoformat()`, always `+00:00`-suffixed) in `get_active_meetups` (`m.expires_at > ?`) and `purge_expired_meetups` (`expires_at <= ?`). Lexicographic string comparison of a naive vs. an aware timestamp is not a reliable proxy for chronological comparison, and `ORDER BY m.meetup_time` in `get_active_meetups` would also sort inconsistently across mixed naive/aware rows. A caller other than the shipped `chat.html` (a future client, a script, a malformed request) that omits the offset would silently produce a meetup whose true expiry is off by whatever the wall-clock/UTC skew is, with no error surfaced anywhere.
+- Recommendation: In `create_meetup` (or at the API/WS boundary before calling it), reject or normalize naive datetimes explicitly — e.g. `if mt.tzinfo is None: raise ValueError(...)` or assume UTC via `mt.replace(tzinfo=timezone.utc)` — so `expires_at` is always stored in the same aware, offset-suffixed format as `_now()`.
+- Effort: S
+- Risk of change: low
+
+- ID: datamodel-3
+- Severity: medium
+- Confidence: certain
+- Location: server/chat_db.py:146-159 (`meetups.stage_id TEXT`, no FK), server/chat_ws.py:1751-1793 (`create_meetup` WS handler uses `stage_id` as a chat `rooms.id`), server/chat_api.py:2724-2736 (`admin_delete_room`)
+- Finding: `meetups.stage_id` is misleadingly named — despite the column name, it does not reference the lineup DB's `stages` table at all; it actually stores the id of the **chat room** the meetup was created from (`chat.html:3287` sends `stage_id: currentRoom`, and the WS handler does `get_room(db, stage_id)` to find the invite target). This value is never validated against `rooms` at insert time and has no FK. If an admin later deletes that originating group room via `DELETE /admin/rooms/{id}` (allowed for any non-dm/non-meetup room), every meetup created from it is left with a permanently dangling `stage_id` — not enforced, not cleaned up, and not detectable except by the `GET /meetups?stage_id=` filter silently returning fewer results. There's also no requirement that a submitted `stage_id` correspond to a real room at all; any string is accepted and stored.
+- Recommendation: Rename the column to reflect what it actually holds (e.g. `origin_room_id`) and either add `REFERENCES rooms(id) ON DELETE SET NULL`, or validate at creation time that `get_room(db, stage_id)` exists before accepting it.
+- Effort: S
+- Risk of change: low
+
+- ID: datamodel-4
+- Severity: low
+- Confidence: speculative
+- Location: server/chat_db.py:1325-1361 (`purge_expired_meetups`)
+- Finding: The function captures `expired_ids` from an initial `SELECT ... WHERE expires_at <= now` and tears down each room/messages in a loop, but the final `meetups` deletion re-runs `DELETE FROM meetups WHERE expires_at <= ?` with the same captured `now` string rather than `WHERE id IN (expired_ids)`. If a meetup's `expires_at` falls due during the (small but non-zero) window between the initial `SELECT` and this final `DELETE` — e.g. a slow purge cycle, lock contention under load — its `meetups` row would be deleted by this second query without ever going through the loop that deletes its `rooms`/`messages` rows, orphaning the room permanently (nothing else will ever look for it again since its `meetups` row is gone).
+- Recommendation: Use the captured `expired_ids` list (e.g. `DELETE FROM meetups WHERE id IN (...)`) for the final delete instead of re-filtering by timestamp, so the set of rows torn down and the set of rows deleted are guaranteed identical.
+- Effort: S
+- Risk of change: low
+
+- ID: datamodel-5
+- Severity: medium
+- Confidence: certain
+- Location: server/chat_api.py:2903-2917 (`admin_delete_meetup`) vs. server/chat_ws.py:2195-2205 (purge loop) and :2217-2226 (empty-DM purge)
+- Finding: When a meetup is expired by the background purge loop or when an empty DM room is purged, the code explicitly evicts the room from the in-memory `manager.rooms` / `manager._room_meta` maps (`manager.rooms.pop(room_id, None)`) in addition to the DB delete — this is the established pattern for keeping the WebSocket manager's runtime state consistent with the DB. `admin_delete_meetup` deletes the DB rows via `delete_meetup()` but never performs this eviction. After an admin manually deletes a meetup, `manager.rooms`/`manager._room_meta` for that id remain populated with whatever connection/member state existed at deletion time, diverging from the DB (which now has no `rooms` row at all). Any code that later indexes into `manager.rooms[meetup_id]` (broadcast, presence, online-count queries) would be operating on a stale in-memory room for an id the DB no longer recognizes.
+- Recommendation: Add the same `manager.rooms.pop(meetup_id, None)` / `manager._room_meta.pop(meetup_id, None)` cleanup to `admin_delete_meetup` (and audit `admin_delete_room` for the same gap on regular room deletion).
+- Effort: S
+- Risk of change: low
+
+- ID: datamodel-6
+- Severity: low
+- Confidence: likely
+- Location: server/chat_db.py:1266-1280 (`join_meetup`/`leave_meetup`), server/chat_api.py:1267-1286, server/chat_ws.py:1834-1866
+- Finding: Neither the REST endpoints nor the WS handlers verify a `meetup_id` actually exists (or is still active) before calling `join_meetup`/`leave_meetup`. `leave_meetup`'s `DELETE` is a silent no-op for a bad id, which is harmless, but `join_meetup`'s `INSERT` relies entirely on the `meetup_attendees.meetup_id` FK constraint to reject a nonexistent id — that raises an uncaught `sqlite3.IntegrityError`. In the REST path this presumably surfaces as an unhandled 500; in the WS path (`chat_ws.py:1241` `handle_chat_ws`) it's caught only by the outer `except Exception: logger.exception(...)` around the whole message loop, which terminates that user's entire WebSocket connection (not just the one bad request) for what is a simple bad/expired/deleted meetup id (e.g. a stale client tab clicking "Join" on an already-expired meetup).
+- Recommendation: Check `get_meetup`/room existence explicitly before insert and return a graceful 404 / no-op event instead of relying on the FK violation to fail the whole request or connection.
+- Effort: S
+- Risk of change: low

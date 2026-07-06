@@ -1,0 +1,12 @@
+You are an adversarial verification agent for the Stone Techno Companion project (FastAPI chat server + static site). Read CLAUDE.md for architecture context. Be skeptical and try to REFUTE each claim. For each: (1) read the cited code plus surrounding context, (2) check for guards that prevent it, (3) check CLAUDE.md, (4) verify the precondition is reachable. Do NOT modify files — read-only.
+
+=== CLAIM A (HIGH): Push scheduler dedup skipped by a partial-loop exception → duplicate lineup pushes ===
+server/api.py ~335-402: the per-subscription loop `for endpoint, p256dh, auth in subs:` only catches WebPushException (~line 376). pywebpush.webpush() calls requests.post internally and does NOT wrap raw network failures (timeouts, ConnectionError, SSL errors) in WebPushException — those propagate past line 376 to the outer except Exception (~398), which aborts the whole (session_id, slot_id) block BEFORE the `if any_sent: INSERT INTO sent_notifications` (~387-392) runs. If subscription #1 already succeeded (any_sent=True) and subscription #2 hits a transient network error, the dedup row is never written — the next 60s tick re-sends the same "starts in 10 min" push to subscription #1. Verify the exception handling scope and that the dedup INSERT is skipped when a later endpoint raises a non-WebPushException.
+
+=== CLAIM B (HIGH): pushsubscriptionchange repairs only the chat subscription; lineup record left stale ===
+server/static/sw.js ~95-112: the pushsubscriptionchange handler POSTs the new subscription only to /chat/api/push/subscribe. It has no way to hit the lineup endpoint (/api/session/{code}/push/subscribe) because the SW has no lineup session code. Per CLAUDE.md, lineup and chat share one browser subscription and this event can rotate it. If it fires while only chat is open, lineup's push_subscriptions (hearts.db) row is permanently stale until the user reloads /line-up. Verify the SW handler only updates the chat side and there's no server-side reconciliation that also updates the lineup row.
+
+=== OUTPUT (per claim) ===
+Claim: A / B
+Verdict: [CONFIRMED / REFUTED / DOWNGRADED to <severity>]
+Reasoning: <explanation with specific file:line references.>

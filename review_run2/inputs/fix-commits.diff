@@ -1,0 +1,922 @@
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 2230a12..f415c27 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -368,7 +368,7 @@ e2ee_device_keys   — user_id + device_id (PK), public_key, created_at, last_se
+ 
+ ### Auth
+ 
+-Two passwordless providers: Google OAuth and Email magic link (via Maileroo, 3,000/mo free). Disposable domains blocked via 7,860-domain blocklist (`chat/disposable_domains.txt`). Email validation via `email-validator` library (RFC 5322 + DNS MX check). Device fingerprinting for ban enforcement. Session cookies (non-httpOnly for WS access, Secure in production, SameSite=Strict in production / Lax in dev, path=/). Email tokens stored in DB (not memory) — survive server restarts.
++Two passwordless providers: Google OAuth and Email magic link (via Maileroo, 3,000/mo free). Disposable domains blocked via 7,860-domain blocklist (`chat/disposable_domains.txt`). Email validation via `email-validator` library (RFC 5322 + DNS MX check). Ban enforcement is provider-based and covers every linked provider of a user (Google + email); the `bans.device_fingerprint` column exists and the matching logic works, but clients do not currently submit a fingerprint, so it is unused (bans by a new account are possible — mitigated by moderation, not fingerprinting). Session cookies (non-httpOnly for WS access, Secure in production, SameSite=Strict in production / Lax in dev, path=/). Email tokens stored in DB (not memory) — survive server restarts.
+ 
+ ### Profile Setup
+ 
+@@ -398,7 +398,7 @@ Layers 2 and 3 run in parallel via `asyncio.gather`. Word filter blocks before A
+ 
+ **Moderation logging**: OpenAI scores logged via `logger.info` — top 5 categories above 0.1 threshold, FLAGGED line with threshold comparison. `logging.basicConfig(level=INFO)` configured at startup.
+ 
+-**Strike system**: 4-step escalation with expiring strikes (4h TTL, reset on new violation). 1st = warning, 2nd = warning, 3rd = 30-min mute, 4th = permanent ban. Lifetime mute counter: 3 total mutes across the event = permanent ban (prevents cycling). Same escalation for all content types including drugs. Bans stored by provider_id + device fingerprint. Admin ban covers ALL of a user's linked `user_providers` (not just the frozen `users.provider/provider_id`, so a second provider can't evade it) and closes the user's live WebSocket connections immediately (a still-connected user can't keep sending — DMs included). `secure_delete=ON` zeros deleted data on disk.
++**Strike system**: 4-step escalation with expiring strikes (4h TTL, reset on new violation). 1st = warning, 2nd = warning, 3rd = 30-min mute, 4th = permanent ban. Lifetime mute counter: 3 total mutes across the event = permanent ban (prevents cycling). Same escalation for all content types including drugs. Bans stored by provider_id (per linked provider); the device-fingerprint column is unused (clients do not submit one). Automatic bans (strike/mute/AI) and admin ban both cover ALL of a user's linked `user_providers` (not just the frozen `users.provider/provider_id`, so a second provider can't evade it) and closes the user's live WebSocket connections immediately (a still-connected user can't keep sending — DMs included). `secure_delete=ON` zeros deleted data on disk.
+ 
+ ### End-to-End Encryption (DMs)
+ 
+diff --git a/server/api.py b/server/api.py
+index 496b04b..fb1e404 100644
+--- a/server/api.py
++++ b/server/api.py
+@@ -52,6 +52,31 @@ SESSION_COOKIE_MAX_AGE = 7776000
+ logger = logging.getLogger(__name__)
+ 
+ 
++class _RedactTokensFilter(logging.Filter):
++    # Keep access logs but strip secret tokens that ride in the request path:
++    # the session token in the WebSocket URL and the magic-link token in the
++    # verify URL. Without this they land in uvicorn's access log in plaintext.
++    _PATTERNS = [
++        re.compile(r"(/ws/chat/)[^/\s?]+"),
++        re.compile(r"(/chat/v/)[^/\s?]+"),
++        re.compile(r"([?&](?:token|code|id_token)=)[^&\s]+"),
++    ]
++
++    def _redact(self, value):
++        if isinstance(value, str):
++            for pat in self._PATTERNS:
++                value = pat.sub(r"\1[REDACTED]", value)
++        return value
++
++    def filter(self, record: logging.LogRecord) -> bool:
++        if record.args:
++            record.args = tuple(self._redact(a) for a in record.args)
++        return True
++
++
++logging.getLogger("uvicorn.access").addFilter(_RedactTokensFilter())
++
++
+ def _set_session_cookie(response: Response, session_id: str) -> None:
+     response.set_cookie(
+         key=SESSION_COOKIE,
+@@ -486,6 +511,20 @@ async def lifespan(app: FastAPI):
+ 
+ app = FastAPI(lifespan=lifespan)
+ 
++# Hard ceiling above the largest legitimate upload (100MB video). Rejects
++# oversized bodies by Content-Length before FastAPI parses/spools them, so a
++# multi-GB body can't exhaust disk/memory. Per-endpoint limits still enforce
++# exact sizes on the actual bytes.
++_MAX_BODY_BYTES = 110 * 1024 * 1024
++
++
++@app.middleware("http")
++async def _limit_body_size(request: Request, call_next):
++    cl = request.headers.get("content-length")
++    if cl and cl.isdigit() and int(cl) > _MAX_BODY_BYTES:
++        return Response("Payload too large", status_code=413)
++    return await call_next(request)
++
+ 
+ @app.post("/api/session", status_code=201)
+ def create_session(request: Request, response: Response):
+@@ -800,6 +839,27 @@ def get_vapid_key():
+     return {"public_key": key}
+ 
+ 
++_ALLOWED_PUSH_HOST_SUFFIXES = (
++    ".googleapis.com",  # FCM (Chrome / Brave / Chromium Edge)
++    ".push.services.mozilla.com",  # Firefox
++    ".push.apple.com",  # Safari / iOS
++    ".notify.windows.com",  # WNS (legacy Edge)
++)
++
++
++def _is_valid_push_endpoint(endpoint: str) -> bool:
++    from urllib.parse import urlparse
++
++    try:
++        p = urlparse(endpoint)
++    except ValueError:
++        return False
++    if p.scheme != "https" or not p.hostname:
++        return False
++    host = p.hostname.lower()
++    return any(host.endswith(s) for s in _ALLOWED_PUSH_HOST_SUFFIXES)
++
++
+ @app.post("/api/session/{code}/push/subscribe", status_code=204)
+ async def push_subscribe(code: str, request: Request):
+     if not TOKEN_RE.match(code):
+@@ -812,6 +872,8 @@ async def push_subscribe(code: str, request: Request):
+     auth = keys.get("auth", "")
+     if not endpoint or not p256dh or not auth:
+         raise HTTPException(422, "Missing subscription fields")
++    if not _is_valid_push_endpoint(endpoint):
++        raise HTTPException(422, "Invalid push endpoint")
+     db = _get_db()
+     try:
+         session_id, _, _, _, readonly = _find_session(db, code)
+diff --git a/server/chat/chat.html b/server/chat/chat.html
+index eed6aa7..def93fb 100644
+--- a/server/chat/chat.html
++++ b/server/chat/chat.html
+@@ -1377,6 +1377,29 @@ async function handleWSEvent(data) {
+       updateSidebarCount(data.room_id);
+       if (data.room_id === currentRoom) { updateHeaderCount(); renderMemberItems(); }
+       break;
++    case 'profile_updated':
++      // A peer edited their profile: refresh their identity in the online
++      // lists and in already-loaded messages so it updates without a reload.
++      Object.keys(onlineByRoom).forEach(rid => {
++        (onlineByRoom[rid] || []).forEach(u => {
++          if (u.user_id === data.user_id) {
++            u.display_name = data.display_name; u.username = data.username;
++            u.color_index = data.color_index; u.avatar_url = data.avatar_url;
++            u.country = data.country;
++          }
++        });
++      });
++      Object.keys(messagesByRoom).forEach(rid => {
++        (messagesByRoom[rid] || []).forEach(m => {
++          if (m.user_id === data.user_id) {
++            m.display_name = data.display_name; m.username = data.username;
++            m.color_index = data.color_index; m.avatar_url = data.avatar_url;
++          }
++        });
++      });
++      renderMessages();
++      if (currentRoom) renderMemberItems();
++      break;
+     case 'rooms_changed':
+       dbg('[ROOM] rooms_changed, reloading');
+       loadRooms().then(() => {
+@@ -1961,6 +1984,11 @@ async function _verifyDmEncryptionState(roomId) {
+   if (!E2EE.available) return;
+   const peer = _getDmPeerUserId(roomId);
+   if (!peer) { dbg('[E2EE] verify state: peer unresolved for', roomId); return; }
++  // Invalidate the cached device list so the next encrypt() re-fetches the
++  // peer's current devices. Without this, a device the peer registered while
++  // we were offline is never picked up (key_rotated only reaches live
++  // connections), and our messages silently fail to decrypt on it.
++  delete E2EE._deviceLists[peer];
+   try {
+     const wasUnencrypted = _unencryptedRooms.has(roomId);
+     const r = await fetch('/chat/api/keys/' + peer, { credentials: 'same-origin' });
+@@ -2510,15 +2538,15 @@ async function sendChatMessage(type, content, replyToId) {
+         dbg('[E2EE] message encrypted for room ' + roomId);
+       }
+     } catch (e) {
+-      dbg('[E2EE] encrypt error:', e && e.message);
+-      if (_roomEncrypted.has(roomId)) {
+-        showToast('Message not sent. Encryption error.');
+-        return null;
+-      }
+-      if (!_unencryptedRooms.has(roomId)) {
+-        _unencryptedRooms.add(roomId);
+-        showToast('Encryption unavailable for this user');
+-      }
++      // A thrown error means the peer's key state is INDETERMINATE (network
++      // failure, timeout, 5xx) -- NOT a confirmed keyless peer, which returns
++      // null above and is the only case where plaintext fallback is valid.
++      // Never fall back to plaintext on an indeterminate error: fail closed and
++      // let the user retry, so a transient failure can't silently downgrade a
++      // real encrypted conversation to plaintext.
++      dbg('[E2EE] encrypt error, could not verify encryption:', e && e.message);
++      showToast('Message not sent — could not verify encryption. Tap send to retry.');
++      return null;
+     }
+   }
+ 
+@@ -4396,6 +4424,14 @@ const E2EE = {
+     await wrapAll(peerUserId, peerDevices);
+     await wrapAll(currentUser.id, ownDevices);
+ 
++    // If every device wrap failed, the envelope would be undecryptable by
++    // anyone (including our own reload) while still looking encrypted. Treat
++    // that as an error so the caller fails closed rather than sending a broken
++    // envelope.
++    if (Object.keys(keys).length === 0) {
++      throw new Error('no device keys could be wrapped');
++    }
++
+     return JSON.stringify({ e2ee: true, v: 2, sd: this._deviceId, ct, keys });
+   },
+ };
+diff --git a/server/chat_api.py b/server/chat_api.py
+index fff2e63..2c2c898 100644
+--- a/server/chat_api.py
++++ b/server/chat_api.py
+@@ -132,6 +132,21 @@ def _load_admin_emails() -> None:
+ 
+ 
+ _email_rate: dict[str, list[float]] = {}
++_auth_rate: dict[str, list[float]] = {}
++
++
++def _check_auth_rate(request: Request, max_n: int = 20, window: int = 300) -> None:
++    ip = request.client.host if request.client else "unknown"
++    now = time.monotonic()
++    _auth_rate[ip] = [t for t in _auth_rate.get(ip, []) if now - t < window]
++    if len(_auth_rate[ip]) >= max_n:
++        raise HTTPException(429, "Too many requests. Try again later.")
++    _auth_rate[ip].append(now)
++    if len(_auth_rate) > 1000:
++        stale = [k for k, v in _auth_rate.items() if all(now - t >= window for t in v)]
++        for k in stale:
++            del _auth_rate[k]
++
+ 
+ DISPOSABLE_DOMAINS: set[str] = set()
+ _DISPOSABLE_PATH = Path(__file__).resolve().parent / "chat" / "disposable_domains.txt"
+@@ -258,9 +273,9 @@ async def get_config():
+ 
+ @router.post("/auth/google")
+ async def auth_google(request: Request, response: Response):
++    _check_auth_rate(request)
+     body = await request.json()
+     id_token = body.get("id_token")
+-    fingerprint = body.get("device_fingerprint")
+     if not id_token:
+         raise HTTPException(400, "id_token required")
+ 
+@@ -272,8 +287,11 @@ async def auth_google(request: Request, response: Response):
+         from google.oauth2 import id_token as google_id_token
+         from google.auth.transport import requests as google_requests
+ 
+-        info = google_id_token.verify_oauth2_token(
+-            id_token, google_requests.Request(), client_id
++        info = await asyncio.to_thread(
++            google_id_token.verify_oauth2_token,
++            id_token,
++            google_requests.Request(),
++            client_id,
+         )
+         provider_id = info["sub"]
+         email = info.get("email", "")
+@@ -294,7 +312,7 @@ async def auth_google(request: Request, response: Response):
+             if user:
+                 add_user_provider(db, user["id"], "google", provider_id)
+                 logger.info("Linked google provider to existing user %s", user["id"])
+-        result = _authenticate(db, "google", provider_id, name, fingerprint, response)
++        result = _authenticate(db, "google", provider_id, name, None, response)
+         if email:
+             add_user_provider(db, result["id"], "email", hash_email(email))
+         return result
+@@ -304,9 +322,9 @@ async def auth_google(request: Request, response: Response):
+ 
+ @router.post("/auth/google/code")
+ async def auth_google_code(request: Request, response: Response):
++    _check_auth_rate(request)
+     body = await request.json()
+     code = body.get("code")
+-    fingerprint = body.get("device_fingerprint")
+     if not code:
+         raise HTTPException(400, "code required")
+ 
+@@ -318,7 +336,8 @@ async def auth_google_code(request: Request, response: Response):
+     try:
+         import httpx
+ 
+-        token_resp = httpx.post(
++        token_resp = await asyncio.to_thread(
++            httpx.post,
+             "https://oauth2.googleapis.com/token",
+             data={
+                 "code": code,
+@@ -327,6 +346,7 @@ async def auth_google_code(request: Request, response: Response):
+                 "redirect_uri": "postmessage",
+                 "grant_type": "authorization_code",
+             },
++            timeout=10,
+         )
+         token_data = token_resp.json()
+         id_token_str = token_data.get("id_token")
+@@ -336,8 +356,11 @@ async def auth_google_code(request: Request, response: Response):
+         from google.oauth2 import id_token as google_id_token
+         from google.auth.transport import requests as google_requests
+ 
+-        info = google_id_token.verify_oauth2_token(
+-            id_token_str, google_requests.Request(), client_id
++        info = await asyncio.to_thread(
++            google_id_token.verify_oauth2_token,
++            id_token_str,
++            google_requests.Request(),
++            client_id,
+         )
+         provider_id = info["sub"]
+         email = info.get("email", "")
+@@ -358,7 +381,7 @@ async def auth_google_code(request: Request, response: Response):
+             if user:
+                 add_user_provider(db, user["id"], "google", provider_id)
+                 logger.info("Linked google provider to existing user %s", user["id"])
+-        result = _authenticate(db, "google", provider_id, name, fingerprint, response)
++        result = _authenticate(db, "google", provider_id, name, None, response)
+         if email:
+             add_user_provider(db, result["id"], "email", hash_email(email))
+         return result
+@@ -380,7 +403,6 @@ async def auth_email_start(request: Request):
+             del _email_rate[k]
+     body = await request.json()
+     email = (body.get("email") or "").strip().lower()
+-    fingerprint = body.get("device_fingerprint")
+     try:
+         from email_validator import validate_email
+ 
+@@ -402,7 +424,7 @@ async def auth_email_start(request: Request):
+ 
+     db = _get_db()
+     try:
+-        ban = is_banned(db, "email", provider_id, fingerprint)
++        ban = is_banned(db, "email", provider_id)
+         if ban:
+             raise HTTPException(403, f"You have been banned: {ban['reason']}")
+ 
+@@ -410,7 +432,7 @@ async def auth_email_start(request: Request):
+         db.execute(
+             "INSERT OR REPLACE INTO email_tokens (token, email, provider_id, fingerprint, expires_at) "
+             "VALUES (?, ?, ?, ?, ?)",
+-            (token, email, provider_id, fingerprint, expires),
++            (token, email, provider_id, None, expires),
+         )
+         db.commit()
+     finally:
+@@ -449,6 +471,7 @@ async def auth_email_start(request: Request):
+ 
+ @router.get("/verify")
+ async def auth_email_verify(request: Request, token: str = ""):
++    _check_auth_rate(request)
+     db = _get_db()
+     try:
+         row = db.execute(
+@@ -500,6 +523,12 @@ async def auth_delete_account(request: Request, response: Response):
+         response.delete_cookie("chat_session")
+         from chat_ws import manager
+ 
++        for conn_id, ws in list(manager.user_conns.get(user["id"], {}).items()):
++            try:
++                asyncio.create_task(ws.close(code=4003, reason="Account deleted"))
++            except Exception:
++                pass
++
+         for batch in removed:
+             asyncio.create_task(
+                 manager.broadcast_to_room(
+@@ -660,6 +689,25 @@ async def auth_update_profile(request: Request):
+                 db.commit()
+             except sqlite3.IntegrityError:
+                 raise HTTPException(400, "Username taken")
++            from chat_ws import manager
++
++            fresh = get_user(db, user["id"])
++            if fresh:
++                fk = fresh.keys()
++                await manager.broadcast_profile_update(
++                    user["id"],
++                    {
++                        "display_name": fresh["display_name"],
++                        "username": fresh["username"] if "username" in fk else "",
++                        "color_index": (
++                            fresh["color_index"] if "color_index" in fk else 0
++                        ),
++                        "avatar_url": (
++                            fresh["avatar_url"] if "avatar_url" in fk else ""
++                        ),
++                        "country": fresh["country"] if "country" in fk else "",
++                    },
++                )
+         return {"ok": True}
+     finally:
+         db.close()
+@@ -955,6 +1003,10 @@ async def get_meetup(meetup_id: str, request: Request):
+ async def create_meetup_endpoint(request: Request):
+     user, db = _get_user_from_cookie(request)
+     try:
++        from chat_ws import manager
++
++        if not manager.check_rate_limit(user["id"]):
++            raise HTTPException(429, "Too many requests. Slow down.")
+         body = await request.json()
+         title = (body.get("title") or "")[:60]
+         meetup_time = body.get("meetup_time")
+@@ -1491,6 +1543,27 @@ async def chat_vapid_key():
+     )
+ 
+ 
++_ALLOWED_PUSH_HOST_SUFFIXES = (
++    ".googleapis.com",  # FCM (Chrome / Brave / Chromium Edge)
++    ".push.services.mozilla.com",  # Firefox
++    ".push.apple.com",  # Safari / iOS
++    ".notify.windows.com",  # WNS (legacy Edge)
++)
++
++
++def _is_valid_push_endpoint(endpoint: str) -> bool:
++    from urllib.parse import urlparse
++
++    try:
++        p = urlparse(endpoint)
++    except ValueError:
++        return False
++    if p.scheme != "https" or not p.hostname:
++        return False
++    host = p.hostname.lower()
++    return any(host.endswith(s) for s in _ALLOWED_PUSH_HOST_SUFFIXES)
++
++
+ @router.post("/push/subscribe", status_code=204)
+ async def chat_push_subscribe(request: Request):
+     user, db = _get_user_from_cookie(request)
+@@ -1502,6 +1575,8 @@ async def chat_push_subscribe(request: Request):
+         auth = keys.get("auth", "")
+         if not endpoint or not p256dh or not auth:
+             raise HTTPException(422, "Missing subscription fields")
++        if not _is_valid_push_endpoint(endpoint):
++            raise HTTPException(422, "Invalid push endpoint")
+         save_push_subscription(db, user["id"], endpoint, p256dh, auth)
+         return Response(status_code=204)
+     finally:
+diff --git a/server/chat_db.py b/server/chat_db.py
+index 5dbaa75..3a76442 100644
+--- a/server/chat_db.py
++++ b/server/chat_db.py
+@@ -127,7 +127,8 @@ def init_chat_db(db: sqlite3.Connection) -> None:
+             reply_to_id  TEXT REFERENCES messages(id) ON DELETE SET NULL,
+             media_url    TEXT,
+             expires_at   TEXT NOT NULL,
+-            created_at   TEXT NOT NULL
++            created_at   TEXT NOT NULL,
++            moderation_status TEXT NOT NULL DEFAULT 'approved'
+         );
+         CREATE INDEX IF NOT EXISTS idx_messages_expires ON messages(expires_at);
+         CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room_id, created_at);
+@@ -178,8 +179,8 @@ def init_chat_db(db: sqlite3.Connection) -> None:
+ 
+         CREATE TABLE IF NOT EXISTS reports (
+             id               TEXT PRIMARY KEY,
+-            reporter_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+-            reported_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
++            reporter_id      TEXT NOT NULL,
++            reported_user_id TEXT NOT NULL,
+             message_snapshot TEXT NOT NULL,
+             room_id          TEXT NOT NULL,
+             reason           TEXT NOT NULL,
+@@ -258,6 +259,12 @@ def _migrate_chat_db(db: sqlite3.Connection) -> None:
+     if "media_url" not in cols:
+         db.execute("ALTER TABLE messages ADD COLUMN media_url TEXT")
+         db.commit()
++    if "moderation_status" not in cols:
++        db.execute(
++            "ALTER TABLE messages ADD COLUMN moderation_status "
++            "TEXT NOT NULL DEFAULT 'approved'"
++        )
++        db.commit()
+ 
+     db.execute(
+         "INSERT OR IGNORE INTO user_providers (user_id, provider, provider_id, created_at) "
+@@ -309,6 +316,39 @@ def _migrate_chat_db(db: sqlite3.Connection) -> None:
+         )
+         db.commit()
+ 
++    # Drop the ON DELETE CASCADE FKs on reports so the moderation evidence
++    # survives user deletion (like bans, which are deliberately FK-less).
++    # SQLite can't drop a constraint in place, so rebuild the table.
++    if db.execute("PRAGMA foreign_key_list(reports)").fetchall():
++        db.commit()
++        db.execute("PRAGMA foreign_keys=OFF")
++        db.executescript(
++            """
++            BEGIN;
++            CREATE TABLE reports_new (
++                id               TEXT PRIMARY KEY,
++                reporter_id      TEXT NOT NULL,
++                reported_user_id TEXT NOT NULL,
++                message_snapshot TEXT NOT NULL,
++                room_id          TEXT NOT NULL,
++                reason           TEXT NOT NULL,
++                status           TEXT NOT NULL DEFAULT 'pending',
++                unverified       INTEGER NOT NULL DEFAULT 0,
++                created_at       TEXT NOT NULL,
++                reviewed_at      TEXT
++            );
++            INSERT INTO reports_new
++                SELECT id, reporter_id, reported_user_id, message_snapshot, room_id,
++                       reason, status, unverified, created_at, reviewed_at
++                FROM reports;
++            DROP TABLE reports;
++            ALTER TABLE reports_new RENAME TO reports;
++            COMMIT;
++            """
++        )
++        db.execute("PRAGMA foreign_keys=ON")
++        db.commit()
++
+     db.execute("UPDATE rooms SET is_moderated = 0 WHERE type = 'dm'")
+     db.commit()
+ 
+@@ -804,6 +844,7 @@ def create_message(
+     ttl_minutes: int | None = DEFAULT_MESSAGE_TTL_MIN,
+     reply_to_id: str | None = None,
+     media_url: str | None = None,
++    moderation_status: str = "approved",
+ ) -> dict:
+     msg_id = _uuid()
+     now = _now()
+@@ -813,8 +854,8 @@ def create_message(
+         else "9999-12-31T23:59:59+00:00"
+     )
+     db.execute(
+-        "INSERT INTO messages (id, room_id, user_id, type, content, reply_to_id, media_url, expires_at, created_at) "
+-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
++        "INSERT INTO messages (id, room_id, user_id, type, content, reply_to_id, media_url, expires_at, created_at, moderation_status) "
++        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         (
+             msg_id,
+             room_id,
+@@ -825,6 +866,7 @@ def create_message(
+             media_url,
+             expires,
+             now,
++            moderation_status,
+         ),
+     )
+     db.execute("UPDATE rooms SET last_message_at = ? WHERE id = ?", (now, room_id))
+@@ -854,6 +896,7 @@ def get_room_messages(
+         "LEFT JOIN messages rm ON rm.id = m.reply_to_id "
+         "LEFT JOIN users ru ON ru.id = rm.user_id "
+         "WHERE m.room_id = ? AND m.expires_at > ? "
++        "AND m.moderation_status != 'pending' "
+         "ORDER BY m.created_at DESC LIMIT ?",
+         (room_id, _now(), limit),
+     ).fetchall()
+@@ -1179,8 +1222,8 @@ def get_pending_reports(db: sqlite3.Connection) -> list[sqlite3.Row]:
+         "SELECT r.*, u.display_name AS reporter_name, "
+         "u2.display_name AS reported_name "
+         "FROM reports r "
+-        "JOIN users u ON u.id = r.reporter_id "
+-        "JOIN users u2 ON u2.id = r.reported_user_id "
++        "LEFT JOIN users u ON u.id = r.reporter_id "
++        "LEFT JOIN users u2 ON u2.id = r.reported_user_id "
+         "WHERE r.status = 'pending' ORDER BY r.created_at DESC"
+     ).fetchall()
+ 
+@@ -1448,7 +1491,7 @@ def get_user_admin_detail(db: sqlite3.Connection, user_id: str) -> dict | None:
+     reports = db.execute(
+         "SELECT r.id, u.display_name AS reporter_name, r.reason, "
+         "r.message_snapshot, r.status, r.unverified, r.created_at "
+-        "FROM reports r JOIN users u ON u.id = r.reporter_id "
++        "FROM reports r LEFT JOIN users u ON u.id = r.reporter_id "
+         "WHERE r.reported_user_id = ? ORDER BY r.created_at DESC",
+         (user_id,),
+     ).fetchall()
+diff --git a/server/chat_ws.py b/server/chat_ws.py
+index e7e39a0..cd26677 100644
+--- a/server/chat_ws.py
++++ b/server/chat_ws.py
+@@ -15,7 +15,7 @@ import time
+ from collections import defaultdict
+ from datetime import datetime, timezone
+ from pathlib import Path
+-from urllib.parse import urlparse
++from urllib.parse import urljoin, urlparse
+ 
+ from fastapi import WebSocket, WebSocketDisconnect
+ 
+@@ -167,6 +167,68 @@ async def _is_safe_preview_url(url: str) -> bool:
+     return True
+ 
+ 
++async def _resolve_safe_ip(hostname: str) -> str | None:
++    try:
++        infos = await asyncio.to_thread(socket.getaddrinfo, hostname, None)
++    except (socket.gaierror, ValueError):
++        return None
++    safe = []
++    for _family, _, _, _, sockaddr in infos:
++        try:
++            addr = ipaddress.ip_address(sockaddr[0])
++        except ValueError:
++            return None
++        if (
++            addr.is_private
++            or addr.is_loopback
++            or addr.is_link_local
++            or addr.is_reserved
++            or addr.is_multicast
++            or addr.is_unspecified
++        ):
++            return None
++        safe.append(sockaddr[0])
++    return safe[0] if safe else None
++
++
++async def _pinned_preview_get(client, url: str, headers: dict):
++    # Resolve + validate the host, then connect to the validated IP literal with
++    # Host header + TLS SNI preserved. The OS never re-resolves, so the address
++    # can't be rebound to an internal/metadata target between check and connect
++    # (SSRF DNS-rebinding TOCTOU).
++    parsed = urlparse(url)
++    if parsed.scheme not in ("http", "https"):
++        return None
++    host = parsed.hostname
++    if (
++        not host
++        or host == "localhost"
++        or host.endswith(".local")
++        or host.endswith(".internal")
++    ):
++        return None
++    ip = await _resolve_safe_ip(host)
++    if not ip:
++        return None
++    port = parsed.port or (443 if parsed.scheme == "https" else 80)
++    ip_host = f"[{ip}]" if ":" in ip else ip
++    path = parsed.path or "/"
++    if parsed.query:
++        path += "?" + parsed.query
++    pinned_url = f"{parsed.scheme}://{ip_host}:{port}{path}"
++    req_headers = dict(headers)
++    req_headers["Host"] = host if port in (80, 443) else f"{host}:{port}"
++    return await asyncio.wait_for(
++        client.get(
++            pinned_url,
++            headers=req_headers,
++            follow_redirects=False,
++            extensions={"sni_hostname": host},
++        ),
++        timeout=3.0,
++    )
++
++
+ async def _fetch_link_preview(url: str) -> dict | None:
+     if not await _is_safe_preview_url(url):
+         return None
+@@ -214,18 +276,17 @@ async def _fetch_og_preview(client, url: str) -> dict | None:
+         "User-Agent": "Mozilla/5.0 (compatible; StoneCompanionBot/1.0)",
+         "Accept": "text/html",
+     }
+-    resp = await asyncio.wait_for(
+-        client.get(url, headers=_og_headers, follow_redirects=False),
+-        timeout=3.0,
+-    )
++    resp = await _pinned_preview_get(client, url, _og_headers)
++    if resp is None:
++        return None
+     if resp.is_redirect:
+         location = resp.headers.get("location", "")
+-        if not location or not await _is_safe_preview_url(location):
++        if not location:
++            return None
++        location = urljoin(url, location)
++        resp = await _pinned_preview_get(client, location, _og_headers)
++        if resp is None:
+             return None
+-        resp = await asyncio.wait_for(
+-            client.get(location, headers=_og_headers, follow_redirects=False),
+-            timeout=3.0,
+-        )
+     if resp.status_code != 200:
+         return None
+     cl = resp.headers.get("content-length")
+@@ -476,6 +537,7 @@ async def _do_send_push(
+                 # (FCM rejects an apple aud with 403; mixed-service users
+                 # only ever reached the first service).
+                 vapid_claims=dict(vapid_claims),
++                timeout=10,
+             )
+         except WebPushException as e:
+             if (
+@@ -524,6 +586,7 @@ class ConnectionManager:
+         self.conn_user: dict[str, str] = {}
+         self.user_rooms: dict[str, set[str]] = {}
+         self._rate_buckets: dict[str, list[float]] = {}
++        self._broadcast_buckets: dict[str, list[float]] = {}
+         self.user_badge_rooms: dict[str, set[str]] = {}
+         self.user_unread: dict[str, dict[str, int]] = {}
+         self._room_meta: dict[str, dict] = {}
+@@ -567,6 +630,7 @@ class ConnectionManager:
+             self.user_badge_rooms.pop(user_id, None)
+             self.user_unread.pop(user_id, None)
+             self._rate_buckets.pop(user_id, None)
++            self._broadcast_buckets.pop(user_id, None)
+             self._recent_msgs.pop(user_id, None)
+             self._last_active_ts.pop(user_id, None)
+             for room_id in rooms:
+@@ -651,6 +715,21 @@ class ConnectionManager:
+         if room:
+             await room.broadcast(event, exclude_conn=exclude_conn)
+ 
++    async def broadcast_profile_update(self, user_id: str, identity: dict) -> None:
++        # Called when a user edits their profile: refresh the cached identity in
++        # every room they're in and tell connected peers so already-rendered
++        # messages and the member list update without a reconnect.
++        for room_id in list(self.user_rooms.get(user_id, set())):
++            room = self.rooms.get(room_id)
++            if room and user_id in room.user_info:
++                room.user_info[user_id].update(identity)
++                if identity.get("display_name"):
++                    room.user_names[user_id] = identity["display_name"]
++            await self.broadcast_to_room(
++                room_id,
++                {"event": "profile_updated", "user_id": user_id, **identity},
++            )
++
+     async def send_to_user(self, user_id: str, event: dict) -> None:
+         conns = self.user_conns.get(user_id, {})
+         payload = json.dumps(event)
+@@ -689,6 +768,20 @@ class ConnectionManager:
+         bucket.append(now)
+         return True
+ 
++    def check_broadcast_rate(
++        self, user_id: str, max_events: int = 30, window_secs: int = 10
++    ) -> bool:
++        # Separate, lenient bucket for high-frequency room fan-out events
++        # (typing, reactions, join/leave) so they can't be spammed into a
++        # broadcast-storm DoS, without consuming the send-message budget.
++        now = time.monotonic()
++        bucket = self._broadcast_buckets.setdefault(user_id, [])
++        bucket[:] = [t for t in bucket if now - t < window_secs]
++        if len(bucket) >= max_events:
++            return False
++        bucket.append(now)
++        return True
++
+     def check_duplicate(self, user_id: str, text: str, window_secs: int = 120) -> bool:
+         if len(text) <= 4:
+             return False
+@@ -859,6 +952,29 @@ async def _moderate_and_broadcast(
+                 )
+             return
+ 
++        # Moderation passed: mark the message approved so room history serves
++        # it (moderated messages start 'pending'; unmoderated are already
++        # 'approved', so this is a no-op for them).
++        db.execute(
++            "UPDATE messages SET moderation_status = 'approved' WHERE id = ?",
++            (msg["id"],),
++        )
++        db.commit()
++
++        # Re-fetch the sender's identity so a profile edit made after this
++        # connection's handshake is reflected in the live broadcast, not the
++        # frozen handshake values.
++        sender = get_user(db, user_id)
++        if sender:
++            _sk = sender.keys()
++            display_name = sender["display_name"]
++            if "username" in _sk:
++                username = sender["username"]
++            if "color_index" in _sk:
++                color_index = sender["color_index"]
++            if "avatar_url" in _sk:
++                avatar_url = sender["avatar_url"]
++
+         event_data = {
+             "event": "message",
+             "id": msg["id"],
+@@ -1105,6 +1221,8 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
+                 manager._last_ws_activity[user_id] = time.monotonic()
+ 
+             if event == "join_room":
++                if not manager.check_broadcast_rate(user_id):
++                    continue
+                 room_id = data.get("room_id")
+                 room_row = get_room(db, room_id) if room_id else None
+                 if room_id and room_row:
+@@ -1164,6 +1282,8 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
+                     )
+ 
+             elif event == "leave_room":
++                if not manager.check_broadcast_rate(user_id):
++                    continue
+                 room_id = data.get("room_id")
+                 if room_id:
+                     await manager.leave_room(room_id, conn_id)
+@@ -1361,15 +1481,25 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
+                 _media_url = None
+                 if msg_type in ("image", "video"):
+                     _explicit = data.get("media_url")
+-                    if isinstance(_explicit, str) and _explicit:
++                    if isinstance(_explicit, str) and _UPLOAD_URL_RE.match(_explicit):
+                         _media_url = _explicit
+                     else:
+                         try:
+-                            _media_url = json.loads(content).get("url") or None
++                            _candidate = json.loads(content).get("url") or ""
+                         except Exception:
+-                            _media_url = None
++                            _candidate = ""
++                        _media_url = (
++                            _candidate if _UPLOAD_URL_RE.match(_candidate) else None
++                        )
+ 
+                 room_ttl = send_room["ttl_minutes"]
++                # Moderated messages are held 'pending' so room history never
++                # serves them before moderation clears them (and a
++                # moderation task killed mid-flight leaves them unservable
++                # rather than silently un-moderated).
++                _mod_status = (
++                    "pending" if bool(send_room["is_moderated"]) else "approved"
++                )
+                 msg = create_message(
+                     db,
+                     room_id,
+@@ -1379,6 +1509,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
+                     ttl_minutes=room_ttl,
+                     reply_to_id=reply_to_id,
+                     media_url=_media_url,
++                    moderation_status=_mod_status,
+                 )
+ 
+                 try:
+@@ -1442,6 +1573,8 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
+                 )
+ 
+             elif event == "typing":
++                if not manager.check_broadcast_rate(user_id):
++                    continue
+                 room_id = data.get("room_id")
+                 active = data.get("active", False)
+                 if room_id:
+@@ -1599,6 +1732,8 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
+                     unblock_user(db, user_id, target)
+ 
+             elif event == "add_reaction":
++                if not manager.check_broadcast_rate(user_id):
++                    continue
+                 message_id = data.get("message_id")
+                 emoji = data.get("emoji")
+                 if not message_id or not emoji or emoji not in ALLOWED_REACTIONS:
+@@ -1632,6 +1767,8 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
+                     )
+ 
+             elif event == "remove_reaction":
++                if not manager.check_broadcast_rate(user_id):
++                    continue
+                 message_id = data.get("message_id")
+                 emoji = data.get("emoji")
+                 if not message_id or not emoji:
+@@ -1690,14 +1827,26 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
+                                 )
+                                 else json.loads(msg_row["content"]).get("url", "")
+                             )
+-                            filename = url.rsplit("/", 1)[-1]
+-                            stem = filename.rsplit(".", 1)[0]
+-                            (_UPLOADS_DIR / filename).unlink(missing_ok=True)
+-                            (_UPLOADS_DIR / f"{stem}_mod.webp").unlink(missing_ok=True)
+-                            for i in range(3):
+-                                (_UPLOADS_DIR / f"{stem}_mod{i}.webp").unlink(
++                            # Only unlink the physical file if no OTHER message
++                            # references it. Prevents a crafted media_url pointing
++                            # at another user's file from deleting it on the
++                            # attacker's own message delete.
++                            others = db.execute(
++                                "SELECT COUNT(*) FROM messages "
++                                "WHERE media_url = ? AND id != ?",
++                                (url, message_id),
++                            ).fetchone()[0]
++                            if url and _UPLOAD_URL_RE.match(url) and others == 0:
++                                filename = url.rsplit("/", 1)[-1]
++                                stem = filename.rsplit(".", 1)[0]
++                                (_UPLOADS_DIR / filename).unlink(missing_ok=True)
++                                (_UPLOADS_DIR / f"{stem}_mod.webp").unlink(
+                                     missing_ok=True
+                                 )
++                                for i in range(3):
++                                    (_UPLOADS_DIR / f"{stem}_mod{i}.webp").unlink(
++                                        missing_ok=True
++                                    )
+                         except Exception:
+                             pass
+                     db.execute("DELETE FROM messages WHERE id = ?", (message_id,))
+@@ -1712,11 +1861,17 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
+                     )
+ 
+             elif event == "report_message":
++                if not manager.check_rate_limit(user_id):
++                    continue
+                 message_id = data.get("message_id")
+                 reason = data.get("reason")
+                 client_content = data.get("message_content")
+                 if not message_id or not reason:
+                     continue
++                if isinstance(reason, str):
++                    reason = reason[:500]
++                if isinstance(client_content, str):
++                    client_content = client_content[:2000]
+                 msg_row = db.execute(
+                     "SELECT * FROM messages WHERE id = ?", (message_id,)
+                 ).fetchone()
+diff --git a/tests/test_chat_ws.py b/tests/test_chat_ws.py
+index e8dd33f..d8814a9 100644
+--- a/tests/test_chat_ws.py
++++ b/tests/test_chat_ws.py
+@@ -1168,7 +1168,9 @@ class TestVapidClaimsIsolation:
+ 
+         seen = []
+ 
+-        def fake_webpush(subscription_info, data, vapid_private_key, vapid_claims):
++        def fake_webpush(
++            subscription_info, data, vapid_private_key, vapid_claims, **kwargs
++        ):
+             endpoint = subscription_info["endpoint"]
+             seen.append((endpoint, vapid_claims.get("aud")))
+             # Replicate pywebpush's in-place mutation of the caller's dict.

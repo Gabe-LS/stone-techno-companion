@@ -1,0 +1,742 @@
+diff --git a/server/chat/chat.html b/server/chat/chat.html
+index e40e42c..2859b84 100644
+--- a/server/chat/chat.html
++++ b/server/chat/chat.html
+@@ -1075,6 +1075,27 @@ function _isE2eeContent(content) {
+   }
+ }
+ 
++function _genDeviceId() {
++  const bytes = crypto.getRandomValues(new Uint8Array(16));
++  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
++}
++
++function _b64FromParts(iv, bytes) {
++  const combined = new Uint8Array(iv.length + bytes.length);
++  combined.set(iv, 0);
++  combined.set(bytes, iv.length);
++  let bin = '';
++  for (let i = 0; i < combined.length; i++) bin += String.fromCharCode(combined[i]);
++  return btoa(bin);
++}
++
++function _partsFromB64(b64) {
++  const bin = atob(b64);
++  const combined = new Uint8Array(bin.length);
++  for (let i = 0; i < bin.length; i++) combined[i] = bin.charCodeAt(i);
++  return { iv: combined.slice(0, 12), data: combined.slice(12) };
++}
++
+ function _getDmPeerUserId(roomId) {
+   const members = membersByRoom[roomId];
+   if (members && members.length) {
+@@ -1099,48 +1120,111 @@ function _waitForMembers(roomId, timeoutMs) {
+   });
+ }
+ 
+-async function _decryptMessageContent(msg) {
+-  if (!_isE2eeContent(msg.content)) return msg;
+-  const peerUserId = _getDmPeerUserId(msg.room_id);
+-  if (!peerUserId) {
+-    dbg('[E2EE] cannot decrypt, unknown peer for room', msg.room_id);
+-    msg.content = JSON.stringify({ text: '[Encrypted message]' });
+-    msg._decryptFailed = true;
++function _sentinel(msg) {
++  msg.content = JSON.stringify({ text: '[Encrypted message]' });
++  msg._decryptFailed = true;
++  return msg;
++}
++
++async function _validateDecryptedMedia(msg, plaintext) {
++  if (msg.type !== 'image' && msg.type !== 'video') return true;
++  let inner = null;
++  try { inner = JSON.parse(plaintext); } catch (e) { inner = null; }
++  if (!inner || !_UPLOAD_URL_RE.test(inner.url || '')) {
++    dbg('[E2EE] decrypted media URL failed validation, room=' + msg.room_id);
++    return false;
++  }
++  return true;
++}
++
++async function _decryptV2(msg, parsed, envelope) {
++  const myWrapped = parsed.keys[E2EE._deviceId];
++  if (!myWrapped) {
++    // A missing slot is deterministic (device predates or postdates the
++    // message, or the sender device was pruned) -- not a stale-cache
++    // condition, so no retry.
++    dbg('[E2EE] no key slot for this device, msg=' + msg.id + ' sender=' + msg.user_id);
++    _sentinel(msg);
++    msg._noSlot = true;
+     return msg;
+   }
+-  const envelope = msg.content;
+   try {
+-    const parsed = JSON.parse(msg.content);
+-    const plaintext = await E2EE.decrypt(msg.room_id, peerUserId, parsed.ct);
+-    if (msg.type === 'image' || msg.type === 'video') {
+-      let inner = null;
+-      try { inner = JSON.parse(plaintext); } catch (e) { inner = null; }
+-      if (!inner || !_UPLOAD_URL_RE.test(inner.url || '')) {
+-        dbg('[E2EE] decrypted media URL failed validation, room=' + msg.room_id);
+-        msg.content = JSON.stringify({ text: '[Encrypted message]' });
+-        msg._decryptFailed = true;
+-        _roomEncrypted.add(msg.room_id);
+-        return msg;
+-      }
++    const senderDevices = await E2EE.getDeviceList(msg.user_id);
++    if (!senderDevices) throw new Error('sender has no device keys');
++    const senderDevice = senderDevices.find(d => d.device_id === parsed.sd);
++    if (!senderDevice) throw new Error('sender device ' + parsed.sd + ' not found');
++    const kek = await E2EE.getKek(msg.room_id, msg.user_id, parsed.sd, senderDevice.publicKey);
++    const wrapped = _partsFromB64(myWrapped);
++    const mkBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: wrapped.iv }, kek, wrapped.data);
++    const mkKey = await crypto.subtle.importKey('raw', mkBuf, { name: 'AES-GCM' }, false, ['decrypt']);
++    const body = _partsFromB64(parsed.ct);
++    const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: body.iv }, mkKey, body.data);
++    const plaintext = new TextDecoder().decode(plainBuf);
++    if (!(await _validateDecryptedMedia(msg, plaintext))) {
++      _sentinel(msg);
++      _roomEncrypted.add(msg.room_id);
++      return msg;
+     }
+     msg.content = plaintext;
+     _roomEncrypted.add(msg.room_id);
+   } catch (e) {
+-    dbg('[E2EE] decrypt failed:', e && e.message);
++    dbg('[E2EE] v2 decrypt failed:', e && e.message);
+     if (msg.id != null && !_decryptRetried.has(msg.id)) {
+       _decryptRetried.add(msg.id);
+-      dbg('[E2EE] retry guard: invalidating caches and retrying decrypt once, msg=' + msg.id);
+-      delete E2EE._sharedKeys[msg.room_id];
+-      delete E2EE._peerKeys[peerUserId];
++      // Sender may have re-keyed the same device_id -- invalidate the
++      // sender's device list and all derived KEKs, then retry once.
++      dbg('[E2EE] retry guard: invalidating device list + keks, retrying once, msg=' + msg.id);
++      delete E2EE._deviceLists[msg.user_id];
++      E2EE._keks = {};
+       msg.content = envelope;
+       return _decryptMessageContent(msg);
+     }
+-    msg.content = JSON.stringify({ text: '[Encrypted message]' });
+-    msg._decryptFailed = true;
++    _sentinel(msg);
+   }
+   return msg;
+ }
+ 
++async function _decryptV1Legacy(msg, parsed, envelope) {
++  // v1 envelopes can only exist inside the TTL window at deploy time. The
++  // server's key endpoint now returns the v2 devices shape (no public_key
++  // field), so this path must NEVER fetch -- it only ever uses a peer key
++  // cached by a pre-deploy tab that never reloaded. On any fresh page load
++  // this cache is empty and every v1 envelope renders the sentinel below.
++  const peerUserId = _getDmPeerUserId(msg.room_id);
++  const cachedPeerKey = peerUserId && E2EE._legacyPeerKeys[peerUserId];
++  if (!cachedPeerKey || !parsed || !parsed.ct) {
++    dbg('[E2EE] v1 envelope with no cached pre-deploy peer key, sentinel, msg=' + msg.id);
++    return _sentinel(msg);
++  }
++  try {
++    const key = await E2EE._deriveSharedKeyV1(cachedPeerKey, msg.room_id);
++    const body = _partsFromB64(parsed.ct);
++    const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: body.iv }, key, body.data);
++    const plaintext = new TextDecoder().decode(plainBuf);
++    if (!(await _validateDecryptedMedia(msg, plaintext))) {
++      _roomEncrypted.add(msg.room_id);
++      return _sentinel(msg);
++    }
++    msg.content = plaintext;
++    _roomEncrypted.add(msg.room_id);
++  } catch (e) {
++    dbg('[E2EE] v1 legacy decrypt failed:', e && e.message);
++    return _sentinel(msg);
++  }
++  return msg;
++}
++
++async function _decryptMessageContent(msg) {
++  if (!_isE2eeContent(msg.content)) return msg;
++  const envelope = msg.content;
++  let parsed;
++  try { parsed = JSON.parse(envelope); } catch (e) { parsed = null; }
++  if (parsed && parsed.keys && typeof parsed.keys === 'object') {
++    return _decryptV2(msg, parsed, envelope);
++  }
++  return _decryptV1Legacy(msg, parsed, envelope);
++}
++
+ function _rebuildReplySnippet(msg, roomMsgs) {
+   if (!msg.reply_to || msg.reply_to.text) return;
+   const ref = (roomMsgs || []).find(m => m.id === msg.reply_to.id);
+@@ -1417,17 +1501,23 @@ async function handleWSEvent(data) {
+       break;
+     case 'key_rotated':
+       dbg('[E2EE] key_rotated for user', data.user_id, 'room', data.room_id);
+-      delete E2EE._peerKeys[data.user_id];
+-      delete E2EE._sharedKeys[data.room_id];
+-      _unencryptedRooms.delete(data.room_id);
+-      if (currentRoom === data.room_id) {
+-        // Room is open: refresh the banner and restore the header lock so a
+-        // previously-latched unencrypted room shows its true state live.
+-        renderMessages();
+-        document.querySelectorAll('.header .title').forEach(t => {
+-          if (!t.querySelector('.icon-lock')) t.insertAdjacentHTML('afterbegin', ICON_LOCK);
+-        });
+-        dbg('[E2EE] key_rotated refreshed open room UI', data.room_id);
++      // Cache is an optimization only -- always drop the whole device list
++      // for this user and clear every derived KEK rather than trying to
++      // scan the composite room:user:device keys (the room_id:null self-
++      // notification has no room to key on anyway).
++      delete E2EE._deviceLists[data.user_id];
++      E2EE._keks = {};
++      if (data.room_id != null) {
++        _unencryptedRooms.delete(data.room_id);
++        if (currentRoom === data.room_id) {
++          // Room is open: refresh the banner and restore the header lock so a
++          // previously-latched unencrypted room shows its true state live.
++          renderMessages();
++          document.querySelectorAll('.header .title').forEach(t => {
++            if (!t.querySelector('.icon-lock')) t.insertAdjacentHTML('afterbegin', ICON_LOCK);
++          });
++          dbg('[E2EE] key_rotated refreshed open room UI', data.room_id);
++        }
+       }
+       break;
+   }
+@@ -1572,7 +1662,7 @@ function updateSidebarCount(roomId) {
+ 
+ function updateHeaderCount() {
+   dbg('[ROOM] updateHeaderCount');
+-  if (!currentRoom) return;
++  if (!currentRoom || currentRoomType === 'dm') return;
+   const room = rooms.find(r => r.id === currentRoom);
+   const members = room ? (room.member_count || 0) : 0;
+   const countEl = document.querySelector('.header-count');
+@@ -1777,7 +1867,8 @@ async function loadDMs() {
+ // --- Chat View ---
+ async function openRoom(roomId, roomName, roomType) {
+   dbg('openRoom:', roomId, roomName, roomType);
+-  if (currentRoom && currentRoom !== roomId) {
++  if (roomId === currentRoom) return;
++  if (currentRoom) {
+     wsSend('leave_room', { room_id: currentRoom });
+   }
+   _decryptRetried.clear();
+@@ -1871,7 +1962,7 @@ function renderChatView(roomName) {
+   dbg('[CHAT] renderChatView', roomName);
+   const onlineCount = (onlineByRoom[currentRoom] || []).length;
+   const currentRoomObj = rooms.find(r => r.id === currentRoom);
+-  const memberCount = currentRoomObj ? (currentRoomObj.member_count || 0) : 0;
++  const memberCount = currentRoomType === 'dm' ? 2 : (currentRoomObj ? (currentRoomObj.member_count || 0) : 0);
+   const countText = memberCount + (memberCount === 1 ? ' member' : ' members');
+   const isMeetup = currentRoomType === 'meetup';
+   const showMeetupBtn = !isMeetup;
+@@ -1913,7 +2004,7 @@ function renderChatView(roomName) {
+           <span class="title">${esc(roomName)}</span>
+           ${roomDesc ? `<span class="online">${esc(roomDesc)}</span>` : ''}
+         </div>
+-        <span class="header-count">${memberCount} ${USER_ICON}</span>
++        ${currentRoomType !== 'dm' ? `<span class="header-count">${memberCount} ${USER_ICON}</span>` : ''}
+         <button class="hamburger" onclick="toggleChatMenu()">${ICON_HAMBURGER}<span class="hamburger-dot"></span></button>
+       </div>
+       <div class="content" id="msg-scroll">
+@@ -1929,7 +2020,7 @@ function renderChatView(roomName) {
+         <div class="header">
+           <div class="header-info">
+             <span class="title">${esc(roomName)}</span>
+-            <span class="online">${countText}</span>
++            ${currentRoomType !== 'dm' ? `<span class="online">${countText}</span>` : ''}
+           </div>
+           ${headerAvatar}
+         </div>
+@@ -2379,8 +2470,8 @@ async function sendChatMessage(type, content, replyToId) {
+       return null;
+     }
+     try {
+-      const ciphertext = await E2EE.encrypt(roomId, peerUserId, content);
+-      if (ciphertext === null) {
++      const envelope = await E2EE.encrypt(roomId, peerUserId, content);
++      if (envelope === null) {
+         if (_roomEncrypted.has(roomId)) {
+           dbg('[E2EE] peer has no key but room is already encrypted, blocking send (fail closed)');
+           showToast('Message not sent. Encryption error.');
+@@ -2392,7 +2483,7 @@ async function sendChatMessage(type, content, replyToId) {
+         }
+         dbg('[E2EE] no key for peer, sending plaintext in room ' + roomId);
+       } else {
+-        outgoingContent = JSON.stringify({ e2ee: true, v: 1, ct: ciphertext });
++        outgoingContent = envelope;
+         _roomEncrypted.add(roomId);
+         _unencryptedRooms.delete(roomId);
+         dbg('[E2EE] message encrypted for room ' + roomId);
+@@ -3180,10 +3271,9 @@ function closeActionSheet() {
+ function _doBlock(userId, name, report, msgId) {
+   wsSend('block_user', { target_user_id: userId });
+   blockedUserIds.add(userId);
+-  delete E2EE._peerKeys[userId];
+-  const dmRoomId = Object.keys(_dmListCache).find(rid => _dmListCache[rid] === userId);
+-  if (dmRoomId) delete E2EE._sharedKeys[dmRoomId];
+-  dbg('[E2EE] cleared cached keys for blocked user', userId, 'room', dmRoomId || '(unresolved)');
++  delete E2EE._deviceLists[userId];
++  E2EE._keks = {};
++  dbg('[E2EE] cleared cached device list + keks for blocked user', userId);
+   if (report && msgId) {
+     wsSend('report_message', { message_id: msgId, reason: 'Blocked and reported by user' });
+   }
+@@ -3900,15 +3990,18 @@ async function doLogout() {
+   currentRoomType = null;
+   document.cookie = 'chat_session=; path=/; max-age=0';
+   localStorage.removeItem('e2ee_keypair');
++  localStorage.removeItem('e2ee_device_id');
+   E2EE._keyPair = null;
++  E2EE._deviceId = null;
+   E2EE.available = true;
+   E2EE._initialized = false;
+-  E2EE._sharedKeys = {};
+-  E2EE._peerKeys = {};
++  E2EE._deviceLists = {};
++  E2EE._keks = {};
++  E2EE._legacyPeerKeys = {};
+   _roomEncrypted = new Set();
+   _unencryptedRooms = new Set();
+   _decryptRetried.clear();
+-  dbg('[E2EE] cleared key pair and caches on logout');
++  dbg('[E2EE] cleared key pair, device id, and caches on logout');
+   renderAuth();
+ }
+ 
+@@ -3979,10 +4072,11 @@ function jss(s) { return esc(String(s).replace(/[`'\\]/g, '\\$&')); }
+ function _linkify(text) {
+   return escapeHtml(text).replace(/(https?:\/\/[^\s<>"')\]]+)/g, '<a href="$1" target="_blank" rel="noopener" onclick="event.stopPropagation()">$1</a>');
+ }
+-// --- E2EE key management (Phase 1: key infrastructure) ---
++// --- E2EE key management (multi-device v2) ---
+ const E2EE = {
+   available: true,
+   _keyPair: null,
++  _deviceId: null,
+   _initialized: false,
+ 
+   async init() {
+@@ -3992,9 +4086,10 @@ const E2EE = {
+         this.available = false;
+         return;
+       }
+-      const stored = localStorage.getItem('e2ee_keypair');
+-      if (stored) {
+-        const kp = JSON.parse(stored);
++      const storedKp = localStorage.getItem('e2ee_keypair');
++      const storedDeviceId = localStorage.getItem('e2ee_device_id');
++      if (storedKp && storedDeviceId) {
++        const kp = JSON.parse(storedKp);
+         this._keyPair = {
+           privateKey: await crypto.subtle.importKey(
+             'jwk', kp.privateKey, {name: 'ECDH', namedCurve: 'P-256'}, true, ['deriveBits']
+@@ -4003,17 +4098,20 @@ const E2EE = {
+             'jwk', kp.publicKey, {name: 'ECDH', namedCurve: 'P-256'}, true, []
+           ),
+         };
+-        dbg('[E2EE] loaded existing key pair from localStorage');
++        this._deviceId = storedDeviceId;
++        dbg('[E2EE] loaded existing key pair + device id from localStorage');
+       } else {
+         const kp = await crypto.subtle.generateKey(
+           {name: 'ECDH', namedCurve: 'P-256'}, true, ['deriveBits']
+         );
+         const privateJwk = await crypto.subtle.exportKey('jwk', kp.privateKey);
+         const publicJwk = await crypto.subtle.exportKey('jwk', kp.publicKey);
++        const deviceId = _genDeviceId();
+         // Re-read before setItem to handle multi-tab race
+-        const raceCheck = localStorage.getItem('e2ee_keypair');
+-        if (raceCheck) {
+-          const kp2 = JSON.parse(raceCheck);
++        const raceKp = localStorage.getItem('e2ee_keypair');
++        const raceDeviceId = localStorage.getItem('e2ee_device_id');
++        if (raceKp && raceDeviceId) {
++          const kp2 = JSON.parse(raceKp);
+           this._keyPair = {
+             privateKey: await crypto.subtle.importKey(
+               'jwk', kp2.privateKey, {name: 'ECDH', namedCurve: 'P-256'}, true, ['deriveBits']
+@@ -4022,11 +4120,16 @@ const E2EE = {
+               'jwk', kp2.publicKey, {name: 'ECDH', namedCurve: 'P-256'}, true, []
+             ),
+           };
+-          dbg('[E2EE] adopted key pair from another tab (race)');
++          this._deviceId = raceDeviceId;
++          dbg('[E2EE] adopted key pair + device id from another tab (race)');
+         } else {
++          // Write device_id first, keypair second: a losing tab adopts on the
++          // keypair storage event, and by then both keys are readable atomically.
++          localStorage.setItem('e2ee_device_id', deviceId);
+           localStorage.setItem('e2ee_keypair', JSON.stringify({privateKey: privateJwk, publicKey: publicJwk}));
+           this._keyPair = kp;
+-          dbg('[E2EE] generated new key pair');
++          this._deviceId = deviceId;
++          dbg('[E2EE] generated new key pair + device id', deviceId);
+         }
+       }
+       this.available = true;
+@@ -4047,7 +4150,7 @@ const E2EE = {
+   },
+ 
+   async uploadPublicKey() {
+-    if (!this.available || !this._keyPair) return;
++    if (!this.available || !this._keyPair || !this._deviceId) return;
+     const jwk = await this.getPublicKeyJwk();
+     if (!jwk) return;
+     let attempt = 0;
+@@ -4057,10 +4160,10 @@ const E2EE = {
+           method: 'PUT',
+           headers: {'Content-Type': 'application/json'},
+           credentials: 'same-origin',
+-          body: JSON.stringify({public_key: jwk}),
++          body: JSON.stringify({device_id: this._deviceId, public_key: jwk}),
+         });
+         if (res.ok) {
+-          dbg('[E2EE] public key uploaded (attempt ' + (attempt + 1) + ')');
++          dbg('[E2EE] public key uploaded (attempt ' + (attempt + 1) + '), device=' + this._deviceId);
+           return;
+         }
+         throw new Error('HTTP ' + res.status);
+@@ -4075,11 +4178,33 @@ const E2EE = {
+     this.available = false;
+   },
+ 
+-  // --- Phase 2: shared key derivation + encrypt/decrypt ---
+-  _sharedKeys: {},
+-  _peerKeys: {},
++  // --- Multi-device (v2): per-peer-device KEKs wrapping a per-message key ---
++  _deviceLists: {},
++  _keks: {},
++  // Retained only for the v1 backward-compat decrypt path below -- never
++  // populated by any fetch in v2 code, see _decryptV1Legacy in the docs.
++  _legacyPeerKeys: {},
++
++  async _deriveKek(devicePublicKey, roomId) {
++    const bits = await crypto.subtle.deriveBits(
++      {name: 'ECDH', public: devicePublicKey},
++      this._keyPair.privateKey,
++      256
++    );
++    const hkdfKey = await crypto.subtle.importKey('raw', bits, 'HKDF', false, ['deriveKey']);
++    const enc = new TextEncoder();
++    return crypto.subtle.deriveKey(
++      {name: 'HKDF', hash: 'SHA-256', salt: enc.encode(roomId), info: enc.encode('e2ee-dm-v2')},
++      hkdfKey,
++      {name: 'AES-GCM', length: 256},
++      false,
++      ['encrypt', 'decrypt']
++    );
++  },
+ 
+-  async _deriveSharedKey(peerPublicKey, roomId) {
++  // Retained verbatim from v1 -- used ONLY by the legacy decrypt path, which
++  // never fetches (see _decryptV1Legacy).
++  async _deriveSharedKeyV1(peerPublicKey, roomId) {
+     const bits = await crypto.subtle.deriveBits(
+       {name: 'ECDH', public: peerPublicKey},
+       this._keyPair.privateKey,
+@@ -4096,75 +4221,92 @@ const E2EE = {
+     );
+   },
+ 
+-  async _fetchPeerKey(peerUserId) {
+-    const res = await fetch('/chat/api/keys/' + peerUserId, {credentials: 'same-origin'});
++  async _fetchDeviceList(userId) {
++    const res = await fetch('/chat/api/keys/' + userId, {credentials: 'same-origin'});
+     if (res.status === 404) {
+-      dbg('[E2EE] no public key for peer', peerUserId);
++      dbg('[E2EE] no device keys for user', userId);
+       return null;
+     }
+-    if (!res.ok) throw new Error('key fetch failed: HTTP ' + res.status);
++    if (!res.ok) throw new Error('device list fetch failed: HTTP ' + res.status);
+     const data = await res.json();
+-    const jwk = JSON.parse(data.public_key);
+-    return crypto.subtle.importKey('jwk', jwk, {name: 'ECDH', namedCurve: 'P-256'}, true, []);
++    const devices = [];
++    for (const d of data.devices) {
++      try {
++        const jwk = JSON.parse(d.public_key);
++        const publicKey = await crypto.subtle.importKey('jwk', jwk, {name: 'ECDH', namedCurve: 'P-256'}, true, []);
++        devices.push({device_id: d.device_id, publicKey});
++      } catch (e) {
++        dbg('[E2EE] skipping unimportable device key', d.device_id, e && e.message);
++      }
++    }
++    return devices;
+   },
+ 
+-  async getPeerKey(peerUserId) {
+-    if (this._peerKeys[peerUserId]) return this._peerKeys[peerUserId];
+-    const p = this._fetchPeerKey(peerUserId);
+-    this._peerKeys[peerUserId] = p;
++  async getDeviceList(userId) {
++    if (this._deviceLists[userId]) return this._deviceLists[userId];
++    const p = this._fetchDeviceList(userId);
++    this._deviceLists[userId] = p;
+     try {
+-      const key = await p;
+-      if (key === null) delete this._peerKeys[peerUserId];
+-      return key;
++      const devices = await p;
++      if (devices === null) delete this._deviceLists[userId];
++      return devices;
+     } catch (e) {
+-      delete this._peerKeys[peerUserId];
++      delete this._deviceLists[userId];
+       throw e;
+     }
+   },
+ 
+-  async getSharedKey(roomId, peerUserId) {
+-    if (this._sharedKeys[roomId]) return this._sharedKeys[roomId];
+-    if (!this._keyPair) throw new Error('E2EE not initialized');
+-    const p = (async () => {
+-      const peerKey = await this.getPeerKey(peerUserId);
+-      if (!peerKey) return null;
+-      return this._deriveSharedKey(peerKey, roomId);
+-    })();
+-    this._sharedKeys[roomId] = p;
++  async getKek(roomId, userId, deviceId, devicePublicKey) {
++    const cacheKey = roomId + ':' + userId + ':' + deviceId;
++    if (this._keks[cacheKey]) return this._keks[cacheKey];
++    const p = this._deriveKek(devicePublicKey, roomId);
++    this._keks[cacheKey] = p;
+     try {
+-      const key = await p;
+-      if (key === null) delete this._sharedKeys[roomId];
+-      return key;
++      return await p;
+     } catch (e) {
+-      delete this._sharedKeys[roomId];
++      delete this._keks[cacheKey];
+       throw e;
+     }
+   },
+ 
++  // Returns the complete envelope JSON string (caller uses it directly as
++  // outgoingContent), or null if the peer has no device key at all.
+   async encrypt(roomId, peerUserId, plaintext) {
+-    const key = await this.getSharedKey(roomId, peerUserId);
+-    if (!key) return null;
+-    const iv = crypto.getRandomValues(new Uint8Array(12));
++    const peerDevices = await this.getDeviceList(peerUserId);
++    if (peerDevices === null) return null;
++    let ownDevices = await this.getDeviceList(currentUser.id);
++    if (ownDevices === null) ownDevices = [];
++    // Self-readability must never race the upload: if the fetched list is
++    // missing this device (upload hasn't landed yet), add it locally.
++    if (!ownDevices.some(d => d.device_id === this._deviceId)) {
++      ownDevices = ownDevices.concat([{device_id: this._deviceId, publicKey: this._keyPair.publicKey}]);
++    }
++
++    const mk = crypto.getRandomValues(new Uint8Array(32));
++    const mkKey = await crypto.subtle.importKey('raw', mk, {name: 'AES-GCM'}, false, ['encrypt']);
++    const iv1 = crypto.getRandomValues(new Uint8Array(12));
+     const enc = new TextEncoder();
+-    const ciphertext = await crypto.subtle.encrypt({name: 'AES-GCM', iv}, key, enc.encode(plaintext));
+-    const combined = new Uint8Array(iv.length + ciphertext.byteLength);
+-    combined.set(iv, 0);
+-    combined.set(new Uint8Array(ciphertext), iv.length);
+-    let bin = '';
+-    for (let i = 0; i < combined.length; i++) bin += String.fromCharCode(combined[i]);
+-    return btoa(bin);
+-  },
++    const ctBuf = await crypto.subtle.encrypt({name: 'AES-GCM', iv: iv1}, mkKey, enc.encode(plaintext));
++    const ct = _b64FromParts(iv1, new Uint8Array(ctBuf));
++
++    const keys = {};
++    const wrapAll = async (userId, devices) => {
++      for (const device of devices) {
++        try {
++          const kek = await this.getKek(roomId, userId, device.device_id, device.publicKey);
++          const ivD = crypto.getRandomValues(new Uint8Array(12));
++          const wrappedBuf = await crypto.subtle.encrypt({name: 'AES-GCM', iv: ivD}, kek, mk);
++          keys[device.device_id] = _b64FromParts(ivD, new Uint8Array(wrappedBuf));
++        } catch (e) {
++          // A corrupt stored JWK for one device must not block the whole send.
++          dbg('[E2EE] failed to wrap message key for device', device.device_id, e && e.message);
++        }
++      }
++    };
++    await wrapAll(peerUserId, peerDevices);
++    await wrapAll(currentUser.id, ownDevices);
+ 
+-  async decrypt(roomId, peerUserId, b64) {
+-    const key = await this.getSharedKey(roomId, peerUserId);
+-    if (!key) throw new Error('no shared key available');
+-    const bin = atob(b64);
+-    const combined = new Uint8Array(bin.length);
+-    for (let i = 0; i < bin.length; i++) combined[i] = bin.charCodeAt(i);
+-    const iv = combined.slice(0, 12);
+-    const ciphertext = combined.slice(12);
+-    const dec = await crypto.subtle.decrypt({name: 'AES-GCM', iv}, key, ciphertext);
+-    return new TextDecoder().decode(dec);
++    return JSON.stringify({ e2ee: true, v: 2, sd: this._deviceId, ct, keys });
+   },
+ };
+ 
+@@ -4174,14 +4316,21 @@ window.addEventListener('storage', function(e) {
+   if (!e.newValue) return;
+   try {
+     const kp = JSON.parse(e.newValue);
++    // device_id is written before keypair (see E2EE.init), so by the time
++    // this tab observes the keypair storage event, device_id is already
++    // committed and readable here.
++    const deviceId = localStorage.getItem('e2ee_device_id');
+     Promise.all([
+       crypto.subtle.importKey('jwk', kp.privateKey, {name: 'ECDH', namedCurve: 'P-256'}, true, ['deriveBits']),
+       crypto.subtle.importKey('jwk', kp.publicKey, {name: 'ECDH', namedCurve: 'P-256'}, true, []),
+     ]).then(function(keys) {
+       E2EE._keyPair = {privateKey: keys[0], publicKey: keys[1]};
+-      E2EE._sharedKeys = {};
+-      E2EE._peerKeys = {};
+-      dbg('[E2EE] re-imported key pair from storage event, cleared shared/peer key caches');
++      E2EE._deviceId = deviceId;
++      // Device identity changed -- every cached device list and derived
++      // KEK is suspect.
++      E2EE._deviceLists = {};
++      E2EE._keks = {};
++      dbg('[E2EE] re-imported key pair + device id from storage event, cleared device list/kek caches');
+     }).catch(function(err) {
+       dbg('[E2EE] storage event re-import failed:', err && err.message);
+     });
+diff --git a/server/chat_api.py b/server/chat_api.py
+index 7ee7a0c..32bb29c 100644
+--- a/server/chat_api.py
++++ b/server/chat_api.py
+@@ -74,8 +74,8 @@ from chat_db import (
+     get_reachable_member_counts,
+     get_setting,
+     set_setting,
+-    upsert_e2ee_key,
+-    get_e2ee_key,
++    upsert_e2ee_device_key,
++    get_e2ee_device_keys,
+ )
+ from chat_ws import handle_chat_ws, purge_loop
+ 
+@@ -1010,13 +1010,14 @@ async def list_dms(request: Request):
+             "u.display_name AS other_name, u.username AS other_username, "
+             "u.avatar_url AS other_avatar_url, u.color_index AS other_color_index, "
+             "u.country AS other_country, "
+-            "CASE WHEN k.user_id IS NULL THEN 0 ELSE 1 END AS other_has_key, "
++            "CASE WHEN EXISTS ("
++            "  SELECT 1 FROM e2ee_device_keys dk WHERE dk.user_id = dp2.user_id"
++            ") THEN 1 ELSE 0 END AS other_has_key, "
+             "(SELECT MAX(m.created_at) FROM messages m WHERE m.room_id = r.id AND m.expires_at > ?) AS last_message_at "
+             "FROM dm_participants dp1 "
+             "JOIN dm_participants dp2 ON dp1.room_id = dp2.room_id AND dp1.user_id != dp2.user_id "
+             "JOIN rooms r ON r.id = dp1.room_id "
+             "JOIN users u ON u.id = dp2.user_id "
+-            "LEFT JOIN e2ee_keys k ON k.user_id = dp2.user_id "
+             "WHERE dp1.user_id = ? "
+             "ORDER BY last_message_at DESC",
+             (now, user["id"]),
+@@ -1526,7 +1527,9 @@ async def chat_push_ack(request: Request):
+         db.close()
+ 
+ 
+-# --- E2EE keys ---
++# --- E2EE device keys ---
++
++_DEVICE_ID_RE = re.compile(r"^[a-f0-9]{32}$")
+ 
+ 
+ def _validate_e2ee_jwk(public_key: str) -> None:
+@@ -1566,15 +1569,17 @@ async def put_e2ee_key(request: Request):
+     user, db = _get_user_from_cookie(request)
+     try:
+         body = await request.json()
++        device_id = body.get("device_id", "")
++        if not isinstance(device_id, str) or not _DEVICE_ID_RE.match(device_id):
++            raise HTTPException(422, "Invalid device_id: must be 32 hex chars")
+         public_key = body.get("public_key", "")
+         _validate_e2ee_jwk(public_key)
+-        existing = get_e2ee_key(db, user["id"])
+-        upsert_e2ee_key(db, user["id"], public_key)
+-        # Broadcast on ANY new key, including the first upload: a peer may have
+-        # opened the DM (and latched into unencrypted fallback) while this user
+-        # was still in profile setup, before their first key existed. Same-key
+-        # re-uploads on every login stay silent.
+-        if existing != public_key:
++        changed = upsert_e2ee_device_key(db, user["id"], device_id, public_key)
++        # Broadcast on ANY changed mapping, including the first upload: a peer
++        # may have opened the DM (and latched into unencrypted fallback) while
++        # this user was still in profile setup, before their first key existed.
++        # Same-key re-uploads (every page load) stay silent.
++        if changed:
+             dm_rows = db.execute(
+                 "SELECT dp1.room_id, dp2.user_id AS other_user_id "
+                 "FROM dm_participants dp1 "
+@@ -1596,6 +1601,19 @@ async def put_e2ee_key(request: Request):
+                         },
+                     )
+                 )
++            # Sibling devices of the SAME user must also invalidate their
++            # cached device list for this user, so their next send fans out
++            # to the new/re-keyed device. No room to key this on.
++            asyncio.create_task(
++                manager.send_to_user(
++                    user["id"],
++                    {
++                        "event": "key_rotated",
++                        "user_id": user["id"],
++                        "room_id": None,
++                    },
++                )
++            )
+         return Response(status_code=204)
+     finally:
+         db.close()
+@@ -1605,15 +1623,19 @@ async def put_e2ee_key(request: Request):
+ async def get_e2ee_key_endpoint(user_id: str, request: Request):
+     _user, db = _get_user_from_cookie(request)
+     try:
+-        row = db.execute(
+-            "SELECT public_key, created_at FROM e2ee_keys WHERE user_id = ?", (user_id,)
+-        ).fetchone()
+-        if not row:
++        devices = get_e2ee_device_keys(db, user_id)
++        if not devices:
+             raise HTTPException(404, "Key not found")
+         return {
+             "user_id": user_id,
+-            "public_key": row["public_key"],
+-            "created_at": row["created_at"],
++            "devices": [
++                {
++                    "device_id": d["device_id"],
++                    "public_key": d["public_key"],
++                    "created_at": d["created_at"],
++                }
++                for d in devices
++            ],
+         }
+     finally:
+         db.close()
+diff --git a/server/chat_ws.py b/server/chat_ws.py
+index ff4a463..fc73e27 100644
+--- a/server/chat_ws.py
++++ b/server/chat_ws.py
+@@ -1195,8 +1195,17 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
+                         continue
+ 
+                 max_content = msg_char_limit + 20 if msg_type == "text" else 2000
+-                if is_e2ee_msg and msg_type == "text":
+-                    max_content = max(max_content * 2, 4000)
++                if is_e2ee_msg:
++                    # v2 envelopes add ~125 chars per device slot (device_id ->
++                    # wrapped message key) on top of the base overhead, and this
++                    # applies to EVERY message type now, not just text -- a
++                    # 12-device image envelope is ~1,600 chars. +2000 headroom
++                    # covers the device cap (12 total across both users) x
++                    # ~125 chars/slot; raising the cap requires raising this too.
++                    if msg_type == "text":
++                        max_content = max(msg_char_limit * 2, 4000) + 2000
++                    else:
++                        max_content = 2000 + 2000
+                 if len(content) > max_content:
+                     await manager.send_to_user(
+                         user_id,

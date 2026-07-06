@@ -1,0 +1,12 @@
+1a6aaca fix(moderation): hold messages pending until moderation clears them
+b6048b1 fix(chat): propagate profile edits to live connections
+3f8701a fix(e2ee): fail closed on indeterminate encryption; refresh device list on DM open
+ceeec3b fix(db): preserve report evidence when a user is deleted
+1db9200 fix(auth): remove dead device-fingerprint plumbing from auth flow
+361a6e1 fix(logging): redact session and magic-link tokens from access logs
+139a95b fix(api): rate-limit verify + meetup REST, cap request body size, close sockets on delete
+da2691e fix(auth): offload blocking Google OAuth calls and rate-limit the routes
+3744f5b fix(push): restrict subscription endpoints to known push services (SSRF)
+cef9ae1 fix(ws): rate-limit fan-out events, cap reports, add push timeout
+b5ef0f7 fix(ws): pin validated IP for link previews (SSRF DNS rebinding)
+7684826 fix(ws): validate media_url and guard cross-message file deletion

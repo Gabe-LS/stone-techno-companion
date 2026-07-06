@@ -1,0 +1,5 @@
+{"server_ts":"2026-07-04T17:47:36.511159+00:00","client_ts":"2026-07-04T17:47:36.511Z","src":"page","ev":"page-load","detail":"{\"platform\":\"ios-pwa\",\"session\":\"nd-liq159-mr6nngzj\",\"url\":\"https://10.0.0.100:9444/\"}","platform":"ios-pwa","test_id":""}
+{"server_ts":"2026-07-04T17:47:36.524613+00:00","client_ts":"2026-07-04T17:47:36.537Z","src":"page","ev":"sw-registered","detail":"scope=https://10.0.0.100:9444/","platform":"ios-pwa","test_id":""}
+{"server_ts":"2026-07-04T17:47:42.496344+00:00","client_ts":"2026-07-04T17:47:42.482Z","src":"page","ev":"test-start","detail":"close fire-and-forget from SW","platform":"ios-pwa","test_id":"close-ffsw-1783187262482"}
+{"server_ts":"2026-07-04T17:47:46.297313+00:00","client_ts":"2026-07-04T17:47:46.299Z","src":"page","ev":"push-sent","detail":"{\"push_index\":150}","platform":"ios-pwa","test_id":"close-ffsw-1783187262482"}
+{"server_ts":"2026-07-04T17:47:49.342428+00:00","client_ts":"2026-07-04T17:47:49.324Z","src":"sw","ev":"closeFireForgetSW","detail":"{\"group\":\"ffsw-1783187262482\",\"closed\":1,\"total\":1}","platform":"ios-pwa","test_id":"close-ffsw-1783187262482"}

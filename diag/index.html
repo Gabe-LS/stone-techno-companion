@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/manifest.json">
+<title>Page A - Source</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,system-ui,sans-serif;background:#111;color:#eee;padding:16px;font-size:14px}
+h1{font-size:20px;margin-bottom:4px;color:#6cf}
+.subtitle{color:#888;margin-bottom:16px;font-size:12px}
+h2{font-size:13px;margin:20px 0 8px;color:#666;text-transform:uppercase;letter-spacing:1px;border-top:1px solid #222;padding-top:12px}
+.state{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:13px;margin-bottom:8px}
+.state dt{color:#666}.state dd{color:#ccc;word-break:break-all}
+button{background:#222;color:#eee;border:1px solid #444;border-radius:8px;padding:10px 14px;font-size:13px;cursor:pointer;width:100%;text-align:left;margin-bottom:6px}
+button:active{background:#444}
+button.ok{border-color:#2a5a2a;background:#1a2a1a}
+button.pending{opacity:0.5}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+select{background:#222;color:#eee;border:1px solid #444;border-radius:8px;padding:10px;font-size:13px;width:100%;margin-bottom:8px;-webkit-appearance:none}
+pre{background:#0a0a0a;border:1px solid #222;border-radius:8px;padding:8px;font-size:11px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto;margin-bottom:8px}
+.nav{display:flex;gap:8px;margin-bottom:16px}
+.nav a{color:#6cf;font-size:13px}
+.badge{display:inline-block;background:#333;color:#aaa;border-radius:4px;padding:2px 6px;font-size:11px;margin-left:6px}
+#status{padding:10px;border-radius:8px;margin:8px 0;font-size:13px;display:none}
+#status.ok{display:block;background:#1a2a1a;border:1px solid #2a5a2a;color:#8f8}
+#status.err{display:block;background:#2a1a1a;border:1px solid #5a2a2a;color:#f88}
+</style>
+</head><body>
+
+<h1>PAGE A - Source</h1>
+<p class="subtitle">This simulates the page open when a notification arrives. Background the app, tap the notification, then check the log.</p>
+
+<div class="nav">
+  <a href="/target">Page B (target)</a>
+  <a href="/log">View Log</a>
+</div>
+
+<h2>Page State</h2>
+<dl class="state" id="state"></dl>
+
+<h2>Push Subscription</h2>
+<button id="btn-sub" onclick="subscribePush()">Subscribe to push</button>
+
+<h2>URL Format</h2>
+<select id="url-fmt">
+  <option value="rel-target">/target (relative)</option>
+  <option value="abs-target">https://host/target (absolute)</option>
+  <option value="rel-target-query">/target?from=push (with query)</option>
+  <option value="rel-target-hash">/target#from-push (with hash)</option>
+  <option value="rel-root">/ (back to this page)</option>
+  <option value="abs-root">https://host/ (absolute root)</option>
+</select>
+
+<h2>SW Strategy</h2>
+<select id="strategy">
+  <option value="default">Default (postMessage visible, openWindow hidden)</option>
+  <option value="postMessage">postMessage (force, even to hidden clients)</option>
+  <option value="navigate">client.navigate()</option>
+  <option value="navigate+catch">navigate() with openWindow fallback</option>
+  <option value="openWindow">openWindow (always)</option>
+  <option value="focus-only">Focus only (cache fallback)</option>
+  <option value="declarative">Declarative Web Push (no SW click handler)</option>
+</select>
+
+<h2>Send Test Push</h2>
+<button onclick="sendPush()">Send push notification</button>
+<div id="status"></div>
+
+<h2>Cache Fallback Monitor</h2>
+<pre id="cache-state">checking...</pre>
+
+<h2>Recent Events (this page)</h2>
+<pre id="events"></pre>
+
+<script src="/shared.js"></script>
+<script>
+var _pageEvents = [];
+
+function logEvent(ev, detail) {
+  var entry = { t: new Date().toISOString().slice(11, 23), ev: ev, d: detail || '' };
+  _pageEvents.push(entry);
+  if (_pageEvents.length > 30) _pageEvents.shift();
+  renderEvents();
+  diagLog('page-a', ev, detail || '');
+}
+
+function renderEvents() {
+  var el = document.getElementById('events');
+  el.textContent = _pageEvents.map(function (e) {
+    return '[' + e.t + '] ' + e.ev + (e.d ? ' | ' + e.d : '');
+  }).join('\n');
+  el.scrollTop = el.scrollHeight;
+}
+
+function updateState() {
+  var standalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+  var swState = navigator.serviceWorker && navigator.serviceWorker.controller ? 'active' : 'none';
+  document.getElementById('state').innerHTML =
+    '<dt>URL</dt><dd>' + location.href + '</dd>' +
+    '<dt>Pathname</dt><dd>' + location.pathname + '</dd>' +
+    '<dt>Visibility</dt><dd>' + document.visibilityState + '</dd>' +
+    '<dt>Standalone</dt><dd>' + standalone + '</dd>' +
+    '<dt>SW</dt><dd>' + swState + '</dd>' +
+    '<dt>Platform</dt><dd>' + navigator.platform + '</dd>' +
+    '<dt>Time</dt><dd>' + new Date().toISOString() + '</dd>';
+}
+
+function checkCache() {
+  diagCheckCache().then(function (val) {
+    document.getElementById('cache-state').textContent =
+      'diag-push/_nav: ' + (val ? '"' + val + '"' : '(empty)') +
+      '\nchecked at: ' + new Date().toISOString().slice(11, 23);
+    if (val) {
+      logEvent('cache-found', val);
+      diagDeleteCache().then(function () {
+        logEvent('cache-deleted', val);
+      });
+    }
+  });
+}
+
+async function subscribePush() {
+  var btn = document.getElementById('btn-sub');
+  btn.textContent = 'Subscribing...';
+  btn.classList.add('pending');
+  try {
+    var reg = await navigator.serviceWorker.ready;
+    var existing = await reg.pushManager.getSubscription();
+    if (existing) await existing.unsubscribe();
+    var resp = await fetch('/api/vapid-key');
+    var data = await resp.json();
+    var key = Uint8Array.from(atob(data.key.replace(/-/g, '+').replace(/_/g, '/')), function (c) { return c.charCodeAt(0); });
+    var sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+    await fetch('/api/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sub.toJSON()),
+    });
+    btn.textContent = 'Subscribed';
+    btn.classList.remove('pending');
+    btn.classList.add('ok');
+    logEvent('push-subscribed', sub.endpoint.slice(0, 80));
+  } catch (e) {
+    btn.textContent = 'Subscribe failed: ' + e.message;
+    btn.classList.remove('pending');
+    logEvent('push-subscribe-failed', e.message);
+  }
+}
+
+async function sendPush() {
+  var st = document.getElementById('status');
+  st.className = ''; st.style.display = 'none';
+  try {
+    var r = await fetch('/api/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        format: document.getElementById('url-fmt').value,
+        strategy: document.getElementById('strategy').value,
+      }),
+    });
+    var d = await r.json();
+    if (d.ok) {
+      st.className = 'ok';
+      st.textContent = 'Sent! strategy=' + d.strategy + ' url=' + d.url;
+      logEvent('push-sent', 'strategy=' + d.strategy + ' url=' + d.url);
+    } else {
+      st.className = 'err';
+      st.textContent = d.error || 'Unknown error';
+      logEvent('push-send-error', d.error);
+    }
+  } catch (e) {
+    st.className = 'err';
+    st.textContent = e.message;
+    logEvent('push-send-error', e.message);
+  }
+}
+
+function onVisible() {
+  var detail = 'visState=' + document.visibilityState;
+  logEvent('visibilitychange', detail);
+  updateState();
+  checkCache();
+}
+function onFocus() {
+  logEvent('focus', '');
+  updateState();
+  checkCache();
+}
+function onPageshow(e) {
+  logEvent('pageshow', 'persisted=' + e.persisted);
+  updateState();
+  checkCache();
+}
+
+document.addEventListener('visibilitychange', function () {
+  if (!document.hidden) {
+    onVisible();
+    setTimeout(checkCache, 300);
+    setTimeout(checkCache, 1000);
+    setTimeout(checkCache, 3000);
+  } else {
+    logEvent('visibilitychange', 'hidden');
+  }
+});
+window.addEventListener('focus', function () {
+  onFocus();
+  setTimeout(checkCache, 300);
+  setTimeout(checkCache, 1000);
+  setTimeout(checkCache, 3000);
+});
+window.addEventListener('pageshow', function (e) {
+  onPageshow(e);
+  setTimeout(checkCache, 300);
+  setTimeout(checkCache, 1000);
+  setTimeout(checkCache, 3000);
+});
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').then(function (reg) {
+    logEvent('sw-registered', 'scope=' + reg.scope);
+  }).catch(function (e) {
+    logEvent('sw-register-failed', e.message);
+  });
+  navigator.serviceWorker.addEventListener('message', function (e) {
+    logEvent('sw-postMessage', JSON.stringify(e.data));
+    if (e.data && e.data.type === 'navigate') {
+      logEvent('sw-postMessage-navigate-WILL-NAVIGATE', e.data.url);
+      window.location.href = e.data.url;
+    }
+  });
+}
+
+logEvent('page-load', 'pathname=' + location.pathname + ' search=' + location.search + ' hash=' + location.hash);
+updateState();
+checkCache();
+</script>
+</body></html>

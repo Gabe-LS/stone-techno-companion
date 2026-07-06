@@ -1,0 +1,23 @@
+Signature matches. Everything is consistent. All items implemented as specified.
+
+## Final report
+
+**chat_db.py**
+- **D1** `get_room_messages_admin` (server/chat_db.py:1023) — added right after `get_room_messages`, includes `moderation_status`, no pending filter.
+- **D2** `delete_message_by_id` (server/chat_db.py:1037) — safe delete + `_unlink_media_if_orphaned` reuse (function is defined later in the file but resolved at call time, so no ordering issue).
+- **D3** `get_reports_by_status` (server/chat_db.py:1461) — added after `get_pending_reports`; also added `rm.name AS room_name` join to `get_pending_reports` (server/chat_db.py:1439) per spec note.
+- **D4** `get_dm_participant_names` (server/chat_db.py:1478) — added after `resolve_report`.
+- **D5** `get_all_meetups` (server/chat_db.py:1302) and `delete_meetup` (server/chat_db.py:1312) — added after `get_active_meetups`.
+
+**Meetup-room-id verification**: confirmed `create_meetup` calls `create_room(db, meetup_id, ...)` (chat_db.py:1202/1219 pre-edit) — the room id **equals** the meetup id, so `delete_room(db, meetup_id)` in `delete_meetup` is correct as spec'd. No adjustment needed.
+
+**chat_api.py**
+- Imports extended (chat_api.py:28-38) with the six new chat_db symbols.
+- **E1** `admin_room_messages` GET (chat_api.py:2798) and `admin_delete_message` DELETE (chat_api.py:2814) — added before `# --- Admin page ---`.
+- **E2** `admin_reports` (chat_api.py:2036) — now routes `pending`/`actioned`/`dismissed`/`all`, returns `room_name` guarded with `"room_name" in r.keys()`.
+- **E3** `admin_rooms` (chat_api.py:2317) — for `type == "dm"` rows, attaches `participants` via `get_dm_participant_names`.
+- **E4** `admin_get_settings`/`admin_update_settings` (chat_api.py:2198/2214) — extended with `msg_char_limit` (1..5000), `dm_ttl_minutes`/`room_ttl_minutes`/`meetup_ttl_minutes` (1..43200), validated as non-bool ints, defaults 1000/1440/1440/60 as documented.
+- **E5** `admin_list_meetups` GET (chat_api.py:2847) and `admin_delete_meetup` DELETE (chat_api.py:2857) — added, broadcasts `rooms_changed`, logs `delete_room` action with `detail="meetup"`.
+- **E6** `admin_reorder_rooms` (chat_api.py:2650-2680 region) — now fetches valid `general`/`stage` room ids and silently skips any `room_id` in `order` not in that set, rest unchanged.
+
+No spec/reality mismatches found — all referenced functions (`get_room`, `_unlink_media_if_orphaned`, `delete_room`, `log_admin_action`, `_require_admin`, `_require_super_admin`, `_get_db`, `get_setting`/`set_setting`) existed exactly as described. Did not touch chat_ws.py, chat_moderation.py, or any .html/.js, and did not implement the two out-of-scope features (admin posting into read-only rooms, meetup-title moderation at creation). Have not run anything — no tests executed, per instructions.

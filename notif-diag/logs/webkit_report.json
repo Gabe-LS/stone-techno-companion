@@ -1,0 +1,192 @@
+[
+  {
+    "test": "feature:Notification",
+    "status": "pass",
+    "detail": "True"
+  },
+  {
+    "test": "feature:permission",
+    "status": "info",
+    "detail": "default"
+  },
+  {
+    "test": "feature:showNotification",
+    "status": "pass",
+    "detail": "True"
+  },
+  {
+    "test": "feature:getNotifications",
+    "status": "pass",
+    "detail": "True"
+  },
+  {
+    "test": "feature:maxActions",
+    "status": "info",
+    "detail": "None"
+  },
+  {
+    "test": "feature:actions",
+    "status": "fail",
+    "detail": "False"
+  },
+  {
+    "test": "feature:silent",
+    "status": "pass",
+    "detail": "True"
+  },
+  {
+    "test": "feature:renotify",
+    "status": "fail",
+    "detail": "False"
+  },
+  {
+    "test": "feature:requireInteraction",
+    "status": "fail",
+    "detail": "False"
+  },
+  {
+    "test": "feature:badge",
+    "status": "fail",
+    "detail": "False"
+  },
+  {
+    "test": "feature:image",
+    "status": "fail",
+    "detail": "False"
+  },
+  {
+    "test": "feature:vibrate",
+    "status": "fail",
+    "detail": "False"
+  },
+  {
+    "test": "feature:data",
+    "status": "pass",
+    "detail": "True"
+  },
+  {
+    "test": "feature:timestamp",
+    "status": "fail",
+    "detail": "False"
+  },
+  {
+    "test": "feature:tag",
+    "status": "pass",
+    "detail": "True"
+  },
+  {
+    "test": "feature:setAppBadge",
+    "status": "fail",
+    "detail": "False"
+  },
+  {
+    "test": "feature:clearAppBadge",
+    "status": "fail",
+    "detail": "False"
+  },
+  {
+    "test": "3a:before-replace",
+    "status": "fail",
+    "detail": "count=0 (expected 1)"
+  },
+  {
+    "test": "3a:after-replace",
+    "status": "fail",
+    "detail": "count=0 (expected 1 after replacement)"
+  },
+  {
+    "test": "3f:pre",
+    "status": "info",
+    "detail": "Before push 2: count=0"
+  },
+  {
+    "test": "3f:post-5s",
+    "status": "fail",
+    "detail": "After 5s: count=0 (expected 1)"
+  },
+  {
+    "test": "4a:sw-no-filter",
+    "status": "fail",
+    "detail": "count=0 (expected >=2)"
+  },
+  {
+    "test": "4b:sw-filter-tag",
+    "status": "fail",
+    "detail": "count=0 (expected 1)"
+  },
+  {
+    "test": "4c:page-context",
+    "status": "fail",
+    "detail": "count=0 (expected >=2)"
+  },
+  {
+    "test": "4d:data-readback",
+    "status": "fail",
+    "detail": "no data"
+  },
+  {
+    "test": "5a:close-from-sw",
+    "status": "pass",
+    "detail": "found=0, remaining=0"
+  },
+  {
+    "test": "5b:close-from-page",
+    "status": "pass",
+    "detail": "before=0, after_3s=0"
+  },
+  {
+    "test": "6a:pre-prune",
+    "status": "info",
+    "detail": "total=0, room-x=0"
+  },
+  {
+    "test": "6a:post-prune",
+    "status": "fail",
+    "detail": "total=0, room-x=0 (expected 1)"
+  },
+  {
+    "test": "7a:silent",
+    "status": "fail",
+    "detail": "notification not shown"
+  },
+  {
+    "test": "8b:maxActions",
+    "status": "info",
+    "detail": "Notification.maxActions=None"
+  },
+  {
+    "test": "8a:actions",
+    "status": "fail",
+    "detail": "notification not shown"
+  },
+  {
+    "test": "9a:data",
+    "status": "fail",
+    "detail": "notification not shown"
+  },
+  {
+    "test": "15a:showFromPage",
+    "status": "fail",
+    "detail": "ok=False, count=0"
+  },
+  {
+    "test": "15b:newNotification",
+    "status": "pass",
+    "detail": "ok=True, error="
+  },
+  {
+    "test": "17a:room-clear",
+    "status": "fail",
+    "detail": "before: A=0 B=0 | after: A=0 B=0"
+  },
+  {
+    "test": "16a:rapid-5-unique",
+    "status": "warn",
+    "detail": "count=0 (expected 5)"
+  },
+  {
+    "test": "16b:rapid-5-same-tag",
+    "status": "fail",
+    "detail": "count=0 (expected 1 after tag replacement)"
+  }
+]

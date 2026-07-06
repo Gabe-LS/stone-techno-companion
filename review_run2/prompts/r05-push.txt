@@ -1,0 +1,24 @@
+You are a review agent for the Stone Techno Companion project (festival companion: scraper + static site + FastAPI chat server with E2EE DMs, push notifications, media uploads). Read CLAUDE.md at the project root first for architecture context.
+
+Context: a large pre-deploy review ran earlier today; its confirmed findings are in review_run/TRIAGE.md and were fixed in the last 12 commits (see review_run2/inputs/fix-commits.log). The diffs are in review_run2/inputs/fix-commits.diff (committed fixes) and review_run2/inputs/working-tree.diff (uncommitted latest batch: deploy safety, push TTL, badge double-count fix, first-run notification prompt, magic-link email template). Review the CURRENT state of the code, which includes all of these changes.
+
+Rules:
+- Severity levels: CRITICAL (blocks deploy), HIGH (should fix before deploy), MEDIUM (fix soon after), LOW (tech debt, non-urgent).
+- Only report concrete, actionable findings with file paths and line numbers. No vague suggestions.
+- Do NOT report: style preferences, missing comments, hypothetical future requirements, things documented as known limitations in CLAUDE.md, or TRIAGE.md items unless the fix for them is incomplete or introduced a new bug.
+- Do NOT modify any files. This is a read-only review. You have no Bash: you cannot run tests or servers, and you must not claim any verification you did not do by reading code.
+
+Output format:
+For each finding: [SEVERITY] file:line — description of the issue and why it matters. Group by severity, CRITICAL first. End with a one-paragraph summary. If an area is clean, say "No issues found" for it.
+
+YOUR ASSIGNMENT:
+Push notification stack audit against the hard-won invariants in CLAUDE.md (read that section first — every invariant there was paid for with a real outage). Files: server/api.py (scheduler + _check_vapid_key_consistency + lineup subscribe endpoints), server/chat_ws.py (push trigger, _push_or_defer, _do_send_push), server/chat_api.py (chat push subscribe + idle beacon + ack), server/static/sw.js, scraper/render.py (enableNotifications, _repairPushSubscription on lineup), server/chat/chat.html (_subscribePush, _repairPushSubscription, _enableAllNotifications, _disableAllNotifications), server/verify_push_both.py.
+
+Check each invariant is still honored after all recent changes:
+1. vapid_claims dict copied per webpush() call in BOTH senders
+2. Chromium-strict VAPID: signing key vs applicationServerKey consistency
+3. Unique notification tags across restarts (push_id)
+4. No unsubscribe-before-subscribe anywhere in enable/repair flows (shared endpoint invariant)
+5. Repair gated by push_enabled flag; explicit disable never overridden
+6. TTL now 300 in both senders (working-tree change) — any spot still defaulting to 0?
+Also look for: dedup correctness in the lineup scheduler (sent_notifications) after the ttl change, idle-detection interplay with the new focus-gated visible keepalive, badge count correctness in payloads, 410 pruning removing the right row, subscription resync races when lineup and chat pages are open simultaneously.

@@ -1,0 +1,39 @@
+## Verdict
+
+Two client-side mechanisms can independently produce exactly this symptom (WS alive, unread badge updates, zero push). Ranked by how precisely they match "tab open and connected, no push":
+
+**Most likely: the client's own `visible` heartbeat defeats server-side idle detection.** `chat.html:4646-4655` (`_startVisibleKeepalive`) sends `wsSend('visible', {})` every 20s for as long as `document.hidden` is `false` — with no check for actual user interaction. Server-side, `chat_ws.py:1316-1317` treats `visible` exactly like a user-initiated event and stamps `_last_ws_activity[user_id] = now`. Since 20s < the documented 30s idle fallback, a tab that is merely *not hidden* (front-most tab in a background/unfocused Brave window, minimized-but-not-tab-switched, another app covering it, etc.) never goes idle — the server can never conclude "push this user," no matter how long since the human last touched the page. This contradicts the CLAUDE.md invariant "passive events don't reset the idle timer": `visible` is passive/automatic, not user-initiated, but resets the same clock a real action would.
+
+**Close second: per-origin push state.** Notification permission, the SW-scoped `PushManager` subscription, and the `push_enabled` localStorage flag are all origin-scoped. Given `localhost`, `10.0.0.100`, and `192.168.0.100` are three distinct origins and the cert was just regenerated (implying an IP/host change), if user B is on a different origin today than the one where they originally granted push, `_repairPushSubscription` (`chat.html:3942-3943`) silently returns at the `Notification.permission !== 'granted'` check — no error, no toast, WS still connects fine since it doesn't care about origin-scoped permissions.
+
+Both are real gaps; I can't tell from the client code alone which one is firing without knowing the user's current URL/origin and whether Brave devtools shows `Notification.permission` as `'granted'`. The checklist below resolves this in under a minute.
+
+## When should a connected, open-tab user get a push
+
+By the documented design (and as implemented client-side):
+1. The tab must be **hidden** (`document.hidden === true`) — either via the instant path, `sendBeacon('/chat/api/push/idle')` fired on `visibilitychange`→hidden or `pagehide` (`chat.html:4656-4666`), which zeroes server-side `_last_ws_activity` immediately, **or**
+2. The tab is visible but the user has issued **no user-initiated WS event** (`send_message`, `typing`, `add_reaction`, etc. — not `visible`, not `join_room`/`mark_read`) for 30s, per the documented fallback.
+3. AND the message is for a room/DM the user isn't currently looking at, sent by someone else.
+
+A genuinely foregrounded, actively-used tab should never get a push — the WS delivers instantly (this is by design, confirmed at `chat.html:1315`, the in-page `Notification` fallback and unread counters only fire under `document.hidden`). The observed `(2)` title badge is **not** evidence this rule was violated: `_updateTitleBadge` (`chat.html:1839-1842`) sums `unreadByRoom` (populated by `badge_update`, `chat.html:1527` — fires regardless of visibility, for rooms other than the one currently open) plus `_hiddenUnread` (only incremented while hidden, `chat.html:1315-1317`). So "(2) Chat" is fully consistent with the tab being visible the whole time, just not on the room that received messages — it says nothing about whether push *should* have fired.
+
+## Findings ranked by likelihood
+
+1. **`visible` heartbeat resets server idle timer every 20s** — `server/chat/chat.html:4646-4655` (client) + `server/chat_ws.py:1316-1317` (server treats it as activity). Any non-hidden tab, focused or not, keeps the user permanently "not idle," so push never triggers regardless of actual attention. This is the single mechanism that best matches "tab open + WS connected + no push."
+2. **Origin-scoped push state after IP/cert change** — `server/chat/chat.html:3942-3943` (`_repairPushSubscription` bails silently if `Notification.permission !== 'granted'` on the current origin) and `chat.html:3901-3931` (`_subscribePush`, same silent-false return path). If user B is on a different origin than where they last granted permission, there is zero user-visible error — WS/auth can still work fine on the new origin while push is simply never (re)established.
+3. **Stale subscription pinned to an old key survives restarts** — `chat.html:3910-3913`: `_subscribePush` only calls `pushManager.subscribe()` when `getSubscription()` returns nothing; if one already exists it is reused as-is, never re-subscribed. If any of today's 5 server restarts changed the VAPID keypair in a way that made an existing subscription incompatible, the client would keep reporting `_pushSubscribed = true` / "Push: On" in the notifications modal (`chat.html:3994`) while every send fails upstream, with no client-side signal that anything is wrong.
+4. **In-page `Notification` fallback is a separate, weaker channel** — `chat.html:3855`/`3879`, gated on `document.hidden` and driven by page JS (`setTimeout`), not the service worker. If the tab is throttled/frozen/discarded while backgrounded, this path silently no-ops — but this is a secondary UX nicety, not the real push channel, so it doesn't explain a fully-hidden/hard-closed tab failing to get a push too.
+5. **sw.js push handler itself is sound** — `server/static/sw.js:25-60`: payload parsing is fully guarded (bad/missing JSON just falls back to defaults), tag is always unique (`push_id` random fallback, line 35), and `showNotification` is unconditionally reached on any valid push event. No silent-drop path here; ruled out as the cause of a *complete* absence of any notification.
+6. **`skipWaiting()`/`clients.claim()` at `sw.js:1-2`** mean stale SW versions from repeated dev-server restarts are not a plausible cause — the newest registration always takes over immediately, no "waiting worker" pileup.
+
+## Brave checklist for the user
+
+1. **Confirm the exact origin** in the address bar right now (`https://localhost:64728` vs `https://10.0.0.100:64728` vs `https://192.168.0.100:64728`) — Notification permission, SW registration, and the `push_enabled` flag do **not** carry over between these. If it's not the same origin you originally clicked "Enable notifications" on, re-enable from Chat → avatar menu → Notifications on this origin.
+2. `brave://settings/content/notifications` → confirm the current origin is listed as **Allowed**, not blocked/reset.
+3. `brave://settings/privacy` → confirm **"Use Google services for push messaging"** is ON (required for FCM delivery on Chromium/Brave).
+4. DevTools → Application → Service Workers: confirm exactly one worker is `activated and running` at scope `/`, no stuck "waiting" worker, no red errors on the `push` listener.
+5. DevTools → Application → Service Workers → **Push** (test button): fire a synthetic push and confirm a notification appears — isolates whether the browser-level delivery path works at all, independent of the server.
+6. DevTools console: run `navigator.serviceWorker.ready.then(r=>r.pushManager.getSubscription()).then(s=>console.log(s?.endpoint))` — confirm a subscription exists, then compare that endpoint against what the server has stored for this user (server-side team can check `chat_push_subscriptions`).
+7. Application → Local Storage (for the current origin): confirm `push_enabled` is `"1"`. If missing/`"0"`, the silent repair path never runs.
+8. `brave://gcm-internals` — check for recent registration/send errors for this profile (Brave's equivalent of `chrome://gcm-internals`).
+9. As a control: leave the tab genuinely hidden (switch tabs or minimize) for >30s and send a message from browser 1 — if push now arrives, that isolates the problem to the `visible`-heartbeat/idle-detection interaction (finding #1) rather than a broken subscription.

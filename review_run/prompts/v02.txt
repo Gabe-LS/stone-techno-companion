@@ -1,0 +1,8 @@
+You are an adversarial verification agent for the Stone Techno Companion project (FastAPI chat server + static site). Read CLAUDE.md for architecture context. Be skeptical and try to REFUTE the claim. For the claim: (1) read the cited code plus surrounding context, (2) check for guards/validations/architectural decisions that prevent it, (3) check CLAUDE.md for documented intentional trade-offs, (4) verify any required precondition is actually reachable. Do NOT modify files — read-only.
+
+=== CLAIM (CRITICAL): SSRF via DNS rebinding (TOCTOU) in link-preview fetcher ===
+In server/chat_ws.py around lines 141-269, _is_safe_preview_url resolves a URL's hostname once via socket.getaddrinfo and rejects private/loopback/link-local/reserved IPs. But the actual fetch in _fetch_og_preview (and any redirect target) around lines 217-228 uses client.get(url, ...) which performs its OWN independent DNS resolution at connect time. A malicious link-preview target (any URL a chat user pastes, auto-triggered around lines 881-898) can return a public IP for the validation lookup and 127.0.0.1 / internal / cloud-metadata IP for the real connection — bypassing the blocklist. Claim: SSRF into internal network/metadata, triggerable by any chat user posting a URL. Verify: does the fetch re-resolve DNS separately from the validation check? Are redirects followed without re-validation? Is there any pinning of the validated IP?
+
+=== OUTPUT ===
+Verdict: [CONFIRMED / REFUTED / DOWNGRADED to <severity>]
+Reasoning: <explanation with specific file:line references. Address whether httpx follows redirects here and whether the resolved IP is pinned between validation and fetch.>

@@ -1,0 +1,3 @@
+{"server_ts":"2026-07-04T17:27:19.087835+00:00","client_ts":"2026-07-04T17:27:19.101Z","src":"page","ev":"page-load","detail":"{\"platform\":\"ios-pwa\",\"session\":\"nd-rrcnv4-mr6mxdmk\",\"url\":\"https://10.0.0.100:9444/\"}","platform":"ios-pwa","test_id":""}
+{"server_ts":"2026-07-04T17:27:19.102657+00:00","client_ts":"2026-07-04T17:27:19.127Z","src":"page","ev":"sw-registered","detail":"scope=https://10.0.0.100:9444/","platform":"ios-pwa","test_id":""}
+{"server_ts":"2026-07-04T17:27:22.026466+00:00","client_ts":"2026-07-04T17:27:22.052Z","src":"page","ev":"push-subscribed","detail":"https://web.push.apple.com/QKgwUQeHjsb25jqgLa96YOczKq1bj44iXRxl1Y2N8XCvt0rM9lFfr","platform":"ios-pwa","test_id":""}
