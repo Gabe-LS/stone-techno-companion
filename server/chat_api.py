@@ -1234,9 +1234,13 @@ async def create_meetup_endpoint(request: Request):
     user, db = _get_user_from_cookie(request)
     try:
         from chat_ws import manager
+        from chat_moderation import check_ban_mute
 
         if not manager.check_rate_limit(user["id"]):
             raise HTTPException(429, "Too many requests. Slow down.")
+        _bm = await check_ban_mute(db, user["id"])
+        if not _bm["allowed"]:
+            raise HTTPException(403, _bm["reason"])
         body = await request.json()
         title = (body.get("title") or "")[:60]
         meetup_time = body.get("meetup_time")
@@ -1268,6 +1272,11 @@ async def create_meetup_endpoint(request: Request):
 async def join_meetup_endpoint(meetup_id: str, request: Request):
     user, db = _get_user_from_cookie(request)
     try:
+        from chat_moderation import check_ban_mute
+
+        _bm = await check_ban_mute(db, user["id"])
+        if not _bm["allowed"]:
+            raise HTTPException(403, _bm["reason"])
         db_join_meetup(db, meetup_id, user["id"])
         attendees = get_meetup_attendees(db, meetup_id)
         return [{"id": a["id"], "display_name": a["display_name"]} for a in attendees]

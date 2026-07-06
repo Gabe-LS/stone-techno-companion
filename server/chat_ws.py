@@ -1748,6 +1748,22 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
             elif event == "create_meetup":
                 if not manager.check_rate_limit(user_id):
                     continue
+                mod_result = await check_ban_mute(db, user_id)
+                if not mod_result["allowed"]:
+                    if mod_result["action"] == "ban":
+                        await manager.send_to_user(
+                            user_id, {"event": "banned", "reason": mod_result["reason"]}
+                        )
+                    elif mod_result["action"] == "mute":
+                        await manager.send_to_user(
+                            user_id,
+                            {
+                                "event": "muted",
+                                "reason": mod_result["reason"],
+                                "message": mod_result.get("message", ""),
+                            },
+                        )
+                    continue
                 stage_id = data.get("stage_id")
                 title = (data.get("title") or "")[:60]
                 meetup_time = data.get("meetup_time")
@@ -1832,6 +1848,22 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 )
 
             elif event == "join_meetup":
+                mod_result = await check_ban_mute(db, user_id)
+                if not mod_result["allowed"]:
+                    if mod_result["action"] == "ban":
+                        await manager.send_to_user(
+                            user_id, {"event": "banned", "reason": mod_result["reason"]}
+                        )
+                    elif mod_result["action"] == "mute":
+                        await manager.send_to_user(
+                            user_id,
+                            {
+                                "event": "muted",
+                                "reason": mod_result["reason"],
+                                "message": mod_result.get("message", ""),
+                            },
+                        )
+                    continue
                 meetup_id = data.get("meetup_id")
                 if meetup_id:
                     join_meetup(db, meetup_id, user_id)
