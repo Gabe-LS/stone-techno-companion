@@ -647,7 +647,7 @@ class ConnectionManager:
         self.rooms: dict[str, ChatRoom] = {}
         self.user_conns: dict[str, dict[str, WebSocket]] = {}
         self.conn_user: dict[str, str] = {}
-        self.user_rooms: dict[str, set[str]] = {}
+        self.conn_rooms: dict[str, set[str]] = {}
         self._rate_buckets: dict[str, list[float]] = {}
         self._broadcast_buckets: dict[str, list[float]] = {}
         self.user_badge_rooms: dict[str, set[str]] = {}
@@ -670,10 +670,16 @@ class ConnectionManager:
             self.rooms[room_id] = ChatRoom()
         return self.rooms[room_id]
 
+    def _user_rooms(self, user_id: str) -> set[str]:
+        rooms: set[str] = set()
+        for c in self.user_conns.get(user_id, {}):
+            rooms |= self.conn_rooms.get(c, set())
+        return rooms
+
     async def connect(self, ws: WebSocket, user_id: str, conn_id: str) -> None:
         self.user_conns.setdefault(user_id, {})[conn_id] = ws
         self.conn_user[conn_id] = user_id
-        self.user_rooms.setdefault(user_id, set())
+        self.conn_rooms[conn_id] = set()
         self._last_ws_activity[user_id] = time.monotonic()
 
     def disconnect(self, conn_id: str) -> tuple[str | None, set[str]]:
@@ -682,27 +688,27 @@ class ConnectionManager:
             return None, set()
         conns = self.user_conns.get(user_id, {})
         conns.pop(conn_id, None)
-        for room_id in list(self.user_rooms.get(user_id, set())):
+        this_conn_rooms = self.conn_rooms.pop(conn_id, set())
+        left: set[str] = set()
+        for room_id in this_conn_rooms:
             room = self.rooms.get(room_id)
-            if room:
-                room.connections.pop(conn_id, None)
-                room.conn_users.pop(conn_id, None)
+            if not room:
+                continue
+            room.connections.pop(conn_id, None)
+            room.conn_users.pop(conn_id, None)
+            if not any(u == user_id for u in room.conn_users.values()):
+                room.user_names.pop(user_id, None)
+                room.user_info.pop(user_id, None)
+                left.add(room_id)
         if not conns:
             self.user_conns.pop(user_id, None)
-            rooms = self.user_rooms.pop(user_id, set())
             self.user_badge_rooms.pop(user_id, None)
             self.user_unread.pop(user_id, None)
             self._rate_buckets.pop(user_id, None)
             self._broadcast_buckets.pop(user_id, None)
             self._recent_msgs.pop(user_id, None)
             self._last_active_ts.pop(user_id, None)
-            for room_id in rooms:
-                room = self.rooms.get(room_id)
-                if room and not any(u == user_id for u in room.conn_users.values()):
-                    room.user_names.pop(user_id, None)
-                    room.user_info.pop(user_id, None)
-            return user_id, rooms
-        return user_id, set()
+        return user_id, left
 
     async def join_room(
         self,
@@ -730,7 +736,7 @@ class ConnectionManager:
             "avatar_url": avatar_url,
             "country": country,
         }
-        self.user_rooms.setdefault(user_id, set()).add(room_id)
+        self.conn_rooms.setdefault(conn_id, set()).add(room_id)
         if not already_in_room:
             await room.broadcast(
                 {
@@ -764,9 +770,7 @@ class ConnectionManager:
                     "online": False,
                 },
             )
-        rooms = self.user_rooms.get(user_id or "")
-        if rooms:
-            rooms.discard(room_id)
+        self.conn_rooms.get(conn_id, set()).discard(room_id)
 
     async def broadcast_to_room(
         self,
@@ -782,7 +786,7 @@ class ConnectionManager:
         # Called when a user edits their profile: refresh the cached identity in
         # every room they're in and tell connected peers so already-rendered
         # messages and the member list update without a reconnect.
-        for room_id in list(self.user_rooms.get(user_id, set())):
+        for room_id in list(self._user_rooms(user_id)):
             room = self.rooms.get(room_id)
             if room and user_id in room.user_info:
                 room.user_info[user_id].update(identity)
