@@ -3586,7 +3586,7 @@ async function openMeetupMapPicker() {
       });
     });
   });
-  _meetupMarker = new maplibregl.Marker({ draggable: true, color: '#4f46e5' }).setLngLat(center).addTo(_meetupMap);
+  _meetupMarker = new maplibregl.Marker({ draggable: true, color: '#ff2020' }).setLngLat(center).addTo(_meetupMap);
   _meetupMarker.getElement().style.zIndex = '2'; // above POI dots, below POI labels
   let _userMoved = false;
   _meetupMarker.on('dragstart', () => { _userMoved = true; });
