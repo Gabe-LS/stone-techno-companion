@@ -275,8 +275,8 @@ Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DBs at `server/d
 | `VAPID_CLAIMS_EMAIL` | Yes | VAPID contact email |
 | `GOOGLE_CLIENT_ID` | Yes | Google OAuth client ID (from Google Cloud Console) |
 | `GOOGLE_CLIENT_SECRET` | Yes | Google OAuth client secret (for authorization code exchange) |
-| `CHAT_ADMIN_EMAILS` | No | Comma-separated admin emails for cookie-based admin auth |
-| `CHAT_ADMIN_TOKEN` | No | Admin token for header-based admin auth (fallback) |
+| `CHAT_ADMIN_EMAILS` | No | Comma-separated emails that are PERMANENT super-admins (never DB-removable). Additional admins are managed in-panel via the `admins` table. |
+| `CHAT_ADMIN_TOKEN` | No | Shared bootstrap/emergency super-admin token (`X-Admin-Token` header). Unattributable — the cookie+role path is the normal per-person auth. |
 | `CHAT_EVENT_ID` | No | Event ID (default: `stone-techno-2026`) |
 | `CHAT_DB_PATH` | No | Test/dev override for chat.db location. Used by the browser verification harness (`tests/e2ee_browser_check.py`) to point at an isolated scratch DB. |
 
@@ -368,6 +368,8 @@ reports            — id, reporter_id, reported_user_id, message_snapshot, room
 strikes            — id, user_id, reason, detail, created_at, expires_at (4h TTL, reset on new strike)
 chat_push_subscriptions — id, user_id, endpoint, p256dh, auth, created_at
 e2ee_device_keys   — user_id + device_id (PK), public_key, created_at, last_seen
+admins             — email_hash (PK), role ('admin' | 'super_admin'), label, added_by, created_at (DB-backed admins; layered under the permanent CHAT_ADMIN_EMAILS super-admins)
+admin_actions      — id, actor, action, target_user_id, target_room_id, detail, created_at (admin audit log — every mutating admin action, shown in the Audit tab)
 ```
 
 ### Auth
@@ -444,7 +446,9 @@ Mute/delete user → all their messages deleted from DB + `messages_expired` bro
 
 ### Admin Page
 
-Dark-themed SPA at `/chat/admin` (shortcut) or `/chat/api/admin`. Auth via chat session cookie (matching `CHAT_ADMIN_EMAILS`) or `X-Admin-Token` header. Tabs: Rooms (create/edit/delete/reorder/set main/auto-join, manual/auto sort toggle), Users (search, strike/mute/ban/unban/delete, view history, status/warnings columns), Reports (ban/strike/dismiss), Banned (unban), Logs (moderation timeline with search). Stats footer with auto-refresh. Room sort modes: Auto (main first, bell-on by activity, bell-off by activity) or Manual (by position, drag-to-reorder).
+Dark-themed SPA at `/chat/admin` (shortcut) or `/chat/api/admin`. Tabs: Rooms (create/edit/delete/reorder/set main/auto-join, manual/auto sort toggle, per-room message viewer + single-message delete, DM rows show participant names, delete meetup rooms), Users (search, strike/mute/unmute/ban/unban/delete, custom reason on ban/strike, view history, status/warnings columns), Reports (filter by pending/actioned/dismissed/all, room name + jump-to-user, ban/strike/dismiss), Banned (unban), Logs (auto-moderation timeline with search), Audit (every admin action with actor), and — super-admin only — Admins (manage the admin list) and Settings (msg_char_limit + DM/room/meetup TTLs, live). Stats footer with auto-refresh.
+
+**Roles & multi-admin** (see `docs/admin-multiadmin.md`). Auth resolves to an actor via `_resolve_admin`: the shared `X-Admin-Token` header is a bootstrap/emergency super-admin credential; a chat session cookie resolves to a role. `CHAT_ADMIN_EMAILS` entries are PERMANENT super-admins (never stored in the DB, never removable via the panel — the lockout-proof root set). DB-backed admins live in the `admins` table with role `admin` | `super_admin`. `_require_super_admin` gates the destructive endpoints (delete room/user, settings, unban, delete-ban, clear-warnings, admin management); moderators keep ban/mute/unmute/strike/reports/room-edit/message-delete/meetup-delete. `_guard_target` blocks moderating an env super-admin outright (owner-safe) and blocks an admin from moderating another admin (only a super-admin can). Every mutating endpoint records actor + action + target in `admin_actions` (surfaced in the Audit tab); this also gives mutes/unmutes/unbans their log visibility. `_require_admin` is per-IP rate-limited on failure (20/5min). Admin-panel handlers never interpolate untrusted strings into inline `on*` attributes (HTML-entity encoding is decoded before an inline handler compiles as JS, so an encoded quote breaks out) — handlers pass only ids and look names up from in-memory arrays; OAuth display names are sanitized before storage. Regression net: `tests/test_chat_admin_roles.py` (role resolution, super-admin gating, admin-account protection, admins CRUD, audit, message/meetup/settings/reports endpoints — through the ASGI stack).
 
 Reports from E2EE DMs carry reporter-provided plaintext the server never independently verified — flagged `unverified` in the `reports` table, shown with a warning banner in the admin UI alongside the reporter/reported user history.
 
