@@ -325,6 +325,90 @@ class TestMeetups:
         r2 = auth_client.get("/chat/api/meetups?stage_id=eisbahn")
         assert len(r2.json()) == 0
 
+    def test_non_attendee_cannot_see_location(
+        self, auth_client, user1, user2, session2, stage_room
+    ):
+        # A4: location + attendee identity must be attendee-only.
+        future = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+        meetup = create_meetup(
+            _test_db,
+            user1["id"],
+            "test-event",
+            "grand-hall",
+            "Loc test",
+            future,
+            location_lat=52.5,
+            location_lng=13.4,
+            note="secret spot",
+        )
+        # creator IS an attendee -> sees full detail
+        rc = auth_client.get(f"/chat/api/meetups/{meetup['id']}")
+        assert rc.json().get("location_lat") is not None
+        assert rc.json().get("note") == "secret spot"
+        # non-attendee -> location/note/attendees stripped, count still present
+        client2 = TestClient(auth_client.app)
+        client2.cookies.set("chat_session", session2["token"])
+        rn = client2.get(f"/chat/api/meetups/{meetup['id']}")
+        assert rn.status_code == 200
+        assert "location_lat" not in rn.json()
+        assert "note" not in rn.json()
+        assert "attendees" not in rn.json()
+        assert rn.json()["attendee_count"] == 1
+        # list endpoint applies the same gate
+        rl = client2.get("/chat/api/meetups")
+        assert rl.status_code == 200
+        assert all("location_lat" not in m for m in rl.json())
+
+    def test_join_nonexistent_meetup_returns_404(self, auth_client):
+        # B1: no IntegrityError / 500 for a stale or bogus meetup id.
+        r = auth_client.post("/chat/api/meetups/does-not-exist/join")
+        assert r.status_code == 404
+
+    def test_muted_user_cannot_create_meetup(self, auth_client, user1, stage_room):
+        # A1: mute is enforced on meetup creation.
+        from chat_db import mute_user
+
+        mute_user(_test_db, user1["id"])
+        future = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+        r = auth_client.post(
+            "/chat/api/meetups", json={"title": "x", "meetup_time": future}
+        )
+        assert r.status_code == 403
+
+    def test_past_meetup_time_rejected(self, auth_client, stage_room):
+        # B5: past meetup_time is rejected at creation.
+        past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        r = auth_client.post(
+            "/chat/api/meetups", json={"title": "old", "meetup_time": past}
+        )
+        assert r.status_code == 400
+
+    def test_blocked_user_cannot_join(
+        self, auth_client, user1, user2, session2, stage_room
+    ):
+        # A6: a user blocked by the creator cannot join their meetup.
+        from chat_db import block_user
+
+        future = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+        meetup = create_meetup(
+            _test_db, user1["id"], "test-event", "grand-hall", "Blk", future
+        )
+        block_user(_test_db, user1["id"], user2["id"])
+        client2 = TestClient(auth_client.app)
+        client2.cookies.set("chat_session", session2["token"])
+        r = client2.post(f"/chat/api/meetups/{meetup['id']}/join")
+        assert r.status_code == 403
+
+    def test_creator_can_cancel_meetup(self, auth_client, user1, stage_room):
+        # C2: creator-only cancel removes the meetup.
+        future = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+        meetup = create_meetup(
+            _test_db, user1["id"], "test-event", "grand-hall", "Cancel", future
+        )
+        r = auth_client.delete(f"/chat/api/meetups/{meetup['id']}")
+        assert r.status_code == 200
+        assert auth_client.get(f"/chat/api/meetups/{meetup['id']}").status_code == 404
+
 
 # --- DMs ---
 
