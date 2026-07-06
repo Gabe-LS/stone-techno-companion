@@ -1070,7 +1070,7 @@ function connectWS() {
     };
     sock.onclose = (ev) => {
       ws = null; _wsConnecting = false;
-      if (ev.code === 4001) { currentUser = null; renderAuth(); return; }
+      if (ev.code === 4001 || ev.code === 4003) { currentUser = null; renderAuth(); return; }
       if (currentUser) {
         _wsRetries++;
         const delay = Math.min(3000 * Math.pow(1.5, _wsRetries - 1), 30000);

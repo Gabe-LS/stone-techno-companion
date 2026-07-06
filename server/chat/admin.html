@@ -234,7 +234,8 @@ function renderStatsHTML(s) {
     `<div class="stat${s.pending_reports ? ' alert' : ''}">Reports <b>${s.pending_reports}</b></div>` +
     `<div class="stat">Bans <b>${s.active_bans}</b></div>` +
     `<div class="stat">Strikes <b>${s.active_strikes}</b></div>` +
-    `<div class="stat">Messages <b>${s.total_messages_active}</b></div>`;
+    `<div class="stat">Messages <b>${s.total_messages_active}</b></div>` +
+    `<div class="stat">Rooms <b>${s.total_rooms}</b></div>`;
 }
 async function refreshStats() {
   dbg('[STATS] refresh');
@@ -278,6 +279,7 @@ const render = {
     const el = document.getElementById('content');
     try {
       const reports = await api('/reports?status=pending');
+      window._reportsData = reports;
       dbg('[RENDER] reports:', reports.length);
       if (!reports.length) { el.innerHTML = '<div class="empty">No pending reports</div>'; return; }
       const histories = await Promise.all(reports.map(r => Promise.all([
@@ -296,9 +298,9 @@ const render = {
         <td><div class="snapshot${r.unverified ? ' unverified' : ''}">${snapshotText}${r.unverified ? '<div class="unverified-banner">Content provided by reporter (unverified - server cannot read encrypted messages)</div>' : ''}</div></td>
         <td class="col-narrow" style="color:var(--text-muted)">${ago(r.created_at)}</td>
         <td class="col-actions"><div class="btn-group">
-          <button class="btn btn-red" onclick="reportAction('${esc(r.id)}','${esc(r.reported_user_id)}','${esc(r.reported_name || '[deleted user]')}','ban')">Ban</button>
-          <button class="btn btn-amber" onclick="reportAction('${esc(r.id)}','${esc(r.reported_user_id)}','${esc(r.reported_name || '[deleted user]')}','strike')">Strike</button>
-          <button class="btn btn-neutral" onclick="reportAction('${esc(r.id)}','','','dismiss')">Dismiss</button>
+          <button class="btn btn-red" onclick="reportAction('${esc(r.id)}','ban')">Ban</button>
+          <button class="btn btn-amber" onclick="reportAction('${esc(r.id)}','strike')">Strike</button>
+          <button class="btn btn-neutral" onclick="reportAction('${esc(r.id)}','dismiss')">Dismiss</button>
         </div></td>
       </tr>`;
       }).join('') + '</tbody></table>';
@@ -379,7 +381,7 @@ const render = {
         <td class="col-narrow" style="color:var(--text-muted)">${ago(r.last_message_at)}</td>
         <td class="col-actions"><div class="btn-group">
           ${r.type !== 'dm' && r.type !== 'meetup' ? `<button class="btn btn-neutral" onclick="openRoomModal('${esc(r.id)}')">Edit</button>` : ''}
-          ${!r.is_main && r.type !== 'dm' && r.type !== 'meetup' ? `<button class="btn btn-neutral" onclick="deleteRoom('${esc(r.id)}','${esc(r.name)}')">Delete</button>` : ''}
+          ${!r.is_main && r.type !== 'dm' && r.type !== 'meetup' ? `<button class="btn btn-neutral" onclick="deleteRoom('${esc(r.id)}')">Delete</button>` : ''}
         </div></td>
       </tr>`).join('') + '</tbody></table>';
     } catch { el.innerHTML = '<div class="empty">Failed to load rooms</div>'; }
@@ -387,7 +389,11 @@ const render = {
 };
 
 // --- Reports ---
-async function reportAction(reportId, userId, userName, action) {
+async function reportAction(reportId, action) {
+  const r = (window._reportsData || []).find(x => x.id === reportId);
+  if (!r) return;
+  const userId = r.reported_user_id;
+  const userName = r.reported_name || '[deleted user]';
   dbg('[ACTION] report', action, userName);
   if (action === 'ban') {
     if (!confirm('Ban ' + userName + '?')) return;
@@ -416,6 +422,7 @@ async function loadUsers() {
     if (searchQuery) params.set('q', searchQuery);
     if (onlineOnly) params.set('online_only', 'true');
     const users = await api('/users?' + params);
+    window._usersData = users;
     if (!users.length) { el.innerHTML = '<div class="empty">No users found</div>'; return; }
     el.innerHTML = `<table class="tbl"><thead><tr>
       <th class="col-avatar"></th><th>Name</th><th>Username</th><th class="col-narrow">Country</th>
@@ -441,11 +448,13 @@ function userRow(u) {
       <div class="dropdown-menu">
         <button class="dropdown-item warn" onclick="adminStrike('${esc(u.id)}')">Strike</button>
         <button class="dropdown-item warn" onclick="adminMute('${esc(u.id)}')">Mute</button>
+        ${(u.muted_until && u.muted_until > new Date().toISOString())
+            ? `<button class="dropdown-item warn" onclick="adminUnmute('${esc(u.id)}')">Unmute</button>` : ''}
         <button class="dropdown-item" onclick="adminClearWarnings('${esc(u.id)}')">Clear warnings</button>
         <div class="dropdown-sep"></div>
         ${u.is_banned
-          ? `<button class="dropdown-item" onclick="adminUnban('${esc(u.id)}','${esc(u.display_name||u.username)}')">Unban</button>`
-          : `<button class="dropdown-item danger" onclick="adminBan('${esc(u.id)}','${esc(u.display_name||u.username)}')">Ban</button>`}
+          ? `<button class="dropdown-item" onclick="adminUnban('${esc(u.id)}')">Unban</button>`
+          : `<button class="dropdown-item danger" onclick="adminBan('${esc(u.id)}')">Ban</button>`}
       </div>
     </div></td>
   </tr><tr id="detail-row-${esc(u.id)}" style="display:none"><td colspan="10" style="padding:0"></td></tr>`;
@@ -472,6 +481,7 @@ async function loadUserDetail(userId) {
   const cell = row.querySelector('td');
   try {
     const u = await api('/users/' + userId);
+    window._userDetail = u;
     const now = new Date().toISOString();
     const isMuted = u.muted_until && u.muted_until > now;
     row.style.display = '';
@@ -481,7 +491,7 @@ async function loadUserDetail(userId) {
       <div class="detail-row"><b>Mute count:</b> ${u.mute_count} / 3 &middot; <b>Active messages:</b> ${u.message_count}</div>
       ${isMuted ? '<div class="detail-row"><span class="pill pill-amber">MUTED until ' + new Date(u.muted_until).toLocaleTimeString() + '</span></div>' : ''}
       <div style="margin-top:8px">
-        <button class="btn btn-red" onclick="event.stopPropagation();adminDeleteUser('${esc(u.id)}','${esc(u.display_name||u.username)}')">Delete user</button>
+        <button class="btn btn-red" onclick="event.stopPropagation();adminDeleteUser('${esc(u.id)}')">Delete user</button>
       </div>
       ${u.strikes.length ? '<h3>Strikes (' + u.strikes.length + ')</h3>' + u.strikes.map(s =>
         '<div class="detail-sub-row' + (s.is_active ? '' : ' expired') + '">' +
@@ -547,19 +557,30 @@ async function adminMute(userId) {
   await api('/mute/' + userId, {method: 'POST', body: JSON.stringify({minutes: 30})});
   refreshStats(); loadUsers();
 }
-async function adminBan(userId, name) {
+function _userName(id) { const u = (window._usersData || []).find(x => x.id === id) || (window._userDetail && window._userDetail.id === id ? window._userDetail : null); return u ? (u.display_name || u.username || id) : id; }
+
+async function adminBan(userId) {
+  const name = _userName(userId);
   dbg('[ACTION] ban', userId);
   if (!confirm('Ban ' + name + '?')) return;
   await api('/ban/' + userId, {method: 'POST', body: JSON.stringify({reason: 'Banned by admin'})});
   refreshStats(); loadUsers();
 }
-async function adminUnban(userId, name) {
+async function adminUnban(userId) {
+  const name = _userName(userId);
   dbg('[ACTION] unban', userId);
   if (!confirm('Unban ' + name + '?')) return;
   await api('/unban/' + userId, {method: 'POST', body: '{}'});
   refreshStats(); loadUsers();
 }
-async function adminDeleteUser(userId, name) {
+async function adminUnmute(userId) {
+  dbg('[ACTION] unmute', userId);
+  if (!confirm('Unmute this user? (strikes and mute count are kept)')) return;
+  await api('/unmute/' + userId, {method: 'POST', body: '{}'});
+  refreshStats(); loadUsers();
+}
+async function adminDeleteUser(userId) {
+  const name = (window._userDetail && window._userDetail.id === userId) ? (window._userDetail.display_name || window._userDetail.username || userId) : _userName(userId);
   dbg('[ACTION] deleteUser', userId);
   if (!confirm('Delete user ' + name + '? This cannot be undone.')) return;
   await api('/users/' + userId, {method: 'DELETE'});
@@ -587,10 +608,12 @@ function filterBans(q) {
     <td class="col-narrow"><span class="pill pill-gray">${esc(b.provider)}</span></td>
     <td class="truncate">${esc(b.reason)}</td>
     <td class="col-narrow" style="color:var(--text-muted)">${ago(b.created_at)}</td>
-    <td class="col-actions"><button class="btn btn-neutral" onclick="unban('${esc(b.ban_id)}','${esc(b.display_name || b.username || '')}')">Unban</button></td>
+    <td class="col-actions"><button class="btn btn-neutral" onclick="unban('${esc(b.ban_id)}')">Unban</button></td>
   </tr>`).join('') + '</tbody></table>';
 }
-async function unban(banId, name) {
+async function unban(banId) {
+  const b = (window._bansData || []).find(x => x.ban_id === banId);
+  const name = b ? (b.display_name || b.username || '') : '';
   dbg('[ACTION] unban', banId);
   if (!confirm('Unban ' + (name || 'this user') + '?')) return;
   await fetch('/chat/api/admin/bans/' + banId, {method: 'DELETE', headers: H(), credentials: 'include'});
@@ -666,6 +689,8 @@ function openRoomModal(roomId) {
     <div class="modal-field">
       <label>Message TTL</label>
       <select id="rm-ttl">
+        ${isEdit && room && room.ttl_minutes != null && ![30,60,360,1440,2880,4320].includes(room.ttl_minutes)
+            ? `<option value="${esc(String(room.ttl_minutes))}" selected>${esc(String(room.ttl_minutes))} minutes (current)</option>` : ''}
         <option value="30" ${room?.ttl_minutes === 30 ? 'selected' : ''}>30 minutes</option>
         <option value="60" ${!room || room?.ttl_minutes === 60 ? 'selected' : ''}>1 hour</option>
         <option value="360" ${room?.ttl_minutes === 360 ? 'selected' : ''}>6 hours</option>
@@ -783,7 +808,9 @@ async function onDrop(e) {
   } catch (e) { dbg('[ACTION] reorder failed', e.message); }
 }
 
-async function deleteRoom(roomId, name) {
+async function deleteRoom(roomId) {
+  const room = (window._roomsData || []).find(r => r.id === roomId);
+  const name = room ? room.name : '';
   dbg('[ACTION] deleteRoom', roomId);
   if (!confirm('Delete room "' + name + '"? All messages will be lost.')) return;
   await api('/rooms/' + roomId, {method: 'DELETE'});

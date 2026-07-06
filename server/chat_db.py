@@ -1386,12 +1386,13 @@ def get_pending_reports(db: sqlite3.Connection) -> list[sqlite3.Row]:
     ).fetchall()
 
 
-def resolve_report(db: sqlite3.Connection, report_id: str, status: str) -> None:
-    db.execute(
-        "UPDATE reports SET status = ?, reviewed_at = ? WHERE id = ?",
+def resolve_report(db: sqlite3.Connection, report_id: str, status: str) -> int:
+    cur = db.execute(
+        "UPDATE reports SET status = ?, reviewed_at = ? WHERE id = ? AND status = 'pending'",
         (status, _now(), report_id),
     )
     db.commit()
+    return cur.rowcount
 
 
 def purge_old_reports(db: sqlite3.Connection) -> int:
@@ -1562,13 +1563,17 @@ def get_admin_stats(db: sqlite3.Connection, online_user_ids: set[str]) -> dict:
         "online_count": len(online_user_ids),
         "reachable_count": reachable,
         "total_messages_active": db.execute(
-            "SELECT COUNT(*) FROM messages WHERE expires_at > ?", (now,)
+            "SELECT COUNT(*) FROM messages WHERE expires_at > ? "
+            "AND moderation_status != 'pending'",
+            (now,),
         ).fetchone()[0],
         "total_rooms": db.execute("SELECT COUNT(*) FROM rooms").fetchone()[0],
         "pending_reports": db.execute(
             "SELECT COUNT(*) FROM reports WHERE status = 'pending'"
         ).fetchone()[0],
-        "active_bans": db.execute("SELECT COUNT(*) FROM bans").fetchone()[0],
+        "active_bans": db.execute(
+            "SELECT COUNT(DISTINCT COALESCE(user_id, id)) FROM bans"
+        ).fetchone()[0],
         "active_strikes": db.execute(
             "SELECT COUNT(*) FROM strikes WHERE expires_at > ?", (now,)
         ).fetchone()[0],

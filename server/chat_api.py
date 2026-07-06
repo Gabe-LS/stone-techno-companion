@@ -36,6 +36,7 @@ from chat_db import (
     delete_user,
     create_session,
     ban_user as db_ban_user,
+    ban_user_all_providers,
     is_banned,
     is_user_banned,
     create_room,
@@ -66,6 +67,8 @@ from chat_db import (
     get_moderation_log,
     get_room_stats,
     mute_user,
+    increment_mute_count,
+    MAX_MUTES_BEFORE_BAN,
     delete_room,
     update_room,
     update_last_seen,
@@ -190,6 +193,7 @@ def _load_admin_emails() -> None:
 _email_rate: dict[str, list[float]] = {}
 _email_dest_rate: dict[str, list[float]] = {}
 _auth_rate: dict[str, list[float]] = {}
+_admin_fail_rate: dict[str, list[float]] = {}
 
 
 def _check_auth_rate(request: Request, max_n: int = 120, window: int = 300) -> None:
@@ -206,6 +210,22 @@ def _check_auth_rate(request: Request, max_n: int = 120, window: int = 300) -> N
         stale = [k for k, v in _auth_rate.items() if all(now - t >= window for t in v)]
         for k in stale:
             del _auth_rate[k]
+
+
+def _check_admin_fail_rate(
+    request: Request, max_n: int = 20, window: int = 300
+) -> None:
+    ip = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    _admin_fail_rate[ip] = [t for t in _admin_fail_rate.get(ip, []) if now - t < window]
+    if len(_admin_fail_rate[ip]) >= max_n:
+        raise HTTPException(429, "Too many attempts")
+    if len(_admin_fail_rate) > 1000:
+        stale = [
+            k for k, v in _admin_fail_rate.items() if all(now - t >= window for t in v)
+        ]
+        for k in stale:
+            del _admin_fail_rate[k]
 
 
 DISPOSABLE_DOMAINS: set[str] = set()
@@ -243,6 +263,7 @@ def _get_user_from_cookie(request: Request):
 
 
 def _require_admin(request: Request) -> None:
+    _check_admin_fail_rate(request)
     header_token = request.headers.get("X-Admin-Token") or ""
     if (
         ADMIN_TOKEN
@@ -265,6 +286,8 @@ def _require_admin(request: Request) -> None:
                         return
         finally:
             db.close()
+    ip = request.client.host if request.client else "unknown"
+    _admin_fail_rate.setdefault(ip, []).append(time.monotonic())
     raise HTTPException(403, "Admin access required")
 
 
@@ -362,7 +385,7 @@ async def auth_google(request: Request, response: Response):
         )
         provider_id = info["sub"]
         email = info.get("email", "")
-        name = info.get("name") or email.split("@")[0]
+        name = _safe_provider_display_name(info.get("name") or "", email.split("@")[0])
     except Exception as e:
         logger.warning("Google token verification failed: %s", e)
         raise HTTPException(401, "Invalid Google token")
@@ -431,7 +454,7 @@ async def auth_google_code(request: Request, response: Response):
         )
         provider_id = info["sub"]
         email = info.get("email", "")
-        name = info.get("name") or email.split("@")[0]
+        name = _safe_provider_display_name(info.get("name") or "", email.split("@")[0])
     except Exception as e:
         logger.warning("Google code exchange failed: %s", e)
         raise HTTPException(401, "Google authentication failed")
@@ -685,6 +708,20 @@ def _validate_username(
     if db.execute(query, params).fetchone():
         return "Username taken"
     return None
+
+
+def _safe_provider_display_name(raw: str, fallback: str) -> str:
+    # Provider names (Google "name") are untrusted. Keep only display-safe chars,
+    # collapse whitespace, cap length, and fall back to a safe base if nothing valid remains.
+    name = unicodedata.normalize("NFKC", raw or "").strip()
+    name = re.sub(r"\s+", " ", name)
+    # allow Latin letters/digits/space and . _ - ; drop everything else (quotes, <>, control)
+    name = re.sub(r"[^\w .\-]", "", name, flags=re.UNICODE).strip()
+    name = name[:30]
+    if len(name) < 2:
+        base = re.sub(r"[^\w.\-]", "", (fallback or "user"))[:20] or "user"
+        return base
+    return name
 
 
 def _validate_display_name(name: str) -> str | None:
@@ -1899,6 +1936,13 @@ async def get_e2ee_key_endpoint(user_id: str, request: Request):
 # --- Admin ---
 
 
+async def _admin_json(request: Request) -> dict:
+    try:
+        return await request.json()
+    except Exception:
+        raise HTTPException(400, "Invalid JSON body")
+
+
 @router.get("/admin/reports")
 async def admin_reports(request: Request, status: str = "pending"):
     _require_admin(request)
@@ -1928,13 +1972,14 @@ async def admin_reports(request: Request, status: str = "pending"):
 @router.patch("/admin/reports/{report_id}")
 async def admin_resolve_report(report_id: str, request: Request):
     _require_admin(request)
-    body = await request.json()
+    body = await _admin_json(request)
     status = body.get("status")
     if status not in ("actioned", "dismissed"):
         raise HTTPException(400, "status must be 'actioned' or 'dismissed'")
     db = _get_db()
     try:
-        resolve_report(db, report_id, status)
+        if resolve_report(db, report_id, status) == 0:
+            raise HTTPException(409, "Report already resolved")
         return {"ok": True}
     finally:
         db.close()
@@ -1943,7 +1988,7 @@ async def admin_resolve_report(report_id: str, request: Request):
 @router.post("/admin/ban/{user_id}")
 async def admin_ban(user_id: str, request: Request):
     _require_admin(request)
-    body = await request.json()
+    body = await _admin_json(request)
     reason = body.get("reason", "Banned by admin")
     db = _get_db()
     try:
@@ -1981,6 +2026,21 @@ async def admin_ban(user_id: str, request: Request):
 
         from chat_ws import manager
 
+        removed = delete_user_messages(db, user_id)
+        for batch in removed:
+            asyncio.create_task(
+                manager.broadcast_to_room(
+                    batch["room_id"],
+                    {
+                        "event": "messages_expired",
+                        "room_id": batch["room_id"],
+                        "message_ids": batch["message_ids"],
+                    },
+                )
+            )
+
+        await manager.send_to_user(user_id, {"event": "banned", "reason": reason})
+
         for conn_id, ws in list(manager.user_conns.get(user_id, {}).items()):
             try:
                 await ws.close(code=4003, reason="Account banned")
@@ -2008,7 +2068,11 @@ async def admin_delete_ban(ban_id: str, request: Request):
     _require_admin(request)
     db = _get_db()
     try:
-        db.execute("DELETE FROM bans WHERE id = ?", (ban_id,))
+        row = db.execute("SELECT user_id FROM bans WHERE id = ?", (ban_id,)).fetchone()
+        if row and row["user_id"]:
+            db.execute("DELETE FROM bans WHERE user_id = ?", (row["user_id"],))
+        else:
+            db.execute("DELETE FROM bans WHERE id = ?", (ban_id,))
         db.commit()
         return {"ok": True}
     finally:
@@ -2028,7 +2092,7 @@ async def admin_get_settings(request: Request):
 @router.patch("/admin/settings")
 async def admin_update_settings(request: Request):
     _require_admin(request)
-    body = await request.json()
+    body = await _admin_json(request)
     db = _get_db()
     try:
         if "room_sort" in body:
@@ -2064,6 +2128,8 @@ async def admin_users(
     offset: int = 0,
 ):
     _require_admin(request)
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
     from chat_ws import manager
 
     online_ids = (
@@ -2107,6 +2173,8 @@ async def admin_bans(request: Request):
 @router.get("/admin/modlog")
 async def admin_modlog(request: Request, limit: int = 50, offset: int = 0):
     _require_admin(request)
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
     db = _get_db()
     try:
         return get_moderation_log(db, limit, offset)
@@ -2127,7 +2195,11 @@ async def admin_rooms(request: Request):
             )
     db = _get_db()
     try:
-        return get_room_stats(db, online_counts)
+        rooms = get_room_stats(db, online_counts)
+        counts = get_reachable_member_counts(db, [r["id"] for r in rooms])
+        for r in rooms:
+            r["member_count"] = counts.get(r["id"], 0)
+        return rooms
     finally:
         db.close()
 
@@ -2135,7 +2207,7 @@ async def admin_rooms(request: Request):
 @router.post("/admin/mute/{user_id}")
 async def admin_mute_user(user_id: str, request: Request):
     _require_admin(request)
-    body = await request.json()
+    body = await _admin_json(request)
     minutes = body.get("minutes", 30)
     db = _get_db()
     try:
@@ -2143,6 +2215,7 @@ async def admin_mute_user(user_id: str, request: Request):
         if not user:
             raise HTTPException(404, "User not found")
         mute_user(db, user_id, minutes=minutes)
+        mute_count = increment_mute_count(db, user_id)
         removed = delete_user_messages(db, user_id)
         from chat_ws import manager
 
@@ -2157,11 +2230,40 @@ async def admin_mute_user(user_id: str, request: Request):
                     },
                 )
             )
+
+        if mute_count >= MAX_MUTES_BEFORE_BAN:
+            ban_reason = f"Auto-ban: muted {MAX_MUTES_BEFORE_BAN} times (admin mute)"
+            ban_user_all_providers(db, user_id, ban_reason)
+            await manager.send_to_user(
+                user_id, {"event": "banned", "reason": ban_reason}
+            )
+            for conn_id, ws in list(manager.user_conns.get(user_id, {}).items()):
+                try:
+                    await ws.close(code=4003, reason="Account banned")
+                except Exception:
+                    pass
+            return {"ok": True, "action": "ban"}
+
         asyncio.create_task(
             manager.send_to_user(
                 user_id, {"event": "muted", "reason": "Muted by admin"}
             )
         )
+        return {"ok": True, "action": "mute"}
+    finally:
+        db.close()
+
+
+@router.post("/admin/unmute/{user_id}")
+async def admin_unmute_user(user_id: str, request: Request):
+    _require_admin(request)
+    db = _get_db()
+    try:
+        user = get_user(db, user_id)
+        if not user:
+            raise HTTPException(404, "User not found")
+        db.execute("UPDATE users SET muted_until = NULL WHERE id = ?", (user_id,))
+        db.commit()
         return {"ok": True}
     finally:
         db.close()
@@ -2170,7 +2272,7 @@ async def admin_mute_user(user_id: str, request: Request):
 @router.post("/admin/strike/{user_id}")
 async def admin_strike_user(user_id: str, request: Request):
     _require_admin(request)
-    body = await request.json()
+    body = await _admin_json(request)
     reason = body.get("reason", "admin")
     detail = body.get("detail", "Manual admin action")
     db = _get_db()
@@ -2279,12 +2381,21 @@ async def admin_delete_user(user_id: str, request: Request):
 @router.post("/admin/rooms")
 async def admin_create_room(request: Request):
     _require_admin(request)
-    body = await request.json()
+    body = await _admin_json(request)
     name = body.get("name", "").strip()
     room_type = body.get("type", "general")
     if not name:
         raise HTTPException(400, "Room name required")
-    room_id = name.lower().replace(" ", "-")
+    if len(name) > 80:
+        raise HTTPException(400, "Room name too long (max 80)")
+    if len(body.get("description", "")) > 500:
+        raise HTTPException(400, "Description too long (max 500)")
+    if room_type not in ("general", "stage"):
+        raise HTTPException(400, "type must be 'general' or 'stage'")
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    if not slug:
+        raise HTTPException(400, "Room name must contain letters or digits")
+    room_id = slug
     db = _get_db()
     try:
         existing = get_room(db, room_id)
@@ -2317,12 +2428,34 @@ async def admin_create_room(request: Request):
 @router.patch("/admin/rooms/{room_id}")
 async def admin_update_room(room_id: str, request: Request):
     _require_admin(request)
-    body = await request.json()
+    body = await _admin_json(request)
     db = _get_db()
     try:
         room = get_room(db, room_id)
         if not room:
             raise HTTPException(404, "Room not found")
+        if room["type"] in ("dm", "meetup"):
+            raise HTTPException(400, "DM and meetup rooms cannot be edited")
+        if "ttl_minutes" in body:
+            v = body["ttl_minutes"]
+            if v is not None and (
+                isinstance(v, bool) or not isinstance(v, int) or not (0 < v <= 43200)
+            ):
+                raise HTTPException(
+                    400, "ttl_minutes must be a positive integer or null"
+                )
+        if "position" in body:
+            v = body["position"]
+            if isinstance(v, bool) or not isinstance(v, int):
+                raise HTTPException(400, "position must be an integer")
+        if "name" in body:
+            v = body["name"]
+            if not isinstance(v, str) or not v.strip() or len(v) > 80:
+                raise HTTPException(400, "name must be a non-empty string (max 80)")
+        if "description" in body:
+            v = body["description"]
+            if not isinstance(v, str) or len(v) > 500:
+                raise HTTPException(400, "description must be a string (max 500)")
         update_room(db, room_id, **body)
         from chat_ws import manager
 
@@ -2356,7 +2489,7 @@ async def admin_set_main_room(room_id: str, request: Request):
 @router.post("/admin/rooms/reorder")
 async def admin_reorder_rooms(request: Request):
     _require_admin(request)
-    body = await request.json()
+    body = await _admin_json(request)
     order = body.get("order", [])
     if not order:
         raise HTTPException(400, "order required")
