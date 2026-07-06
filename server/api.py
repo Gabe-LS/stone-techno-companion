@@ -1104,6 +1104,60 @@ async def serve_shared_js():
     raise HTTPException(404, "Not found")
 
 
+_DOP_CACHE = STATIC_DIR / "vendor" / "dop-cache"
+
+
+@app.get("/dop/{z}/{x}/{y}.jpg")
+async def dop_tile(z: int, x: int, y: int):
+    """XYZ raster proxy for the NRW open aerial (Geobasis NRW WMS, dl-de/by-2-0).
+    Renders each web-mercator tile via WMS and caches it to disk, so MapLibre can
+    use the aerial as a normal tile source and repeat views are instant/offline.
+    Guarded to NRW zoom/extent so it can't be abused to mirror all of Germany."""
+    import math
+
+    n = 2**z
+    if not (12 <= z <= 20 and 0 <= x < n and 0 <= y < n):
+        raise HTTPException(404, "Out of range")
+    # tile centre lat/lng, restrict to the NRW region (outside = blank anyway)
+    lon = x / n * 360.0 - 180.0
+    lat = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y / n))))
+    if not (50.0 <= lat <= 52.7 and 5.7 <= lon <= 9.6):
+        raise HTTPException(404, "Outside NRW")
+
+    fpath = _DOP_CACHE / str(z) / str(x) / f"{y}.jpg"
+    cache_headers = {"Cache-Control": "public, max-age=2592000"}
+    if fpath.is_file():
+        return FileResponse(fpath, media_type="image/jpeg", headers=cache_headers)
+
+    world = 20037508.342789244
+    tile_m = (2 * world) / n
+    minx = -world + x * tile_m
+    maxy = world - y * tile_m
+    maxx = minx + tile_m
+    miny = maxy - tile_m
+    url = (
+        "https://www.wms.nrw.de/geobasis/wms_nw_dop?SERVICE=WMS&VERSION=1.3.0"
+        "&REQUEST=GetMap&LAYERS=nw_dop_rgb&STYLES=&CRS=EPSG:3857"
+        f"&BBOX={minx},{miny},{maxx},{maxy}&WIDTH=256&HEIGHT=256&FORMAT=image/jpeg"
+    )
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.get(url)
+            r.raise_for_status()
+            if not r.headers.get("content-type", "").startswith("image"):
+                raise HTTPException(502, "Tile source error")
+            data = r.content
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(502, "Tile fetch failed")
+    fpath.parent.mkdir(parents=True, exist_ok=True)
+    fpath.write_bytes(data)
+    return FileResponse(fpath, media_type="image/jpeg", headers=cache_headers)
+
+
 from chat_api import mount_chat
 
 _chat_purge_coro = mount_chat(app)
