@@ -536,20 +536,20 @@ def _load_pois() -> list:
     return []
 
 
-# Category synonyms -> our canonical type; anything else -> "other".
+# Category synonyms -> our canonical type. Unknown categories pass through as-is
+# (the client palette colors up to a 12-category system); only blank -> "other".
 _POI_CAT_ALIASES = {
     "floor": "stage", "bar": "drinks", "wine bar": "drinks", "winebar": "drinks",
     "toilet": "wc", "toilets": "wc", "first aid": "services", "firstaid": "services",
-    "shuttle": "services", "transport": "services", "entrance": "other",
-    "awareness": "other",
+    "shuttle": "services", "transport": "services",
 }
-_POI_TYPES = {"stage", "drinks", "food", "wc", "water", "services", "shop", "other"}
 
 
 def _normalize_poi_category(cat) -> str:
     c = (cat or "").strip().lower()
-    c = _POI_CAT_ALIASES.get(c, c)
-    return c if c in _POI_TYPES else "other"
+    if not c:
+        return "other"
+    return _POI_CAT_ALIASES.get(c, c)
 
 
 def _parse_geojson_pois(gj: dict) -> list:
