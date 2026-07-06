@@ -119,7 +119,7 @@ Key design decisions:
 | `server/chat/blocklist.txt` | Word filter blocklist (drug terms, slurs). Editable without deploy. |
 | `server/static/shared.css` | Unified design tokens and shared CSS components (loaded by all pages) |
 | `server/static/shared.js` | Shared JS utilities: escapeHtml, dbg, showToast, storageGet/Set, icon constants (loaded by all pages) |
-| `server/static/sw.js` | Service worker — push ack (delivered/clicked/dismissed), notification click, pushsubscriptionchange auto-resubscribe |
+| `server/static/sw.js` | Service worker — push ack (delivered/clicked/dismissed), notification click, pushsubscriptionchange auto-resubscribe, plus a scoped **cache-first `fetch` handler** (cache `stc-map-v1`) that offline-caches the meetup map assets (`/dop` aerial tiles, `/vendor/maplibre/*`, `tiles.openfreemap.org`); all other requests pass through untouched |
 | `server/static/manifest.json` | PWA manifest — enables Add to Home Screen and push on iOS |
 | `tests/test_chat_db.py` | 59 tests — users, sessions, bans, rooms, messages, meetups, DMs, blocks, reports, strikes |
 | `tests/test_chat_moderation.py` | 39 tests — word filter, strike system (expiry, reset, mute cycling), AI moderation pipeline |
