@@ -1040,6 +1040,40 @@ async def _moderate_and_broadcast(
             )
             return
 
+        # A concurrent task's moderation (or an admin action) may have
+        # banned/muted this user while this message's own content scan was
+        # still in flight. Re-check ban/mute status right before broadcast so
+        # a message from an already-banned/muted user cannot slip into the
+        # room ahead of the other task's delete_user_messages cleanup.
+        recheck = await check_ban_mute(db, user_id)
+        if not recheck["allowed"]:
+            if msg_type in ("image", "video"):
+                try:
+                    _u = msg.get("media_url") or json.loads(content).get("url", "")
+                    if _u:
+                        _fn = _u.rsplit("/", 1)[-1]
+                        _stem = _fn.rsplit(".", 1)[0]
+                        (_UPLOADS_DIR / _fn).unlink(missing_ok=True)
+                        (_UPLOADS_DIR / f"{_stem}_mod.webp").unlink(missing_ok=True)
+                        for _i in range(3):
+                            (_UPLOADS_DIR / f"{_stem}_mod{_i}.webp").unlink(
+                                missing_ok=True
+                            )
+                except Exception:
+                    pass
+            db.execute("DELETE FROM messages WHERE id = ?", (msg["id"],))
+            db.commit()
+            await mgr.send_to_user(
+                user_id,
+                {
+                    "event": "message_removed",
+                    "id": msg["id"],
+                    "room_id": room_id,
+                    "reason": recheck["reason"],
+                },
+            )
+            return
+
         # Re-fetch the sender's identity so a profile edit made after this
         # connection's handshake is reflected in the live broadcast, not the
         # frozen handshake values.
