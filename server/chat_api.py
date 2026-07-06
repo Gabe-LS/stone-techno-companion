@@ -441,13 +441,25 @@ async def get_config():
         msg_limit = int(get_setting(db, "msg_char_limit", "1000"))
     except (ValueError, TypeError):
         msg_limit = 1000
-    # Meetup map bounds "west,south,east,north" -> Leaflet [[S,W],[N,E]].
+    # Meetup map bounds: raw exact "west,south,east,north" plus a padding setting
+    # (metres), applied here -> Leaflet [[S,W],[N,E]]. Change the padding number
+    # in chat_settings and the app re-derives the bounds; no recomputing coords.
     meetup_bounds = None
     try:
         raw = get_setting(db, "meetup_bbox", "")
         if raw:
+            import math
+
             w, s, e, n = (float(x) for x in raw.split(","))
-            meetup_bounds = [[s, w], [n, e]]
+            try:
+                pad_m = float(get_setting(db, "meetup_bbox_padding_m", "0") or 0)
+            except (ValueError, TypeError):
+                pad_m = 0.0
+            if pad_m:
+                lat_pad = pad_m / 111320.0
+                lng_pad = pad_m / (111320.0 * math.cos(math.radians((s + n) / 2)))
+                w, e, s, n = w - lng_pad, e + lng_pad, s - lat_pad, n + lat_pad
+            meetup_bounds = [[round(s, 6), round(w, 6)], [round(n, 6), round(e, 6)]]
     except (ValueError, TypeError):
         meetup_bounds = None
     db.close()
