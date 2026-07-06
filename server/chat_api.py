@@ -1321,7 +1321,8 @@ async def join_meetup_endpoint(meetup_id: str, request: Request):
             or db_is_blocked(db, user["id"], _m["creator_id"])
         ):
             raise HTTPException(403, "You cannot join this meetup.")
-        db_join_meetup(db, meetup_id, user["id"])
+        if not db_join_meetup(db, meetup_id, user["id"]):
+            raise HTTPException(404, "This meetup has ended.")
         attendees = get_meetup_attendees(db, meetup_id)
         return [{"id": a["id"], "display_name": a["display_name"]} for a in attendees]
     finally:

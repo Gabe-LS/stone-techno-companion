@@ -1279,13 +1279,25 @@ def create_meetup(
     }
 
 
-def join_meetup(db: sqlite3.Connection, meetup_id: str, user_id: str) -> None:
-    db.execute(
-        "INSERT OR IGNORE INTO meetup_attendees (meetup_id, user_id, joined_at) "
-        "VALUES (?, ?, ?)",
-        (meetup_id, user_id, _now()),
-    )
-    db.commit()
+def join_meetup(db: sqlite3.Connection, meetup_id: str, user_id: str) -> bool:
+    """Add a user as an attendee. Returns False if the meetup no longer exists
+    (rather than raising a FK IntegrityError, which would otherwise tear down the
+    caller's WebSocket connection or surface as a 500). Tolerant of a concurrent
+    purge deleting the meetup between the existence check and the insert."""
+    if not db.execute(
+        "SELECT 1 FROM meetups WHERE id = ?", (meetup_id,)
+    ).fetchone():
+        return False
+    try:
+        db.execute(
+            "INSERT OR IGNORE INTO meetup_attendees (meetup_id, user_id, joined_at) "
+            "VALUES (?, ?, ?)",
+            (meetup_id, user_id, _now()),
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
+        return False
+    return True
 
 
 def leave_meetup(db: sqlite3.Connection, meetup_id: str, user_id: str) -> None:

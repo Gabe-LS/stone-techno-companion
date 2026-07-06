@@ -1889,7 +1889,8 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                         or is_blocked(db, user_id, _mj["creator_id"])
                     ):
                         continue
-                    join_meetup(db, meetup_id, user_id)
+                    if not join_meetup(db, meetup_id, user_id):
+                        continue
                     attendees = [
                         {"id": a["id"], "display_name": a["display_name"]}
                         for a in get_meetup_attendees(db, meetup_id)
