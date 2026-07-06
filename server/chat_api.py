@@ -460,9 +460,8 @@ _POI_TAG_TO_TYPE = {
     "WC": "wc", "TOILET": "wc", "TOILETS": "wc",
     "TAP WATER": "water", "WATER": "water",
     "ENTRANCE": "entrance",
-    "FIRST AID": "firstaid",
+    "FIRST AID": "services", "SHUTTLE": "services",
     "LOCKER": "services", "LOST & FOUND": "services", "LOST AND FOUND": "services",
-    "SHUTTLE": "transport",
     "VINYL SHOP": "shop", "MERCH STORE": "shop", "SHOP": "shop", "MERCH": "shop",
 }
 # Prettier labels for unnamed placemarks where a title-cased tag reads badly.
