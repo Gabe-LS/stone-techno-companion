@@ -118,7 +118,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .meetup-details .md-map { display: inline-block; margin-top: var(--space-xs); color: var(--color-accent); font-weight: 600; font-size: var(--font-sm); }
 .meetup-details .md-photo { display: block; max-width: 100%; max-height: 200px; border-radius: var(--radius-md); margin-top: var(--space-xs); }
 .poi-marker { background: none; border: none; }
-.leaflet-tooltip.poi-tip { display: none; background: rgba(20,20,20,.82); color: #fff; border: none; box-shadow: none; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 5px; white-space: nowrap; }
+.leaflet-tooltip.poi-tip { display: none; background: rgba(49,46,129,.9); color: #fff; border: none; box-shadow: none; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 5px; white-space: nowrap; }
 .leaflet-tooltip.poi-tip::before { display: none; }
 .poi-labels-on .leaflet-tooltip.poi-tip, .leaflet-tooltip.poi-tip.poi-hover { display: block; }
 .meetup-details .md-cancel { display: block; margin-top: var(--space-sm); padding: var(--space-xs) var(--space-md); border: 1px solid #c0392b; color: #c0392b; background: none; border-radius: var(--radius-pill); font-family: inherit; font-size: var(--font-xs); font-weight: 600; cursor: pointer; }
@@ -502,6 +502,7 @@ async function renderAuth() {
       _siteShort = cfg.site_short;
       if (cfg.msg_char_limit) _msgCharLimit = cfg.msg_char_limit;
       _maptilerKey = cfg.maptiler_key || null;
+      if (cfg.meetup_bounds) _meetupVenueBounds = cfg.meetup_bounds;
       if (_siteShort) document.title = 'Chat · ' + _siteShort;
       dbg('[AUTH] google client id loaded:', _googleClientId ? 'yes' : 'no');
     } catch (e) { dbg('[AUTH] config fetch failed:', e.message); }
@@ -3470,9 +3471,9 @@ async function _loadFestivalPois() {
 }
 // Vivid, well-separated 12-colour palette — any category beyond the named ones
 // gets a stable vivid colour from here, so the system is ready for 12 categories.
-const POI_PALETTE = ['#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16', '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6', '#8b5cf6', '#d946ef', '#ec4899'];
-// Explicit vivid colours for the categories in use.
-const POI_COLORS = { stage: '#8b5cf6', drinks: '#f59e0b', food: '#22c55e', wc: '#3b82f6', water: '#06b6d4', services: '#ef4444', shop: '#ec4899', other: '#94a3b8' };
+const POI_PALETTE = ['#f97316', '#f59e0b', '#eab308', '#84cc16', '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#ec4899'];
+// Explicit vivid colours for the categories in use (no grey/black/alarm-red).
+const POI_COLORS = { stage: '#8b5cf6', drinks: '#f59e0b', food: '#22c55e', wc: '#3b82f6', water: '#06b6d4', services: '#f97316', shop: '#ec4899', other: '#d946ef' };
 function _poiColor(type) {
   if (POI_COLORS[type]) return POI_COLORS[type];
   let h = 0; const t = String(type || '');
@@ -3483,7 +3484,7 @@ function _poiIcon(type) {
   const c = _poiColor(type);
   return L.divIcon({
     className: 'poi-marker',
-    html: `<span style="display:block;width:14px;height:14px;border-radius:50%;background:${c};border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.45)"></span>`,
+    html: `<span style="display:block;width:14px;height:14px;border-radius:50%;background:${c};border:2px solid #fff"></span>`,
     iconSize: [14, 14], iconAnchor: [7, 7]
   });
 }
@@ -3496,12 +3497,12 @@ function _updatePoiLabels() {
   _meetupMap.getContainer().classList.toggle('poi-labels-on', on);
 }
 // Venue bounding box [[south, west], [north, east]] — panning is locked to this.
-// (E-W trimmed 400 m per side from the original to drop the empty margins.)
-const MEETUP_VENUE_BOUNDS = [[51.486247, 7.031614], [51.492693, 7.04051]];
+// Loaded from the DB (chat_settings.meetup_bbox) via /config; this is the fallback.
+let _meetupVenueBounds = [[51.485402, 7.029828], [51.492088, 7.041297]];
 async function openMeetupMapPicker() {
   dbg('[MEETUP] openMeetupMapPicker, maptiler=' + !!_maptilerKey);
   try { await _loadLeaflet(); } catch (e) { showToast('Could not load map'); return; }
-  const _vb = L.latLngBounds(MEETUP_VENUE_BOUNDS);
+  const _vb = L.latLngBounds(_meetupVenueBounds);
   // Open instantly on the existing pin (if on-site) or the venue centre — never
   // block the map on a slow GPS fix. If there's no pin yet, we jump to the user's
   // GPS in the background once it resolves (below).
@@ -4962,6 +4963,7 @@ async function route() {
       _siteShort = cfg.site_short;
       if (cfg.msg_char_limit) _msgCharLimit = cfg.msg_char_limit;
       _maptilerKey = cfg.maptiler_key || null;
+      if (cfg.meetup_bounds) _meetupVenueBounds = cfg.meetup_bounds;
       if (_siteShort) document.title = 'Chat · ' + _siteShort;
       dbg('[CONFIG] loaded, site_short:', _siteShort, 'msg_char_limit:', _msgCharLimit);
     } catch (e) { dbg('[CONFIG] fetch failed:', e.message); }

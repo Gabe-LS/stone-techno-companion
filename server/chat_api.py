@@ -441,13 +441,22 @@ async def get_config():
         msg_limit = int(get_setting(db, "msg_char_limit", "1000"))
     except (ValueError, TypeError):
         msg_limit = 1000
-    finally:
-        db.close()
+    # Meetup map bounds "west,south,east,north" -> Leaflet [[S,W],[N,E]].
+    meetup_bounds = None
+    try:
+        raw = get_setting(db, "meetup_bbox", "")
+        if raw:
+            w, s, e, n = (float(x) for x in raw.split(","))
+            meetup_bounds = [[s, w], [n, e]]
+    except (ValueError, TypeError):
+        meetup_bounds = None
+    db.close()
     return {
         "google_client_id": google_id if google_id else None,
         "site_short": _SITE_SHORT or None,
         "msg_char_limit": msg_limit,
         "maptiler_key": os.environ.get("MAPTILER_KEY") or None,
+        "meetup_bounds": meetup_bounds,
     }
 
 
