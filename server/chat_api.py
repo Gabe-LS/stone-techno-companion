@@ -708,14 +708,15 @@ async def auth_google(request: Request, response: Response):
         email_verified = (
             info.get("email_verified") is True or info.get("email_verified") == "true"
         )
-        if not user and email and email_verified:
+        if not user and email:
             email_hash = hash_email(email)
-            user = find_user_by_provider(db, "email", email_hash)
-            if user and not is_user_banned(db, user["id"]):
-                add_user_provider(db, user["id"], "google", provider_id)
-                logger.info("Linked google provider to existing user %s", user["id"])
-            elif user:
+            email_user = find_user_by_provider(db, "email", email_hash)
+            if email_user and is_user_banned(db, email_user["id"]):
                 raise HTTPException(403, "This account cannot sign in.")
+            if email_user and email_verified:
+                add_user_provider(db, email_user["id"], "google", provider_id)
+                user = email_user
+                logger.info("Linked google provider to existing user %s", user["id"])
         result = _authenticate(db, "google", provider_id, name, None, response)
         if email and email_verified:
             add_user_provider(db, result["id"], "email", hash_email(email))
@@ -779,14 +780,15 @@ async def auth_google_code(request: Request, response: Response):
         email_verified = (
             info.get("email_verified") is True or info.get("email_verified") == "true"
         )
-        if not user and email and email_verified:
+        if not user and email:
             email_hash = hash_email(email)
-            user = find_user_by_provider(db, "email", email_hash)
-            if user and not is_user_banned(db, user["id"]):
-                add_user_provider(db, user["id"], "google", provider_id)
-                logger.info("Linked google provider to existing user %s", user["id"])
-            elif user:
+            email_user = find_user_by_provider(db, "email", email_hash)
+            if email_user and is_user_banned(db, email_user["id"]):
                 raise HTTPException(403, "This account cannot sign in.")
+            if email_user and email_verified:
+                add_user_provider(db, email_user["id"], "google", provider_id)
+                user = email_user
+                logger.info("Linked google provider to existing user %s", user["id"])
         result = _authenticate(db, "google", provider_id, name, None, response)
         if email and email_verified:
             add_user_provider(db, result["id"], "email", hash_email(email))
@@ -2493,7 +2495,9 @@ async def admin_ban(user_id: str, request: Request):
                 )
             )
 
-        await manager.send_to_user(user_id, {"event": "banned", "reason": reason})
+        await manager.send_to_user(
+            user_id, {"event": "banned", "reason": "You have been banned."}
+        )
 
         for conn_id, ws in list(manager.user_conns.get(user_id, {}).items()):
             try:
@@ -2738,7 +2742,7 @@ async def admin_mute_user(user_id: str, request: Request):
             ban_reason = f"Auto-ban: muted {MAX_MUTES_BEFORE_BAN} times (admin mute)"
             ban_user_all_providers(db, user_id, ban_reason)
             await manager.send_to_user(
-                user_id, {"event": "banned", "reason": ban_reason}
+                user_id, {"event": "banned", "reason": "You have been banned."}
             )
             for conn_id, ws in list(manager.user_conns.get(user_id, {}).items()):
                 try:
@@ -2810,7 +2814,7 @@ async def admin_strike_user(user_id: str, request: Request):
 
             if result["action"] == "ban":
                 await manager.send_to_user(
-                    user_id, {"event": "banned", "reason": result["reason"]}
+                    user_id, {"event": "banned", "reason": "You have been banned."}
                 )
                 for conn_id, ws in list(manager.user_conns.get(user_id, {}).items()):
                     try:
