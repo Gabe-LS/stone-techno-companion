@@ -451,19 +451,100 @@ async def get_config():
     }
 
 
+_KML_NS = "{http://www.opengis.net/kml/2.2}"
+# Category tag (from a "[TAG] name" placemark) -> our POI type. Unknown -> "other".
+_POI_TAG_TO_TYPE = {
+    "FLOOR": "stage", "STAGE": "stage",
+    "BAR": "bar", "WINE BAR": "winebar",
+    "FOOD": "food",
+    "WC": "wc", "TOILET": "wc", "TOILETS": "wc",
+    "TAP WATER": "water", "WATER": "water",
+    "ENTRANCE": "entrance", "EXIT": "exit",
+    "FIRST AID": "firstaid", "AWARENESS": "awareness",
+    "INFO": "info", "ATM": "atm",
+    "LOCKER": "services", "LOST & FOUND": "services", "LOST AND FOUND": "services",
+    "SHUTTLE": "transport",
+    "VINYL SHOP": "shop", "MERCH STORE": "shop", "SHOP": "shop", "MERCH": "shop",
+    "ACCESSIBLE": "accessible", "MEETING POINT": "meeting",
+}
+# Prettier labels for unnamed placemarks where a title-cased tag reads badly.
+_POI_TAG_DISPLAY = {"WC": "Toilets", "ATM": "ATM"}
+
+
+def _parse_kml_pois(kml_text: str) -> list:
+    """Parse point placemarks from KML. Category comes from a leading '[TAG]' in
+    the placemark name; the tag is mapped to a type (unknown -> 'other') and
+    stripped from the label. Non-point geometry (lines/polygons) is skipped."""
+    import re
+    import xml.etree.ElementTree as ET
+
+    tag_re = re.compile(r"^\s*\[([^\]]+)\]\s*(.*)$")
+
+    try:
+        root = ET.fromstring(kml_text)
+    except ET.ParseError:
+        return []
+    out = []
+    for pm in root.iter(f"{_KML_NS}Placemark"):
+        coords_el = pm.find(f"{_KML_NS}Point/{_KML_NS}coordinates")
+        if coords_el is None or not coords_el.text:
+            continue
+        parts = coords_el.text.strip().split(",")
+        if len(parts) < 2:
+            continue
+        try:
+            lng, lat = round(float(parts[0]), 6), round(float(parts[1]), 6)
+        except ValueError:
+            continue
+        name_el = pm.find(f"{_KML_NS}name")
+        raw = (name_el.text or "").strip() if name_el is not None else ""
+        m = tag_re.match(raw)
+        if m:
+            tag = re.sub(r"\s+", " ", m.group(1).strip().upper())
+            label = m.group(2).strip()
+        else:
+            tag, label = "", raw
+        ptype = _POI_TAG_TO_TYPE.get(tag, "other")
+        if not label:
+            label = _POI_TAG_DISPLAY.get(tag) or (tag.title() if tag else "Point")
+        out.append({"type": ptype, "name": label, "lat": lat, "lng": lng})
+    return out
+
+
+def _load_pois() -> list:
+    """Festival POIs for the map picker, from server/static/ (bind-mounted, so
+    editable without redeploy). Prefers a Google-Earth/My-Maps export
+    (festival-pois.kmz or .kml), falls back to festival-pois.json. Never raises."""
+    import zipfile
+
+    static = Path(__file__).resolve().parent / "static"
+    try:
+        kmz = static / "festival-pois.kmz"
+        if kmz.is_file():
+            with zipfile.ZipFile(kmz) as z:
+                kmls = [n for n in z.namelist() if n.lower().endswith(".kml")]
+                if kmls:
+                    pick = next(
+                        (n for n in kmls if n.lower().endswith("doc.kml")), kmls[0]
+                    )
+                    return _parse_kml_pois(z.read(pick).decode("utf-8", "replace"))
+        kml = static / "festival-pois.kml"
+        if kml.is_file():
+            return _parse_kml_pois(kml.read_text(encoding="utf-8"))
+        js = static / "festival-pois.json"
+        if js.is_file():
+            data = json.loads(js.read_text())
+            return data if isinstance(data, list) else []
+    except (OSError, zipfile.BadZipFile, json.JSONDecodeError):
+        return []
+    return []
+
+
 @router.get("/pois")
 async def list_pois():
     """Festival points of interest (stages, bars, entrances, ...) for the map
-    picker. Editable without redeploy via server/static/festival-pois.json (the
-    static dir is bind-mounted). Returns [] if the file is missing/invalid."""
-    path = Path(__file__).resolve().parent / "static" / "festival-pois.json"
-    if not path.is_file():
-        return []
-    try:
-        data = json.loads(path.read_text())
-        return data if isinstance(data, list) else []
-    except (json.JSONDecodeError, OSError):
-        return []
+    picker. Reads KMZ/KML/JSON from server/static/. Returns [] if none present."""
+    return _load_pois()
 
 
 @router.post("/auth/google")
