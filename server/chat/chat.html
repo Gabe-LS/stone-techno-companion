@@ -103,7 +103,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .msg-pending { opacity: 0.5; }
 
 /* --- Message cards (meetup + location) --- */
-.msg-card { background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-md); margin-top: var(--space-xs); width: 100%; max-width: 260px; box-sizing: border-box; display: block; text-decoration: none; color: inherit; cursor: pointer; }
+.msg-card { background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-md); margin-top: var(--space-xs); width: 260px; max-width: 100%; box-sizing: border-box; display: block; text-decoration: none; color: inherit; cursor: pointer; }
 .msg-card:active { background: var(--color-surface-hover); }
 .msg-card .card-label { font-size: var(--font-xs); color: var(--color-accent); font-weight: 700; margin-bottom: var(--space-xs); }
 .msg-card .card-title { font-weight: 600; font-size: var(--font-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -112,8 +112,13 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .meetup-join { display: inline-block; padding: var(--space-xs) var(--space-md); border: 1px solid var(--color-accent); border-radius: var(--radius-pill); font-size: var(--font-xs); font-weight: 600; cursor: pointer; background: none; color: var(--color-accent); font-family: inherit; margin-top: var(--space-sm); }
 .meetup-join.joined { background: var(--color-accent); color: #fff; }
 .meetup-join.meetup-cancel { border-color: #c0392b; color: #c0392b; }
+.meetup-details { flex: 0 0 auto; margin: var(--space-sm); padding: var(--space-md); background: var(--user-1-bg); border-radius: var(--radius-md); box-shadow: inset 0 0 0 1px var(--color-accent); font-size: var(--font-sm); }
+.meetup-details .md-row { margin-bottom: var(--space-xs); word-break: break-word; }
+.meetup-details .md-k { font-weight: 700; color: var(--color-accent); margin-right: var(--space-xs); text-transform: uppercase; font-size: var(--font-xs); }
+.meetup-details .md-map { display: inline-block; margin-top: var(--space-xs); color: var(--color-accent); font-weight: 600; font-size: var(--font-sm); }
+.meetup-details .md-cancel { display: block; margin-top: var(--space-sm); padding: var(--space-xs) var(--space-md); border: 1px solid #c0392b; color: #c0392b; background: none; border-radius: var(--radius-pill); font-family: inherit; font-size: var(--font-xs); font-weight: 600; cursor: pointer; }
 .meetup-going { font-weight: 400; }
-.meetup-join-wide { width: 100%; max-width: 260px; box-sizing: border-box; display: block; margin-top: var(--space-xs); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-md); font-size: var(--font-sm); }
+.meetup-join-wide { width: 260px; max-width: 100%; box-sizing: border-box; display: block; margin-top: var(--space-xs); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-md); font-size: var(--font-sm); }
 .msg-card.card-location { background: var(--user-5-bg); box-shadow: inset 0 0 0 1px var(--color-success); }
 .msg-card.card-location .card-label { color: var(--color-success); }
 
@@ -1869,6 +1874,28 @@ function _updateTitleBadge() {
   document.title = total > 0 ? `(${total}) ${_titleBase}` : _titleBase;
 }
 
+function fmtMeetupWhen(iso) {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const sod = x => new Date(x.getFullYear(), x.getMonth(), x.getDate());
+  const days = Math.round((sod(d) - sod(new Date())) / 86400000);
+  let day;
+  if (days === 0) day = 'Today';
+  else if (days === 1) day = 'Tomorrow';
+  else if (days === -1) day = 'Yesterday';
+  else day = d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
+  return day + ' ' + time;
+}
+
+function meetupRowClick(id, title, isCreator) {
+  if (id === currentRoom && isCreator) {
+    showConfirm('Cancel meetup?', 'This removes the meetup and its chat for everyone.', () => cancelMeetup(id, true), 'Cancel meetup');
+    return;
+  }
+  openRoom(id, title, 'meetup');
+}
+
 async function loadMeetups() {
   dbg('[MEETUP] loadMeetups');
   const el = document.getElementById('room-list');
@@ -1879,11 +1906,9 @@ async function loadMeetups() {
     el.innerHTML = meetups.map(m => {
       const unread = unreadByRoom[m.id] || 0;
       const badgeHtml = unread > 0 ? `<span class="unread-badge">${unread > 99 ? '99+' : unread}</span>` : '';
-      const online = (onlineByRoom[m.id] || []).length;
-      const countParts = [fmtTime(m.meetup_time), m.attendee_count + ' going'];
-      if (online > 0) countParts.push(online + ' online');
+      const countParts = [fmtMeetupWhen(m.meetup_time), m.attendee_count + ' going'];
       const isGoing = m.is_going;
-      return `<li class="room-item${currentRoom === m.id ? ' active' : ''}" data-room-id="${m.id}" data-room-type="meetup" data-meetup-info="${esc(fmtTime(m.meetup_time))} · ${m.attendee_count} going" onclick="openRoom('${m.id}','${jss(m.title)}','meetup')">
+      return `<li class="room-item${currentRoom === m.id ? ' active' : ''}" data-room-id="${m.id}" data-room-type="meetup" data-meetup-info="${esc(fmtMeetupWhen(m.meetup_time))} · ${m.attendee_count} going" onclick="meetupRowClick('${m.id}','${jss(m.title)}',${m.is_creator ? 'true' : 'false'})">
         <div class="room-info">
           <div class="room-name">${esc(m.title)}</div>
           <div class="room-count">${countParts.join(' · ')}</div>
@@ -2058,6 +2083,33 @@ async function _verifyDmEncryptionState(roomId) {
   } catch (e) { dbg('[E2EE] verify dm state failed:', e && e.message); }
 }
 
+async function renderMeetupDetails(roomId) {
+  dbg('[MEETUP] renderMeetupDetails', roomId);
+  try {
+    const m = await api('/meetups/' + roomId);
+    if (currentRoom !== roomId) return;
+    const cnt = m.attendee_count || 0;
+    const memberText = cnt + (cnt === 1 ? ' member' : ' members');
+    document.querySelectorAll('.header-count').forEach(el => { el.innerHTML = cnt + ' ' + USER_ICON; });
+    document.querySelectorAll('.header .online').forEach(el => { el.textContent = memberText; });
+    const scroll = document.getElementById('msg-scroll');
+    if (!scroll) return;
+    let banner = document.getElementById('meetup-details');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'meetup-details';
+      banner.className = 'meetup-details';
+      scroll.insertBefore(banner, scroll.firstChild);
+    }
+    const parts = ['<div class="md-row"><span class="md-k">When</span>' + escapeHtml(fmtMeetupWhen(m.meetup_time)) + '</div>'];
+    if (m.location_label) parts.push('<div class="md-row"><span class="md-k">Where</span>' + escapeHtml(m.location_label) + '</div>');
+    if (m.note) parts.push('<div class="md-row">' + escapeHtml(m.note) + '</div>');
+    if (m.location_lat != null && m.location_lng != null) parts.push('<a class="md-map" href="https://maps.google.com/?q=' + m.location_lat + ',' + m.location_lng + '" target="_blank" rel="noopener">Open in Maps</a>');
+    if (m.is_creator) parts.push('<button type="button" class="md-cancel" onclick="cancelMeetup(\'' + roomId + '\')">Cancel meetup</button>');
+    banner.innerHTML = parts.join('');
+  } catch (e) { dbg('[MEETUP] renderMeetupDetails error', e && e.message); }
+}
+
 function renderChatView(roomName) {
   dbg('[CHAT] renderChatView', roomName);
   const onlineCount = (onlineByRoom[currentRoom] || []).length;
@@ -2136,6 +2188,7 @@ function renderChatView(roomName) {
   }
 
   renderMessages();
+  if (isMeetup) renderMeetupDetails(currentRoom);
   dbg('[CHAT] renderChatView done, msgs=' + (messagesByRoom[currentRoom] || []).length);
 
   verify('renderChatView', document.getElementById('msg-input'), 'input rendered');
@@ -2240,7 +2293,7 @@ function renderMessage(m) {
     } else if (m.type === 'meetup_invite') {
       const mid = c.meetup_id;
       const isCreator = m.user_id === currentUser?.id;
-      contentHtml = `<div class="msg-card card-meetup" style="display:flex;gap:10px;align-items:center" data-meetup-id="${mid}">
+      contentHtml = `<div class="msg-card card-meetup" style="display:flex;gap:10px;align-items:center" data-meetup-id="${mid}" onclick="openRoom('${mid}','${jss(c.title)}','meetup')">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="flex-shrink:0;color:var(--color-accent)"><path d="M2 12C2 8.22876 2 6.34315 3.17157 5.17157C4.34315 4 6.22876 4 10 4H14C17.7712 4 19.6569 4 20.8284 5.17157C22 6.34315 22 8.22876 22 12V14C22 17.7712 22 19.6569 20.8284 20.8284C19.6569 22 17.7712 22 14 22H10C6.22876 22 4.34315 22 3.17157 20.8284C2 19.6569 2 17.7712 2 14V12Z" stroke="currentColor" stroke-width="1.5"/><path d="M7 4V2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M17 4V2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="16.5" cy="16.5" r="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 9H21.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
         <div style="min-width:0;flex:1">
           <div class="card-label">MEETUP <span class="meetup-going" data-meetup-id="${mid}"></span></div>
@@ -3259,9 +3312,9 @@ async function toggleMeetupJoin(meetupId, btn) {
   } catch (e) { showToast(e.message); }
 }
 
-async function cancelMeetup(meetupId) {
+async function cancelMeetup(meetupId, skipConfirm) {
   dbg('[MEETUP] cancelMeetup', meetupId);
-  if (!confirm('Cancel this meetup? This removes it and its chat for everyone.')) return;
+  if (!skipConfirm && !confirm('Cancel this meetup? This removes it and its chat for everyone.')) return;
   try {
     await api('/meetups/' + meetupId, { method: 'DELETE' });
     showToast('Meetup cancelled');
