@@ -1164,10 +1164,11 @@ async def room_online(room_id: str, request: Request):
 
 def _shape_meetup(*, id, title, meetup_time, stage_id, attendee_count, expires_at,
                   is_attendee, location_lat, location_lng, location_label, note,
-                  attendees, last_message_at=None):
+                  attendees, last_message_at=None, is_creator=False):
     out = {
         "id": id, "title": title, "meetup_time": meetup_time, "stage_id": stage_id,
         "attendee_count": attendee_count, "is_going": is_attendee, "expires_at": expires_at,
+        "is_creator": is_creator,
     }
     if last_message_at is not None:
         out["last_message_at"] = last_message_at
@@ -1221,6 +1222,7 @@ async def list_meetups(request: Request, stage_id: str | None = None):
                         for a in attendees
                     ],
                     last_message_at=last_msgs.get(m["id"], ""),
+                    is_creator=(m["creator_id"] == user_id),
                 )
             )
         result.sort(key=lambda r: r["last_message_at"] or "", reverse=True)
@@ -1254,6 +1256,7 @@ async def get_meetup(meetup_id: str, request: Request):
             location_label=meetup["location_label"],
             note=meetup["note"],
             attendees=att_list,
+            is_creator=(meetup["creator_id"] == user["id"]),
         )
     finally:
         db.close()
