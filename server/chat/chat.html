@@ -4110,13 +4110,17 @@ async function _disableAllNotifications() {
       const sub = await reg.pushManager.getSubscription();
       if (sub) {
         const endpoint = sub.endpoint;
-        await sub.unsubscribe();
         await fetch(API + '/push/subscribe', {
           method: 'DELETE', credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ endpoint }),
         });
-        dbg('[NOTIFY] push unsubscribed');
+        if (storageGet('stc_push') === '1') {
+          dbg('[NOTIFY] lineup still enabled, keeping shared push subscription');
+        } else {
+          await sub.unsubscribe();
+          dbg('[NOTIFY] push unsubscribed');
+        }
       }
     } catch (e) {
       dbg('[NOTIFY] push unsubscribe failed', e);

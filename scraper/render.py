@@ -2241,9 +2241,13 @@ def render_output_html(
         const sub = await reg.pushManager.getSubscription();
         if (sub) {
           const endpoint = sub.endpoint;
-          await sub.unsubscribe();
           if (sessionId) {
             await fetch(API + '/session/' + sessionId + '/push/subscribe', { method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({endpoint}) });
+          }
+          if (storageGet('push_enabled') === '1') {
+            dbg('chat still enabled, keeping shared push subscription');
+          } else {
+            await sub.unsubscribe();
           }
         }
       } catch (e) { dbg('disableNotifications failed', e.message); }
