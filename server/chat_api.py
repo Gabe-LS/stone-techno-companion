@@ -459,16 +459,14 @@ _POI_TAG_TO_TYPE = {
     "FOOD": "food",
     "WC": "wc", "TOILET": "wc", "TOILETS": "wc",
     "TAP WATER": "water", "WATER": "water",
-    "ENTRANCE": "entrance", "EXIT": "exit",
+    "ENTRANCE": "entrance",
     "FIRST AID": "firstaid", "AWARENESS": "awareness",
-    "INFO": "info", "ATM": "atm",
     "LOCKER": "services", "LOST & FOUND": "services", "LOST AND FOUND": "services",
     "SHUTTLE": "transport",
     "VINYL SHOP": "shop", "MERCH STORE": "shop", "SHOP": "shop", "MERCH": "shop",
-    "ACCESSIBLE": "accessible", "MEETING POINT": "meeting",
 }
 # Prettier labels for unnamed placemarks where a title-cased tag reads badly.
-_POI_TAG_DISPLAY = {"WC": "Toilets", "ATM": "ATM"}
+_POI_TAG_DISPLAY = {"WC": "Toilets"}
 
 
 def _parse_kml_pois(kml_text: str) -> list:

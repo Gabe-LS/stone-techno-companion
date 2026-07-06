@@ -3468,7 +3468,7 @@ async function _loadFestivalPois() {
   try { _festivalPois = await api('/pois'); } catch (e) { _festivalPois = []; }
   return _festivalPois || [];
 }
-const POI_COLORS = { stage: '#8b5cf6', bar: '#f59e0b', winebar: '#a21caf', food: '#10b981', wc: '#3b82f6', water: '#06b6d4', entrance: '#14b8a6', exit: '#14b8a6', firstaid: '#ef4444', awareness: '#ec4899', info: '#6b7280', atm: '#059669', services: '#78716c', transport: '#0ea5e9', shop: '#eab308', accessible: '#2563eb', meeting: '#f97316', other: '#9ca3af' };
+const POI_COLORS = { stage: '#8b5cf6', bar: '#f59e0b', winebar: '#a21caf', food: '#10b981', wc: '#3b82f6', water: '#06b6d4', entrance: '#14b8a6', firstaid: '#ef4444', awareness: '#ec4899', services: '#78716c', transport: '#0ea5e9', shop: '#eab308', other: '#9ca3af' };
 function _poiIcon(type) {
   const c = POI_COLORS[type] || '#6b7280';
   return L.divIcon({
