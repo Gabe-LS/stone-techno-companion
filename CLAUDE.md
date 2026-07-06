@@ -115,7 +115,7 @@ Key design decisions:
 | `server/chat_ws.py` | Chat WebSocket server — rooms, optimistic messaging, presence, typing, reactions, replies, meetups, DMs, purge loop, E2EE content gating (DM-only envelopes, generic previews, snippet redaction) |
 | `server/chat_api.py` | Chat REST API — auth (Google/Email), rooms, meetups, DMs, media upload, admin page, E2EE key endpoints. Mounts routes + WS into FastAPI. |
 | `server/chat/chat.html` | Chat frontend — single HTML file with inline CSS/JS. WhatsApp-style bubbles, reactions, replies, action menus, client-side E2EE (per-device keys, encrypt/decrypt, key rotation). |
-| `server/chat/admin.html` | Admin dashboard — dark-themed SPA with tabs: Rooms, Users, Reports, Banned, Logs. Room management (create/edit/delete/reorder), user moderation (strike/mute/ban/clear), moderation log. |
+| `server/chat/admin.html` | Admin dashboard — dark-themed SPA with tabs: Rooms, Users, Reports, Banned, Logs, Audit, and (super-admin only) Admins + Settings. Room management (create/edit/delete/reorder/set-main; "..." per-row menu), user moderation ("..." menu: strike/mute/unmute/ban/unban/clear/delete), per-room message viewer + single delete, meetup delete, admin-action audit log, admin-list management, live app settings. Role-gated UI (see "Admin Page"). |
 | `server/chat/blocklist.txt` | Word filter blocklist (drug terms, slurs). Editable without deploy. |
 | `server/static/shared.css` | Unified design tokens and shared CSS components (loaded by all pages) |
 | `server/static/shared.js` | Shared JS utilities: escapeHtml, dbg, showToast, storageGet/Set, icon constants (loaded by all pages) |
@@ -125,6 +125,7 @@ Key design decisions:
 | `tests/test_chat_moderation.py` | 39 tests — word filter, strike system (expiry, reset, mute cycling), AI moderation pipeline |
 | `tests/test_chat_ws.py` | 44 tests — WebSocket rooms, messaging, presence, moderation flow |
 | `tests/test_chat_api.py` | 56 tests — REST endpoints, auth, rooms, meetups, DMs, admin |
+| `tests/test_chat_admin_roles.py` | 22 tests — multi-admin role resolution, super-admin gating, admin-account protection, admins CRUD, audit log, message/meetup/settings/reports admin endpoints (through the ASGI stack) |
 | `tests/test_notifications.py` | 54 tests — push debounce, payload, badge, clearing. Requires Playwright infra. |
 | `tests/e2ee_browser_check.py` | Standalone Playwright verification (not part of the pytest suite) — 21 checks across 5 browser contexts, see "End-to-End Encryption (DMs)" below |
 | `server/verify_push_both.py` | Standalone push check — after enabling notifications on both lineup and chat in one Chromium profile, fires a real WebPush at each stored subscription and asserts both surfaces share one LIVE endpoint (see push "Hard-won invariants") |
@@ -448,7 +449,7 @@ Mute/delete user → all their messages deleted from DB + `messages_expired` bro
 
 ### Admin Page
 
-Dark-themed SPA at `/chat/admin` (shortcut) or `/chat/api/admin`. Tabs: Rooms (create/edit/delete/reorder/set main/auto-join, manual/auto sort toggle, per-room message viewer + single-message delete, DM rows show participant names, delete meetup rooms), Users (search, strike/mute/unmute/ban/unban/delete, custom reason on ban/strike, view history, status/warnings columns), Reports (filter by pending/actioned/dismissed/all, room name + jump-to-user, ban/strike/dismiss), Banned (unban), Logs (auto-moderation timeline with search), Audit (every admin action with actor), and — super-admin only — Admins (manage the admin list) and Settings (msg_char_limit + DM/room/meetup TTLs, live). Stats footer with auto-refresh.
+Dark-themed SPA at `/chat/admin` (shortcut) or `/chat/api/admin`. Tabs: Rooms (create/edit/delete/reorder/set main/auto-join, manual/auto sort toggle, per-room message viewer + single-message delete, delete meetup rooms; DM rooms are excluded — E2EE and unmanageable here — and only group rooms can be set as the main room), Users (search + online-only filter, strike/mute/unmute/ban/unban/clear-warnings/delete, custom reason on ban/strike, view history, status/warnings columns), Reports (filter by pending/actioned/dismissed/all, room name + jump-to-user, ban/strike/dismiss), Banned (unban), Logs (auto-moderation timeline with search), Audit (every admin action with actor, humanized with old -> new values for edits), and — super-admin only — Admins (manage the admin list) and Settings (msg_char_limit + DM/room/meetup TTLs, live). Per-row actions in the Rooms and Users tabs live in a "..." menu (Users menu is grouped restrict / restore / destroy). Stats footer with auto-refresh. The active tab, the Users online-only toggle, and the Reports status filter persist across reloads (localStorage); free-text search boxes intentionally do not.
 
 **Roles & multi-admin** (see `docs/admin-multiadmin.md`). Auth resolves to an actor via `_resolve_admin`: the shared `X-Admin-Token` header is a bootstrap/emergency super-admin credential; a chat session cookie resolves to a role. `CHAT_ADMIN_EMAILS` entries are PERMANENT super-admins (never stored in the DB, never removable via the panel — the lockout-proof root set). DB-backed admins live in the `admins` table with role `admin` | `super_admin`. `_require_super_admin` gates the destructive endpoints (delete room/user, settings, unban, delete-ban, clear-warnings, admin management); moderators keep ban/mute/unmute/strike/reports/room-edit/message-delete/meetup-delete. `_guard_target` blocks moderating an env super-admin outright (owner-safe) and blocks an admin from moderating another admin (only a super-admin can). Every mutating endpoint records actor + action + target in `admin_actions` (surfaced in the Audit tab); this also gives mutes/unmutes/unbans their log visibility. `_require_admin` is per-IP rate-limited on failure (20/5min). Admin-panel handlers never interpolate untrusted strings into inline `on*` attributes (HTML-entity encoding is decoded before an inline handler compiles as JS, so an encoded quote breaks out) — handlers pass only ids and look names up from in-memory arrays; OAuth display names are sanitized before storage. Regression net: `tests/test_chat_admin_roles.py` (role resolution, super-admin gating, admin-account protection, admins CRUD, audit, message/meetup/settings/reports endpoints — through the ASGI stack).
 
@@ -490,11 +491,12 @@ Main room auto-opens on login. Path-based routing (`/chat`, `/chat/r/{id}`, `/ch
 
 ### Chat Tests
 
-198 tests total: `python -m pytest tests/ -v`
+220 tests total: `python -m pytest tests/ -v`
 - `test_chat_db.py` (59) — all CRUD, cascade deletes, purge, wipe
 - `test_chat_moderation.py` (39) — word filter, AI mocks, strike escalation (expiry, reset, mute cycling)
 - `test_chat_ws.py` (44) — WebSocket rooms, messaging, presence, moderation flow
 - `test_chat_api.py` (56) — REST endpoints, auth, rooms, meetups, DMs, admin
+- `test_chat_admin_roles.py` (22) — multi-admin roles, super-admin gating, admin-account protection, admins CRUD, audit, admin endpoints
 
 Two suites run outside pytest: `test_notifications.py` (54 tests — push debounce, payload, badge, clearing; requires Playwright infra, run separately) and `tests/e2ee_browser_check.py` (standalone Playwright verification, 21 checks — see "End-to-End Encryption (DMs)" below).
 
