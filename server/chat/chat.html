@@ -3254,6 +3254,7 @@ async function cancelMeetup(meetupId) {
 
 function openMeetupModal() {
   dbg('[MEETUP] openMeetupModal');
+  const _meetupTrigger = document.activeElement;
   document.getElementById('meetup-modal')?.remove();
   const d = new Date(Math.ceil((Date.now() + 900000) / 900000) * 900000);
   const defaultDate = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -3264,27 +3265,27 @@ function openMeetupModal() {
   const modal = document.createElement('div');
   modal.id = 'meetup-modal';
   modal.className = 'modal-overlay';
-  modal.innerHTML = `<div class="modal" onclick="event.stopPropagation()">
+  modal.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="meetup-modal-title" onclick="event.stopPropagation()">
     <div class="modal-header">
-      <span class="modal-title">Create Meetup</span>
-      <button class="modal-close" onclick="closeMeetupModal()">&times;</button>
+      <span class="modal-title" id="meetup-modal-title">Create Meetup</span>
+      <button class="modal-close" aria-label="Close" onclick="closeMeetupModal()">&times;</button>
     </div>
     <div class="modal-body">
-      <label class="modal-label">Title</label>
+      <label class="modal-label" for="meetup-title">Title</label>
       <input id="meetup-title" class="modal-input" placeholder="e.g. Drinks at the bar" maxlength="60">
       <label class="modal-label">Date & Time</label>
       <div style="display:flex;gap:8px">
         <input id="meetup-date" class="modal-input" type="date" value="${defaultDate}" style="flex:1">
-        <select id="meetup-hour" class="modal-input" style="width:auto">${hourOpts}</select>
+        <select id="meetup-hour" class="modal-input" aria-label="Hour" style="width:auto">${hourOpts}</select>
         <span style="align-self:center;color:var(--color-muted)">:</span>
-        <select id="meetup-min" class="modal-input" style="width:auto">${minOpts}</select>
+        <select id="meetup-min" class="modal-input" aria-label="Minute" style="width:auto">${minOpts}</select>
       </div>
-      <label class="modal-label">Location</label>
+      <label class="modal-label" for="meetup-location">Location</label>
       <div style="display:flex;gap:8px">
         <input id="meetup-location" class="modal-input" placeholder="e.g. Main bar area" style="flex:1">
         <button type="button" id="meetup-gps-btn" class="modal-btn-secondary" onclick="useMeetupGPS()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="vertical-align:middle"><path d="M4 10.1433C4 5.64588 7.58172 2 12 2C16.4183 2 20 5.64588 20 10.1433C20 14.6055 17.4467 19.8124 13.4629 21.6744C12.5343 22.1085 11.4657 22.1085 10.5371 21.6744C6.55332 19.8124 4 14.6055 4 10.1433Z" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="10" r="3" stroke="currentColor" stroke-width="1.5"/></svg> GPS</button>
       </div>
-      <label class="modal-label">Note (optional)</label>
+      <label class="modal-label" for="meetup-note">Note (optional)</label>
       <textarea id="meetup-note" class="modal-textarea" placeholder="Any extra info..." rows="2"></textarea>
     </div>
     <div class="modal-footer">
@@ -3292,7 +3293,16 @@ function openMeetupModal() {
     </div>
   </div>`;
   modal.addEventListener('click', closeMeetupModal);
+  modal._trigger = _meetupTrigger;
   document.body.appendChild(modal);
+  modal.querySelector('.modal').addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return;
+    const f = modal.querySelectorAll('input, select, textarea, button, a[href], [tabindex]:not([tabindex="-1"])');
+    if (!f.length) return;
+    const first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
   requestAnimationFrame(() => {
     modal.classList.add('open');
     verify('openMeetupModal', document.getElementById('meetup-modal'), 'modal in DOM');
@@ -3373,7 +3383,14 @@ function showConfirm(title, detail, onConfirm, btnLabel) {
 function closeMeetupModal() {
   dbg('[MEETUP] closeMeetupModal');
   const modal = document.getElementById('meetup-modal');
-  if (modal) { modal.classList.remove('open'); setTimeout(() => { modal.remove(); verify('closeMeetupModal', !document.getElementById('meetup-modal'), 'modal removed from DOM'); }, 200); }
+  if (modal) {
+    modal.classList.remove('open');
+    setTimeout(() => {
+      modal.remove();
+      verify('closeMeetupModal', !document.getElementById('meetup-modal'), 'modal removed from DOM');
+      try { modal._trigger && modal._trigger.focus && modal._trigger.focus(); } catch (e) {}
+    }, 200);
+  }
   _meetupCoords = null;
 }
 
