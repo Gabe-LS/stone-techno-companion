@@ -1425,7 +1425,10 @@ async function handleWSEvent(data) {
       dbg('[ROOM] rooms_changed, reloading');
       loadRooms().then(() => {
         renderRoomItems();
-        if (currentRoom) {
+        // DM/meetup rooms are never in `rooms` (loaded separately), so skip the
+        // "not found -> redirect to main" logic for them or any rooms_changed on
+        // an unrelated room would kick the user out of an open DM/meetup.
+        if (currentRoom && currentRoomType !== 'dm' && currentRoomType !== 'meetup') {
           const still = rooms.find(r => r.id === currentRoom);
           if (!still) {
             const main = rooms.find(r => r.is_main) || rooms[0];
