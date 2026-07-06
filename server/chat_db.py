@@ -1020,6 +1020,49 @@ def get_room_messages(
     ).fetchall()
 
 
+def get_room_messages_admin(
+    db: sqlite3.Connection, room_id: str, limit: int = 100
+) -> list[dict]:
+    rows = db.execute(
+        "SELECT m.id, m.user_id, m.type, m.content, m.media_url, m.moderation_status, "
+        "m.created_at, u.display_name, u.username "
+        "FROM messages m LEFT JOIN users u ON u.id = m.user_id "
+        "WHERE m.room_id = ? AND m.expires_at > ? "
+        "ORDER BY m.created_at DESC LIMIT ?",
+        (room_id, _now(), limit),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_message_by_id(db: sqlite3.Connection, message_id: str) -> dict | None:
+    row = db.execute(
+        "SELECT id, room_id, user_id, type, content, media_url FROM messages WHERE id = ?",
+        (message_id,),
+    ).fetchone()
+    if not row:
+        return None
+    url = ""
+    if row["type"] in ("image", "video"):
+        url = row["media_url"] or ""
+        if not url:
+            import json
+
+            try:
+                url = json.loads(row["content"]).get("url", "")
+            except (json.JSONDecodeError, TypeError):
+                url = ""
+    db.execute("DELETE FROM messages WHERE id = ?", (message_id,))
+    db.commit()
+    if url:
+        uploads_dir = Path(__file__).resolve().parent / "chat" / "uploads"
+        _unlink_media_if_orphaned(db, uploads_dir, url)
+    return {
+        "room_id": row["room_id"],
+        "message_id": message_id,
+        "user_id": row["user_id"],
+    }
+
+
 # --- Reactions ---
 
 
@@ -1257,6 +1300,28 @@ def get_active_meetups(db: sqlite3.Connection, event_id: str) -> list[sqlite3.Ro
     ).fetchall()
 
 
+def get_all_meetups(db: sqlite3.Connection) -> list[dict]:
+    rows = db.execute(
+        "SELECT m.id, m.title, m.creator_id, u.display_name AS creator_name, "
+        "m.meetup_time, m.location_label, m.created_at, m.expires_at, "
+        "(SELECT COUNT(*) FROM meetup_attendees ma WHERE ma.meetup_id = m.id) AS attendees "
+        "FROM meetups m LEFT JOIN users u ON u.id = m.creator_id "
+        "ORDER BY m.meetup_time DESC"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_meetup(db: sqlite3.Connection, meetup_id: str) -> bool:
+    row = db.execute("SELECT id FROM meetups WHERE id = ?", (meetup_id,)).fetchone()
+    if not row:
+        return False
+    delete_room(db, meetup_id)  # meetup room id equals the meetup id
+    db.execute("DELETE FROM meetup_attendees WHERE meetup_id = ?", (meetup_id,))
+    db.execute("DELETE FROM meetups WHERE id = ?", (meetup_id,))
+    db.commit()
+    return True
+
+
 def purge_expired_meetups(db: sqlite3.Connection) -> list[str]:
     now = _now()
     expired = db.execute(
@@ -1396,11 +1461,28 @@ def create_report(
 def get_pending_reports(db: sqlite3.Connection) -> list[sqlite3.Row]:
     return db.execute(
         "SELECT r.*, u.display_name AS reporter_name, "
-        "u2.display_name AS reported_name "
+        "u2.display_name AS reported_name, rm.name AS room_name "
         "FROM reports r "
         "LEFT JOIN users u ON u.id = r.reporter_id "
         "LEFT JOIN users u2 ON u2.id = r.reported_user_id "
+        "LEFT JOIN rooms rm ON rm.id = r.room_id "
         "WHERE r.status = 'pending' ORDER BY r.created_at DESC"
+    ).fetchall()
+
+
+def get_reports_by_status(db: sqlite3.Connection, status: str) -> list[sqlite3.Row]:
+    base = (
+        "SELECT r.*, u.display_name AS reporter_name, u2.display_name AS reported_name, "
+        "rm.name AS room_name "
+        "FROM reports r "
+        "LEFT JOIN users u ON u.id = r.reporter_id "
+        "LEFT JOIN users u2 ON u2.id = r.reported_user_id "
+        "LEFT JOIN rooms rm ON rm.id = r.room_id "
+    )
+    if status == "all":
+        return db.execute(base + "ORDER BY r.created_at DESC LIMIT 200").fetchall()
+    return db.execute(
+        base + "WHERE r.status = ? ORDER BY r.created_at DESC LIMIT 200", (status,)
     ).fetchall()
 
 
@@ -1411,6 +1493,15 @@ def resolve_report(db: sqlite3.Connection, report_id: str, status: str) -> int:
     )
     db.commit()
     return cur.rowcount
+
+
+def get_dm_participant_names(db: sqlite3.Connection, room_id: str) -> list[str]:
+    rows = db.execute(
+        "SELECT u.display_name, u.username FROM dm_participants dp "
+        "JOIN users u ON u.id = dp.user_id WHERE dp.room_id = ?",
+        (room_id,),
+    ).fetchall()
+    return [(r["display_name"] or r["username"] or "?") for r in rows]
 
 
 def purge_old_reports(db: sqlite3.Connection) -> int:

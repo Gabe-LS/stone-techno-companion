@@ -217,3 +217,115 @@ def test_audit_records_actions(client):
     actions = {a["action"] for a in audit}
     assert "set_main" in actions
     assert all(a["actor"] == "token" for a in audit if a["action"] == "set_main")
+
+
+# --- Stage C: message view/delete, settings, meetups, reports filter ---
+
+
+def test_room_messages_view_includes_pending_and_delete(client):
+    from chat_db import create_room, create_message
+
+    create_room(_test_db, "party", "test-event", "general", "Party")
+    u = create_user(_test_db, "email", hash_email("m@example.com"), "Poster", None)
+    create_message(
+        _test_db, "party", u["id"], "text", "hello", moderation_status="approved"
+    )
+    pend = create_message(
+        _test_db, "party", u["id"], "text", "pending one", moderation_status="pending"
+    )
+    msgs = client.get("/chat/api/admin/rooms/party/messages", headers=TOKEN).json()
+    assert len(msgs) == 2  # admin view shows pending too
+    assert any(m["moderation_status"] == "pending" for m in msgs)
+    r = client.delete("/chat/api/admin/messages/" + pend["id"], headers=TOKEN)
+    assert r.status_code == 200
+    msgs2 = client.get("/chat/api/admin/rooms/party/messages", headers=TOKEN).json()
+    assert all(m["id"] != pend["id"] for m in msgs2)
+
+
+def test_room_messages_rejects_dm(client):
+    from chat_db import create_room
+
+    create_room(_test_db, "dm-x", "test-event", "dm", "DM")
+    r = client.get("/chat/api/admin/rooms/dm-x/messages", headers=TOKEN)
+    assert r.status_code == 400
+
+
+def test_settings_get_and_super_only_patch(client):
+    s = client.get("/chat/api/admin/settings", headers=TOKEN).json()
+    for k in (
+        "room_sort",
+        "msg_char_limit",
+        "dm_ttl_minutes",
+        "room_ttl_minutes",
+        "meetup_ttl_minutes",
+    ):
+        assert k in s
+    # valid patch
+    assert (
+        client.patch(
+            "/chat/api/admin/settings", json={"msg_char_limit": 500}, headers=TOKEN
+        ).status_code
+        == 200
+    )
+    # invalid (out of range / bool)
+    assert (
+        client.patch(
+            "/chat/api/admin/settings", json={"msg_char_limit": 0}, headers=TOKEN
+        ).status_code
+        == 400
+    )
+    # regular admin cannot patch
+    u = create_user(_test_db, "email", hash_email("staff@example.com"), "Staff", None)
+    add_admin(_test_db, hash_email("staff@example.com"), "admin", "Staff", "t")
+    _cookie_client(client, u["id"])
+    assert (
+        client.patch(
+            "/chat/api/admin/settings", json={"msg_char_limit": 800}
+        ).status_code
+        == 403
+    )
+
+
+def test_meetup_list_and_delete(client):
+    from chat_db import create_meetup
+
+    u = create_user(_test_db, "email", hash_email("c@example.com"), "Creator", None)
+    mt = create_meetup(
+        _test_db, u["id"], "test-event", None, "Rave", "2099-01-01T22:00:00+00:00"
+    )
+    lst = client.get("/chat/api/admin/meetups", headers=TOKEN).json()
+    assert any(m["id"] == mt["id"] and m["title"] == "Rave" for m in lst)
+    assert (
+        client.delete("/chat/api/admin/meetups/" + mt["id"], headers=TOKEN).status_code
+        == 200
+    )
+    assert (
+        client.delete("/chat/api/admin/meetups/" + mt["id"], headers=TOKEN).status_code
+        == 404
+    )
+
+
+def test_reports_status_filter(client):
+    from chat_db import create_report, resolve_report
+
+    rep = create_user(_test_db, "email", hash_email("rep@example.com"), "Rep", None)
+    tgt = create_user(_test_db, "email", hash_email("tgt@example.com"), "Tgt", None)
+    from chat_db import create_room
+
+    create_room(_test_db, "party", "test-event", "general", "Party")
+    rid = create_report(_test_db, rep["id"], tgt["id"], "snap", "party", "spam")
+    # pending shows it, with room_name
+    pending = client.get("/chat/api/admin/reports?status=pending", headers=TOKEN).json()
+    assert any(x["id"] == rid and x.get("room_name") == "Party" for x in pending)
+    resolve_report(_test_db, rid, "dismissed")
+    assert not client.get(
+        "/chat/api/admin/reports?status=pending", headers=TOKEN
+    ).json()
+    dismissed = client.get(
+        "/chat/api/admin/reports?status=dismissed", headers=TOKEN
+    ).json()
+    assert any(x["id"] == rid for x in dismissed)
+    assert any(
+        x["id"] == rid
+        for x in client.get("/chat/api/admin/reports?status=all", headers=TOKEN).json()
+    )

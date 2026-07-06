@@ -181,6 +181,7 @@ let onlineOnly = false;
 let searchQuery = '';
 let searchTimer = null;
 let statsInterval = null;
+let reportStatus = 'pending';
 
 function renderLogin() {
   dbg('[AUTH] renderLogin');
@@ -221,6 +222,7 @@ async function init() {
       <div class="tab" data-tab="log" onclick="switchTab('log')">Logs</div>
       <div class="tab" data-tab="audit" onclick="switchTab('audit')">Audit</div>
       ${window._me.role === 'super_admin' ? '<div class="tab" data-tab="admins" onclick="switchTab(\'admins\')">Admins</div>' : ''}
+      ${window._me.role === 'super_admin' ? '<div class="tab" data-tab="settings" onclick="switchTab(\'settings\')">Settings</div>' : ''}
       <div class="admin-me" id="admin-me"></div>
     </div>
     <div class="content" id="content"></div>
@@ -295,36 +297,43 @@ function historyLine(u) {
 
 const render = {
   reports: async () => {
-    dbg('[RENDER] reports');
+    dbg('[RENDER] reports', reportStatus);
     const el = document.getElementById('content');
+    const toolbarHtml = `<div class="toolbar"><select id="report-status" onchange="reloadReports(this.value)">
+      <option value="pending" ${reportStatus === 'pending' ? 'selected' : ''}>Pending</option>
+      <option value="actioned" ${reportStatus === 'actioned' ? 'selected' : ''}>Actioned</option>
+      <option value="dismissed" ${reportStatus === 'dismissed' ? 'selected' : ''}>Dismissed</option>
+      <option value="all" ${reportStatus === 'all' ? 'selected' : ''}>All</option></select></div>`;
     try {
-      const reports = await api('/reports?status=pending');
+      const reports = await api('/reports?status=' + reportStatus);
       window._reportsData = reports;
       dbg('[RENDER] reports:', reports.length);
-      if (!reports.length) { el.innerHTML = '<div class="empty">No pending reports</div>'; return; }
+      if (!reports.length) { el.innerHTML = toolbarHtml + '<div class="empty">No reports</div>'; return; }
       const histories = await Promise.all(reports.map(r => Promise.all([
         api('/users/' + r.reporter_id).catch(() => null),
         api('/users/' + r.reported_user_id).catch(() => null),
       ])));
-      el.innerHTML = `<table class="tbl"><thead><tr>
-        <th>Reporter</th><th>Reported</th><th>Reason</th><th>Message</th><th class="col-narrow">Time</th><th class="col-actions">Actions</th>
+      el.innerHTML = toolbarHtml + `<table class="tbl"><thead><tr>
+        <th>Reporter</th><th>Reported</th><th>Room</th><th>Reason</th><th>Message</th><th class="col-narrow">Time</th><th class="col-actions">Actions</th>
       </tr></thead><tbody>` + reports.map((r, i) => {
         const [reporterHist, reportedHist] = histories[i];
         const snapshotText = esc((() => { try { const p = JSON.parse(r.message_snapshot); return p.text || r.message_snapshot; } catch { return r.message_snapshot; } })());
-        return `<tr>
-        <td>${esc(r.reporter_name || '[deleted user]')}${historyLine(reporterHist)}</td>
-        <td><b>${esc(r.reported_name || '[deleted user]')}</b>${historyLine(reportedHist)}</td>
-        <td>${esc(r.reason)}</td>
-        <td><div class="snapshot${r.unverified ? ' unverified' : ''}">${snapshotText}${r.unverified ? '<div class="unverified-banner">Content provided by reporter (unverified - server cannot read encrypted messages)</div>' : ''}</div></td>
-        <td class="col-narrow" style="color:var(--text-muted)">${ago(r.created_at)}</td>
-        <td class="col-actions"><div class="btn-group">
+        const actionsHtml = `<div class="btn-group">
           <button class="btn btn-red" onclick="reportAction('${esc(r.id)}','ban')">Ban</button>
           <button class="btn btn-amber" onclick="reportAction('${esc(r.id)}','strike')">Strike</button>
           <button class="btn btn-neutral" onclick="reportAction('${esc(r.id)}','dismiss')">Dismiss</button>
-        </div></td>
+        </div>`;
+        return `<tr>
+        <td>${esc(r.reporter_name || '[deleted user]')}${historyLine(reporterHist)}</td>
+        <td data-jump="${esc(r.reported_user_id)}" onclick="jumpToUser('${esc(r.reported_user_id)}')" style="cursor:pointer"><b>${esc(r.reported_name || '[deleted user]')}</b>${historyLine(reportedHist)}</td>
+        <td>${esc(r.room_name || r.room_id || '--')}</td>
+        <td>${esc(r.reason)}</td>
+        <td><div class="snapshot${r.unverified ? ' unverified' : ''}">${snapshotText}${r.unverified ? '<div class="unverified-banner">Content provided by reporter (unverified - server cannot read encrypted messages)</div>' : ''}</div></td>
+        <td class="col-narrow" style="color:var(--text-muted)">${ago(r.created_at)}</td>
+        <td class="col-actions">${reportStatus === 'pending' ? actionsHtml : (esc(r.status) + '<div style="color:var(--text-muted);font-size:11px">' + ago(r.reviewed_at || r.created_at) + '</div>')}</td>
       </tr>`;
       }).join('') + '</tbody></table>';
-    } catch { el.innerHTML = '<div class="empty">Failed to load reports</div>'; }
+    } catch { el.innerHTML = toolbarHtml + '<div class="empty">Failed to load reports</div>'; }
   },
 
   users: async () => {
@@ -392,7 +401,7 @@ const render = {
       </tr></thead><tbody id="rooms-tbody">` + rooms.map(r => `<tr draggable="true" data-room-id="${esc(r.id)}" ondragstart="onDragStart(event)" ondragover="onDragOver(event)" ondrop="onDrop(event)" ondragend="onDragEnd(event)" ondragleave="onDragLeave(event)">
         <td class="col-narrow"><span class="drag-handle"><svg width="18" height="18" viewBox="0 0 24 24" fill="var(--text-muted)"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg></span></td>
         <td class="col-narrow star-cell" onclick="event.stopPropagation();setMainRoom('${esc(r.id)}')" title="${r.is_main ? 'Main room' : 'Set as main room'}"><svg width="18" height="18" viewBox="0 0 24 24" ${r.is_main ? 'fill="var(--amber)" stroke="var(--amber)"' : 'fill="none" stroke="var(--text-muted)"'} stroke-width="1.5"><path d="${starPath}"/></svg></td>
-        <td>${esc(r.name)}${r.description ? '<div style="color:var(--text-muted);font-size:12px">' + esc(r.description) + '</div>' : ''}</td>
+        <td>${r.type === 'dm' && r.participants && r.participants.length ? esc(r.participants.join(' <-> ')) : esc(r.name)}${r.description ? '<div style="color:var(--text-muted);font-size:12px">' + esc(r.description) + '</div>' : ''}</td>
         <td class="col-narrow"><span class="pill ${typePill(r.type)}">${esc(r.type)}</span></td>
         <td class="col-narrow">${ttlLabel(r.ttl_minutes)}</td>
         <td class="col-narrow">${r.member_count}</td>
@@ -401,6 +410,8 @@ const render = {
         <td class="col-narrow" style="color:var(--text-muted)">${ago(r.last_message_at)}</td>
         <td class="col-actions"><div class="btn-group">
           ${r.type !== 'dm' && r.type !== 'meetup' ? `<button class="btn btn-neutral" onclick="openRoomModal('${esc(r.id)}')">Edit</button>` : ''}
+          ${r.type !== 'dm' && r.type !== 'meetup' ? `<button class="btn btn-neutral" onclick="viewRoomMessages('${esc(r.id)}')">Messages</button>` : ''}
+          ${r.type === 'meetup' ? `<button class="btn btn-neutral" onclick="deleteMeetup('${esc(r.id)}')">Delete</button>` : ''}
           ${!r.is_main && r.type !== 'dm' && r.type !== 'meetup' && window._me && window._me.role === 'super_admin' ? `<button class="btn btn-neutral" onclick="deleteRoom('${esc(r.id)}')">Delete</button>` : ''}
         </div></td>
       </tr>`).join('') + '</tbody></table>';
@@ -493,7 +504,43 @@ async function removeAdmin(emailHash) {
   catch (e) { alert('Failed: ' + e.message); }
 }
 
+// --- Settings ---
+render.settings = async () => {
+  dbg('[RENDER] settings');
+  const el = document.getElementById('content');
+  try {
+    const s = await api('/settings');
+    el.innerHTML = `<div class="detail-panel" style="max-width:420px">
+      <div class="modal-field"><label>Message char limit</label><input type="number" id="set-msglimit" value="${esc(String(s.msg_char_limit))}"></div>
+      <div class="modal-field"><label>Room message TTL (minutes)</label><input type="number" id="set-roomttl" value="${esc(String(s.room_ttl_minutes))}"></div>
+      <div class="modal-field"><label>DM TTL (minutes)</label><input type="number" id="set-dmttl" value="${esc(String(s.dm_ttl_minutes))}"></div>
+      <div class="modal-field"><label>Meetup TTL after meetup time (minutes)</label><input type="number" id="set-meetupttl" value="${esc(String(s.meetup_ttl_minutes))}"></div>
+      <div class="modal-actions"><button class="btn btn-blue" onclick="saveSettings()">Save</button></div>
+    </div>`;
+  } catch { el.innerHTML = '<div class="empty">Failed to load settings</div>'; }
+};
+async function saveSettings() {
+  const body = {
+    msg_char_limit: parseInt(document.getElementById('set-msglimit').value),
+    room_ttl_minutes: parseInt(document.getElementById('set-roomttl').value),
+    dm_ttl_minutes: parseInt(document.getElementById('set-dmttl').value),
+    meetup_ttl_minutes: parseInt(document.getElementById('set-meetupttl').value),
+  };
+  dbg('[ACTION] saveSettings', body);
+  try { await api('/settings', {method: 'PATCH', body: JSON.stringify(body)}); showToast('Settings saved'); }
+  catch (e) { alert('Failed: ' + e.message); }
+}
+
 // --- Reports ---
+function reloadReports(s) { dbg('[FILTER] reportStatus:', s); reportStatus = s; render.reports(); }
+function jumpToUser(userId) {
+  if (!userId) return;
+  dbg('[ACTION] jumpToUser', userId);
+  searchQuery = '';
+  switchTab('users');
+  expandedUser = userId;
+  setTimeout(() => { loadUsers(); }, 0);
+}
 async function reportAction(reportId, action) {
   const r = (window._reportsData || []).find(x => x.id === reportId);
   if (!r) return;
@@ -501,8 +548,9 @@ async function reportAction(reportId, action) {
   const userName = r.reported_name || '[deleted user]';
   dbg('[ACTION] report', action, userName);
   if (action === 'ban') {
-    if (!confirm('Ban ' + userName + '?')) return;
-    await api('/ban/' + userId, {method: 'POST', body: JSON.stringify({reason: 'Banned via report'})});
+    const reason = prompt('Ban reason:', 'Banned via report');
+    if (reason === null) return;
+    await api('/ban/' + userId, {method: 'POST', body: JSON.stringify({reason})});
     await api('/reports/' + reportId, {method: 'PATCH', body: JSON.stringify({status: 'actioned'})});
   } else if (action === 'strike') {
     await api('/strike/' + userId, {method: 'POST', body: JSON.stringify({reason: 'report', detail: 'Strike via report ' + reportId})});
@@ -649,8 +697,9 @@ async function adminClearWarnings(userId) {
 
 async function adminStrike(userId) {
   dbg('[ACTION] strike', userId);
-  if (!confirm('Issue a strike to this user?')) return;
-  const result = await api('/strike/' + userId, {method: 'POST', body: JSON.stringify({reason: 'admin', detail: 'Manual admin action'})});
+  const detail = prompt('Strike reason:', 'Manual admin action');
+  if (detail === null) return;
+  const result = await api('/strike/' + userId, {method: 'POST', body: JSON.stringify({reason: 'admin', detail})});
   dbg('[ACTION] strike result:', result.action, result.strike_count);
   if (result.action === 'ban') alert('User has been banned (4th strike).');
   else if (result.action === 'mute') alert('User has been muted (3rd strike).');
@@ -665,10 +714,10 @@ async function adminMute(userId) {
 function _userName(id) { const u = (window._usersData || []).find(x => x.id === id) || (window._userDetail && window._userDetail.id === id ? window._userDetail : null); return u ? (u.display_name || u.username || id) : id; }
 
 async function adminBan(userId) {
-  const name = _userName(userId);
   dbg('[ACTION] ban', userId);
-  if (!confirm('Ban ' + name + '?')) return;
-  await api('/ban/' + userId, {method: 'POST', body: JSON.stringify({reason: 'Banned by admin'})});
+  const reason = prompt('Ban reason:', 'Banned by admin');
+  if (reason === null) return;
+  await api('/ban/' + userId, {method: 'POST', body: JSON.stringify({reason})});
   refreshStats(); loadUsers();
 }
 async function adminUnban(userId) {
@@ -920,6 +969,43 @@ async function deleteRoom(roomId) {
   if (!confirm('Delete room "' + name + '"? All messages will be lost.')) return;
   await api('/rooms/' + roomId, {method: 'DELETE'});
   refreshStats(); render.rooms();
+}
+
+async function deleteMeetup(id) {
+  const room = (window._roomsData || []).find(r => r.id === id);
+  dbg('[ACTION] deleteMeetup', id);
+  if (!confirm('Delete meetup "' + (room ? room.name : '') + '"? This removes its chat too.')) return;
+  try { await api('/meetups/' + id, {method: 'DELETE'}); refreshStats(); render.rooms(); }
+  catch (e) { alert('Failed: ' + e.message); }
+}
+
+async function viewRoomMessages(roomId) {
+  dbg('[MODAL] room messages', roomId);
+  const m = document.getElementById('modal');
+  m.innerHTML = '<h2>Recent messages</h2><div id="rm-msgs" style="max-height:60vh;overflow:auto"></div>' +
+    '<div class="modal-actions"><button class="btn btn-neutral" onclick="closeModal()">Close</button></div>';
+  document.getElementById('modal-overlay').classList.add('open');
+  try {
+    const msgs = await api('/rooms/' + roomId + '/messages?limit=100');
+    window._roomMsgs = msgs;
+    const box = document.getElementById('rm-msgs');
+    if (!msgs.length) { box.innerHTML = '<div class="empty">No messages</div>'; return; }
+    box.innerHTML = msgs.map(x => `<div class="detail-sub-row" id="msgrow-${esc(x.id)}">
+      <b>${esc(x.display_name || x.username || 'unknown')}</b>
+      ${x.moderation_status === 'pending' ? '<span class="pill pill-amber">pending</span>' : ''}
+      <span style="color:var(--text-muted)">${ago(x.created_at)}</span>
+      <button class="btn btn-red" style="float:right;padding:2px 8px" onclick="adminDeleteMessage('${esc(x.id)}')">Delete</button>
+      <div style="margin-top:2px">${esc(x.type === 'text' ? x.content : '[' + esc(x.type) + ']')}</div>
+    </div>`).join('');
+  } catch (e) { document.getElementById('rm-msgs').innerHTML = '<div class="empty">Failed to load</div>'; }
+}
+async function adminDeleteMessage(id) {
+  dbg('[ACTION] deleteMessage', id);
+  if (!confirm('Delete this message?')) return;
+  try {
+    await api('/messages/' + id, {method: 'DELETE'});
+    const row = document.getElementById('msgrow-' + id); if (row) row.remove();
+  } catch (e) { alert('Failed: ' + e.message); }
 }
 
 init();

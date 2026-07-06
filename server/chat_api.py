@@ -55,6 +55,12 @@ from chat_db import (
     unblock_user as db_unblock_user,
     get_pending_reports,
     resolve_report,
+    get_room_messages_admin,
+    delete_message_by_id,
+    get_reports_by_status,
+    get_dm_participant_names,
+    get_all_meetups,
+    delete_meetup,
     hash_email,
     save_push_subscription,
     delete_push_subscription,
@@ -2032,7 +2038,12 @@ async def admin_reports(request: Request, status: str = "pending"):
     actor = _require_admin(request)
     db = _get_db()
     try:
-        reports = get_pending_reports(db) if status == "pending" else []
+        if status == "pending":
+            reports = get_pending_reports(db)
+        elif status in ("actioned", "dismissed", "all"):
+            reports = get_reports_by_status(db, status)
+        else:
+            raise HTTPException(400, "invalid status")
         return [
             {
                 "id": r["id"],
@@ -2041,6 +2052,7 @@ async def admin_reports(request: Request, status: str = "pending"):
                 "reported_name": r["reported_name"],
                 "message_snapshot": r["message_snapshot"],
                 "room_id": r["room_id"],
+                "room_name": (r["room_name"] if "room_name" in r.keys() else None),
                 "reported_user_id": r["reported_user_id"],
                 "reason": r["reason"],
                 "status": r["status"],
@@ -2175,12 +2187,26 @@ async def admin_delete_ban(ban_id: str, request: Request):
         db.close()
 
 
+_SETTINGS_INT_DEFAULTS = {
+    "msg_char_limit": ("1000", 1, 5000),
+    "dm_ttl_minutes": ("1440", 1, 43200),
+    "room_ttl_minutes": ("1440", 1, 43200),
+    "meetup_ttl_minutes": ("60", 1, 43200),
+}
+
+
 @router.get("/admin/settings")
 async def admin_get_settings(request: Request):
     actor = _require_admin(request)
     db = _get_db()
     try:
-        return {"room_sort": get_setting(db, "room_sort", "auto")}
+        out = {"room_sort": get_setting(db, "room_sort", "auto")}
+        for key, (default, _lo, _hi) in _SETTINGS_INT_DEFAULTS.items():
+            try:
+                out[key] = int(get_setting(db, key, default))
+            except (ValueError, TypeError):
+                out[key] = int(default)
+        return out
     finally:
         db.close()
 
@@ -2195,6 +2221,15 @@ async def admin_update_settings(request: Request):
             if body["room_sort"] not in ("auto", "manual"):
                 raise HTTPException(400, "room_sort must be 'auto' or 'manual'")
             set_setting(db, "room_sort", body["room_sort"])
+        for key, (_default, lo, hi) in _SETTINGS_INT_DEFAULTS.items():
+            if key not in body:
+                continue
+            v = body[key]
+            if isinstance(v, bool) or not isinstance(v, int) or not (lo <= v <= hi):
+                raise HTTPException(
+                    400, f"{key} must be an integer between {lo} and {hi}"
+                )
+            set_setting(db, key, str(v))
         log_admin_action(db, actor["label"], "update_settings", detail=str(body))
         return {"ok": True}
     finally:
@@ -2296,6 +2331,8 @@ async def admin_rooms(request: Request):
         counts = get_reachable_member_counts(db, [r["id"] for r in rooms])
         for r in rooms:
             r["member_count"] = counts.get(r["id"], 0)
+            if r["type"] == "dm":
+                r["participants"] = get_dm_participant_names(db, r["id"])
         return rooms
     finally:
         db.close()
@@ -2618,7 +2655,15 @@ async def admin_reorder_rooms(request: Request):
         raise HTTPException(400, "order required")
     db = _get_db()
     try:
+        valid = {
+            r["id"]
+            for r in db.execute(
+                "SELECT id FROM rooms WHERE type IN ('general', 'stage')"
+            ).fetchall()
+        }
         for i, room_id in enumerate(order):
+            if room_id not in valid:
+                continue
             db.execute("UPDATE rooms SET position = ? WHERE id = ?", (i, room_id))
         db.commit()
         from chat_ws import manager
@@ -2745,6 +2790,83 @@ async def admin_remove_admin(email_hash: str, request: Request):
             raise HTTPException(400, "Would remove the last super-admin")
         remove_admin(db, email_hash)
         log_admin_action(db, actor["label"], "remove_admin", detail=email_hash[:12])
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+@router.get("/admin/rooms/{room_id}/messages")
+async def admin_room_messages(room_id: str, request: Request, limit: int = 100):
+    _require_admin(request)
+    limit = max(1, min(limit, 200))
+    db = _get_db()
+    try:
+        room = get_room(db, room_id)
+        if not room:
+            raise HTTPException(404, "Room not found")
+        if room["type"] == "dm":
+            raise HTTPException(400, "DM messages are end-to-end encrypted")
+        return get_room_messages_admin(db, room_id, limit)
+    finally:
+        db.close()
+
+
+@router.delete("/admin/messages/{message_id}")
+async def admin_delete_message(message_id: str, request: Request):
+    actor = _require_admin(request)
+    db = _get_db()
+    try:
+        result = delete_message_by_id(db, message_id)
+        if not result:
+            raise HTTPException(404, "Message not found")
+        log_admin_action(
+            db,
+            actor["label"],
+            "delete_message",
+            target_user_id=result["user_id"],
+            target_room_id=result["room_id"],
+            detail=message_id[:8],
+        )
+        from chat_ws import manager
+
+        asyncio.create_task(
+            manager.broadcast_to_room(
+                result["room_id"],
+                {
+                    "event": "messages_expired",
+                    "room_id": result["room_id"],
+                    "message_ids": [message_id],
+                },
+            )
+        )
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+@router.get("/admin/meetups")
+async def admin_list_meetups(request: Request):
+    _require_admin(request)
+    db = _get_db()
+    try:
+        return get_all_meetups(db)
+    finally:
+        db.close()
+
+
+@router.delete("/admin/meetups/{meetup_id}")
+async def admin_delete_meetup(meetup_id: str, request: Request):
+    actor = _require_admin(request)
+    db = _get_db()
+    try:
+        if not delete_meetup(db, meetup_id):
+            raise HTTPException(404, "Meetup not found")
+        log_admin_action(
+            db, actor["label"], "delete_room", target_room_id=meetup_id, detail="meetup"
+        )
+        from chat_ws import manager
+
+        asyncio.create_task(manager.broadcast_to_all({"event": "rooms_changed"}))
         return {"ok": True}
     finally:
         db.close()
