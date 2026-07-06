@@ -132,6 +132,27 @@ def _image_to_data_uri(rel_url: str) -> str | None:
         return None
 
 
+async def validate_meetup_photo(photo_url):
+    """Validate + moderate an optional meetup meeting-point photo. Returns the
+    sanitized url (or None if no photo). Raises ValueError if the url is not a
+    real uploaded image or the image fails OpenAI moderation."""
+    if not photo_url:
+        return None
+    if not _UPLOAD_URL_RE.match(photo_url) or not photo_url.endswith(".webp"):
+        raise ValueError("Invalid photo")
+    data_uri = _image_to_data_uri(photo_url)
+    if data_uri:
+        from chat_moderation import check_openai_moderation
+
+        try:
+            flagged = await check_openai_moderation("", data_uri)
+        except Exception:
+            flagged = None
+        if flagged:
+            raise ValueError("Photo failed moderation")
+    return photo_url
+
+
 def _video_mod_frames(rel_url: str) -> list[str]:
     filename = rel_url.rsplit("/", 1)[-1]
     stem = filename.rsplit(".", 1)[0]
@@ -1794,6 +1815,11 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 if _mtext.strip() and _wf.check(_mtext):
                     await manager.send_to_user(user_id, {"event": "create_meetup_error", "reason": "That meetup contains content that isn't allowed."})
                     continue
+                try:
+                    _photo = await validate_meetup_photo(data.get("photo_url"))
+                except ValueError:
+                    await manager.send_to_user(user_id, {"event": "create_meetup_error", "reason": "That photo isn't allowed."})
+                    continue
                 meetup = create_meetup(
                     db,
                     user_id,
@@ -1805,6 +1831,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     location_lng=data.get("lng"),
                     location_label=(data.get("label") or "")[:100],
                     note=(data.get("note") or "")[:200],
+                    photo_url=_photo,
                 )
                 invite_room = get_room(db, stage_id) if stage_id else None
                 valid_target = bool(

@@ -1164,7 +1164,7 @@ async def room_online(room_id: str, request: Request):
 
 def _shape_meetup(*, id, title, meetup_time, stage_id, attendee_count, expires_at,
                   is_attendee, location_lat, location_lng, location_label, note,
-                  attendees, last_message_at=None, is_creator=False):
+                  attendees, last_message_at=None, is_creator=False, photo_url=None):
     out = {
         "id": id, "title": title, "meetup_time": meetup_time, "stage_id": stage_id,
         "attendee_count": attendee_count, "is_going": is_attendee, "expires_at": expires_at,
@@ -1176,6 +1176,7 @@ def _shape_meetup(*, id, title, meetup_time, stage_id, attendee_count, expires_a
         out.update({
             "location_lat": location_lat, "location_lng": location_lng,
             "location_label": location_label, "note": note, "attendees": attendees,
+            "photo_url": photo_url,
         })
     return out
 
@@ -1223,6 +1224,7 @@ async def list_meetups(request: Request, stage_id: str | None = None):
                     ],
                     last_message_at=last_msgs.get(m["id"], ""),
                     is_creator=(m["creator_id"] == user_id),
+                    photo_url=(m["photo_url"] if "photo_url" in m.keys() else None),
                 )
             )
         result.sort(key=lambda r: r["last_message_at"] or "", reverse=True)
@@ -1257,6 +1259,7 @@ async def get_meetup(meetup_id: str, request: Request):
             note=meetup["note"],
             attendees=att_list,
             is_creator=(meetup["creator_id"] == user["id"]),
+            photo_url=(meetup["photo_url"] if "photo_url" in meetup.keys() else None),
         )
     finally:
         db.close()
@@ -1297,6 +1300,13 @@ async def create_meetup_endpoint(request: Request):
         if _mtext.strip() and _wf.check(_mtext):
             raise HTTPException(400, "That meetup contains content that isn't allowed.")
 
+        from chat_ws import validate_meetup_photo
+
+        try:
+            _photo = await validate_meetup_photo(body.get("photo_url"))
+        except ValueError:
+            raise HTTPException(400, "That photo isn't allowed.")
+
         meetup = create_meetup(
             db,
             user["id"],
@@ -1308,6 +1318,7 @@ async def create_meetup_endpoint(request: Request):
             location_lng=body.get("lng"),
             location_label=(body.get("label") or "")[:100],
             note=(body.get("note") or "")[:200],
+            photo_url=_photo,
         )
         return meetup
     finally:

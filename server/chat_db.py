@@ -153,6 +153,7 @@ def init_chat_db(db: sqlite3.Connection) -> None:
             location_label TEXT,
             meetup_time    TEXT NOT NULL,
             note           TEXT,
+            photo_url      TEXT,
             created_at     TEXT NOT NULL,
             expires_at     TEXT NOT NULL
         );
@@ -305,6 +306,11 @@ def _migrate_chat_db(db: sqlite3.Connection) -> None:
         db.commit()
     if "last_active" not in user_cols:
         db.execute("ALTER TABLE users ADD COLUMN last_active TEXT")
+        db.commit()
+
+    meetup_cols = {r[1] for r in db.execute("PRAGMA table_info(meetups)").fetchall()}
+    if "photo_url" not in meetup_cols:
+        db.execute("ALTER TABLE meetups ADD COLUMN photo_url TEXT")
         db.commit()
 
     room_cols = {r[1] for r in db.execute("PRAGMA table_info(rooms)").fetchall()}
@@ -1223,6 +1229,7 @@ def create_meetup(
     location_lng: float | None = None,
     location_label: str | None = None,
     note: str | None = None,
+    photo_url: str | None = None,
 ) -> dict:
     meetup_id = _uuid()
     now = _now()
@@ -1237,8 +1244,8 @@ def create_meetup(
 
     db.execute(
         "INSERT INTO meetups (id, creator_id, stage_id, title, location_lat, location_lng, "
-        "location_label, meetup_time, note, created_at, expires_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "location_label, meetup_time, note, photo_url, created_at, expires_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             meetup_id,
             creator_id,
@@ -1249,6 +1256,7 @@ def create_meetup(
             location_label,
             meetup_time,
             note,
+            photo_url,
             now,
             expires,
         ),
@@ -1273,6 +1281,7 @@ def create_meetup(
         "location_lng": location_lng,
         "location_label": location_label,
         "note": note,
+        "photo_url": photo_url,
         "expires_at": expires,
         "creator_id": creator_id,
     }
@@ -1341,26 +1350,36 @@ def get_all_meetups(db: sqlite3.Connection) -> list[dict]:
 
 
 def delete_meetup(db: sqlite3.Connection, meetup_id: str) -> bool:
-    row = db.execute("SELECT id FROM meetups WHERE id = ?", (meetup_id,)).fetchone()
+    row = db.execute(
+        "SELECT id, photo_url FROM meetups WHERE id = ?", (meetup_id,)
+    ).fetchone()
     if not row:
         return False
+    photo_url = row["photo_url"] if "photo_url" in row.keys() else None
     # Delete meetup rows first, then the room LAST: delete_room's single commit
     # flushes attendee/meetup/room deletes as one atomic transaction, so a crash
     # can't leave a meetups row pointing at an already-deleted room (ghost meetup).
     db.execute("DELETE FROM meetup_attendees WHERE meetup_id = ?", (meetup_id,))
     db.execute("DELETE FROM meetups WHERE id = ?", (meetup_id,))
     delete_room(db, meetup_id)  # meetup room id equals the meetup id; commits here
+    if photo_url:
+        uploads_dir = Path(__file__).resolve().parent / "chat" / "uploads"
+        _unlink_media_if_orphaned(db, uploads_dir, photo_url)
     return True
 
 
 def purge_expired_meetups(db: sqlite3.Connection) -> list[str]:
     now = _now()
     expired = db.execute(
-        "SELECT id FROM meetups WHERE expires_at <= ?", (now,)
+        "SELECT id, photo_url FROM meetups WHERE expires_at <= ?", (now,)
     ).fetchall()
     expired_ids = [m["id"] for m in expired]
 
-    media_urls: list[str] = []
+    media_urls: list[str] = [
+        m["photo_url"]
+        for m in expired
+        if "photo_url" in m.keys() and m["photo_url"]
+    ]
     for mid in expired_ids:
         msgs = db.execute(
             "SELECT type, content, media_url FROM messages WHERE room_id = ?",
