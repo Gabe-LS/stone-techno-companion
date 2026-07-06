@@ -1817,6 +1817,8 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                             "meetup_id": meetup["id"],
                             "title": title,
                             "meetup_time": meetup_time,
+                            "label": (data.get("label") or "")[:100],
+                            "note": (data.get("note") or "")[:200],
                         }
                     )
                     invite_ttl = invite_room["ttl_minutes"]

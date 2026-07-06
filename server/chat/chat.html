@@ -2228,7 +2228,9 @@ function renderMessage(m) {
         <div style="min-width:0;flex:1">
           <div class="card-label">MEETUP <span class="meetup-going" data-meetup-id="${mid}"></span></div>
           <div class="card-title">${escapeHtml(c.title)}</div>
+          ${c.label ? `<div class="card-meta">${escapeHtml(c.label)}</div>` : ''}
           <div class="card-meta">${fmtTime(c.meetup_time)}</div>
+          ${c.note ? `<div class="card-meta" style="opacity:.85">${escapeHtml(c.note)}</div>` : ''}
         </div>
       </div>
       ${isCreator ? '' : '<button class="meetup-join meetup-join-wide" data-meetup-id="' + mid + '" onclick="event.stopPropagation();toggleMeetupJoin(\'' + mid + '\',this)">Join</button>'}`;
@@ -3204,6 +3206,21 @@ async function loadMeetupJoinState(meetupId) {
       btn.textContent = joined ? 'Joined' : 'Join';
       btn.classList.toggle('joined', !!joined);
     });
+    // Precise coordinates are only returned to attendees (server-gated), so this
+    // map link only appears once the viewer has joined.
+    if (data.location_lat != null && data.location_lng != null) {
+      document.querySelectorAll(`.card-meetup[data-meetup-id="${meetupId}"]`).forEach(card => {
+        const holder = card.querySelector('div[style*="min-width"]') || card;
+        if (holder.querySelector('.meetup-map-link')) return;
+        const a = document.createElement('a');
+        a.className = 'meetup-map-link';
+        a.href = `https://maps.google.com/?q=${data.location_lat},${data.location_lng}`;
+        a.target = '_blank'; a.rel = 'noopener';
+        a.textContent = 'Open in Maps';
+        a.style.cssText = 'display:inline-block;margin-top:4px;font-size:var(--font-xs);color:var(--color-accent)';
+        holder.appendChild(a);
+      });
+    }
   } catch (e) { dbg('[MEETUP] loadMeetupJoinState error:', e.message); }
 }
 
