@@ -1195,6 +1195,10 @@ async def list_meetups(request: Request, stage_id: str | None = None):
             last_msgs[row["room_id"]] = row["last_at"]
         result = []
         for m in meetups:
+            if db_is_blocked(db, m["creator_id"], user_id) or db_is_blocked(
+                db, user_id, m["creator_id"]
+            ):
+                continue
             if stage_id and m["stage_id"] != stage_id:
                 continue
             attendees = get_meetup_attendees(db, m["id"])
@@ -1309,6 +1313,14 @@ async def join_meetup_endpoint(meetup_id: str, request: Request):
         _bm = await check_ban_mute(db, user["id"])
         if not _bm["allowed"]:
             raise HTTPException(403, _bm["reason"])
+        _m = db.execute(
+            "SELECT creator_id FROM meetups WHERE id = ?", (meetup_id,)
+        ).fetchone()
+        if _m and (
+            db_is_blocked(db, _m["creator_id"], user["id"])
+            or db_is_blocked(db, user["id"], _m["creator_id"])
+        ):
+            raise HTTPException(403, "You cannot join this meetup.")
         db_join_meetup(db, meetup_id, user["id"])
         attendees = get_meetup_attendees(db, meetup_id)
         return [{"id": a["id"], "display_name": a["display_name"]} for a in attendees]
