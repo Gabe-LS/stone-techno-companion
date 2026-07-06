@@ -3,6 +3,42 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
+from collections import defaultdict
+
+
+def slot_uuid(
+    artist_ids: list[str],
+    date: str,
+    period: str | None,
+    floor_id: str | None,
+    start_time: str,
+    end_time: str,
+    group_times: list[tuple[str, str]],
+) -> str:
+    """The single source of truth for a timetable slot's stable id.
+
+    Historically the id was uuid5(artists:date:period:floor) with NO time
+    component, so an artist playing two sets on the same floor within one
+    date+period collapsed to one id (the second set vanished from the slot map
+    and never fired a push).
+
+    This preserves the historical id for EVERY existing slot: the id is
+    unchanged whenever a (artists, date, period, floor) group has a single slot,
+    and for a genuine collision the earliest-starting slot keeps the base id.
+    Only the ADDITIONAL colliding slot(s) get a disambiguated id folding in
+    start/end time. Because a collision was previously an invisible merge, no
+    saved schedule could ever have pointed at the extra slot -- so no existing
+    id changes and no user's saved likes/schedule is reset.
+
+    `group_times` is every (start, end) sharing this (artists, date, period,
+    floor). render.py and this module both call this with identically-derived
+    inputs, so the id is defined in exactly one place and cannot drift.
+    """
+    base_key = ":".join(list(artist_ids) + [date, period or "", floor_id or ""])
+    base_id = str(uuid.uuid5(uuid.NAMESPACE_URL, base_key))
+    if len(group_times) <= 1 or (start_time, end_time) == min(group_times):
+        return base_id
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{base_key}:{start_time}:{end_time}"))
 
 
 def generate_timetable_json(db: sqlite3.Connection, event_id: str) -> str:
@@ -40,12 +76,21 @@ def generate_timetable_json(db: sqlite3.Connection, event_id: str) -> str:
             }
         )
 
+    # Map each (artists, date, period, floor) group to all its (start, end)
+    # slots, so slot_uuid can keep the historical id for the canonical slot and
+    # only disambiguate genuine same-artist/floor/period collisions.
+    group_times: dict[tuple, list[tuple[str, str]]] = defaultdict(list)
+    for (date, period, fid, start_time, end_time), artists in groups.items():
+        gkey = (tuple(a["id"] for a in artists), date, period, fid)
+        group_times[gkey].append((start_time, end_time))
+
     slots = {}
     for (date, period, fid, start_time, end_time), artists in groups.items():
-        card_key = ":".join(
-            [a["id"] for a in artists] + [date, period or "", fid or ""]
+        aids = [a["id"] for a in artists]
+        gkey = (tuple(aids), date, period, fid)
+        slot_id = slot_uuid(
+            aids, date, period, fid, start_time, end_time, group_times[gkey]
         )
-        slot_id = str(uuid.uuid5(uuid.NAMESPACE_URL, card_key))
         s_hhmm = start_time.split("T")[1] if "T" in start_time else start_time
         e_hhmm = end_time.split("T")[1] if "T" in end_time else end_time
         slots[slot_id] = {

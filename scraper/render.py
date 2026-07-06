@@ -7,8 +7,19 @@ from datetime import datetime
 from pathlib import Path
 
 from .scrape import format_followers
+from .timetable_json import slot_uuid
 
 ICONS_DIR = Path(__file__).resolve().parent / "icons"
+
+
+def _slot_group_times(slots: dict) -> dict:
+    """Map each artist-group in a floor's slot dict to all its (start, end)
+    times, so slot_uuid keeps the historical id for the canonical slot and only
+    disambiguates a genuine same-artist repeat set (see timetable_json.slot_uuid)."""
+    gt: dict[tuple, list[tuple[str, str]]] = {}
+    for (st, et), grp in slots.items():
+        gt.setdefault(tuple(x.get("id", "") for x in grp), []).append((st, et))
+    return gt
 
 
 def _load_icon(name: str) -> str:
@@ -1269,10 +1280,15 @@ def render_output_html(
                     e_display = _format_hhmm(end_min)
                     loc_name = locations.get(fid, {}).get("name", fid)
 
-                    card_key = ":".join(
-                        [a.get("id", "") for a in group] + [tt_date_str, period, fid]
+                    artist_id = slot_uuid(
+                        [a.get("id", "") for a in group],
+                        tt_date_str,
+                        period,
+                        fid,
+                        st,
+                        et,
+                        _slot_group_times(slots)[tuple(a.get("id", "") for a in group)],
                     )
-                    artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, card_key))
 
                     names = " b2b ".join(a.get("name", "") for a in group)
                     artist_lookup[artist_id] = _json.loads(
@@ -1391,10 +1407,17 @@ def render_output_html(
                     e_display = _format_hhmm(end_min)
                     loc_name = locations.get(fid, {}).get("name", fid)
 
-                    card_key = ":".join(
-                        [a.get("id", "") for a in group] + [tt_date_str, period, fid]
+                    artist_id = slot_uuid(
+                        [a.get("id", "") for a in group],
+                        tt_date_str,
+                        period,
+                        fid,
+                        st,
+                        et,
+                        _slot_group_times(slots_table)[
+                            tuple(a.get("id", "") for a in group)
+                        ],
                     )
-                    artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, card_key))
                     names = " b2b ".join(a.get("name", "") for a in group)
                     if artist_id not in artist_lookup:
                         artist_lookup[artist_id] = _json.loads(
