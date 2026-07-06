@@ -1518,7 +1518,7 @@ async function handleWSEvent(data) {
         if (el && !el.querySelector('.msg-link-preview')) {
           const lp = data.link_preview;
           const textEl = el.querySelector('.msg-text');
-          const previewHtml = `<a class="msg-link-preview" href="${esc(lp.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">
+          const previewHtml = `<a class="msg-link-preview" href="${esc(_safeHref(lp.url))}" target="_blank" rel="noopener" onclick="event.stopPropagation()">
               ${lp.image ? `<img class="link-preview-img" src="${esc(lp.image)}" loading="lazy">` : ''}
               <div class="link-preview-body">
                 <div class="link-preview-title">${esc(lp.title || '')}</div>
@@ -2313,7 +2313,7 @@ function renderMessage(m) {
       const failedCls = m._decryptFailed ? ' msg-decrypt-failed' : '';
       if (m.link_preview) {
         const lp = m.link_preview;
-        contentHtml = `<a class="msg-link-preview" href="${esc(lp.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">
+        contentHtml = `<a class="msg-link-preview" href="${esc(_safeHref(lp.url))}" target="_blank" rel="noopener" onclick="event.stopPropagation()">
           ${lp.image ? `<img class="link-preview-img" src="${esc(lp.image)}" loading="lazy">` : ''}
           <div class="link-preview-body">
             <div class="link-preview-title">${esc(lp.title || '')}</div>
@@ -4774,8 +4774,20 @@ function openVideoViewer(url, startTime) {
 
 // --- Helpers ---
 function jss(s) { return esc(String(s).replace(/[`'\\]/g, '\\$&')); }
+function _safeHref(url) { return /^https?:\/\//i.test(url) ? url : '#'; }
 function _linkify(text) {
-  return escapeHtml(text).replace(/(https?:\/\/[^\s<>"')\]]+)/g, '<a href="$1" target="_blank" rel="noopener" onclick="event.stopPropagation()">$1</a>');
+  var URL_RE = /(https?:\/\/[^\s<>"')\]]+)/g;
+  var parts = text.split(URL_RE);
+  var out = '';
+  for (var i = 0; i < parts.length; i++) {
+    if (i % 2 === 0) {
+      out += escapeHtml(parts[i]);
+    } else {
+      var safeUrl = parts[i].replace(/"/g, '%22').replace(/'/g, '%27');
+      out += '<a href="' + escapeHtml(safeUrl) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">' + escapeHtml(parts[i]) + '</a>';
+    }
+  }
+  return out;
 }
 // --- E2EE key management (multi-device v2) ---
 const E2EE = {
