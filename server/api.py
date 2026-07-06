@@ -1028,6 +1028,10 @@ async def api_not_found(path: str):
 app.mount("/photos", StaticFiles(directory=str(STATIC_DIR / "photos")), name="photos")
 (STATIC_DIR / "thumbs").mkdir(parents=True, exist_ok=True)
 app.mount("/thumbs", StaticFiles(directory=str(STATIC_DIR / "thumbs")), name="thumbs")
+# Self-hosted third-party assets (e.g. Leaflet for the meetup map picker) so the
+# app has no external CDN dependency and works on venue wifi / offline.
+(STATIC_DIR / "vendor").mkdir(parents=True, exist_ok=True)
+app.mount("/vendor", StaticFiles(directory=str(STATIC_DIR / "vendor")), name="vendor")
 
 
 @app.get("/favicon.svg")
