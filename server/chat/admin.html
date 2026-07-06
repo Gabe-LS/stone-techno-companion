@@ -179,7 +179,7 @@ let expandedUser = null;
 let logOffset = 0;
 let logItems = [];
 let onlineOnly = storageGet('admin_users_online', 'false') === 'true';
-let searchQuery = storageGet('admin_users_q', '');
+let searchQuery = '';
 let searchTimer = null;
 let statsInterval = null;
 let reportStatus = storageGet('admin_reports_status', 'pending');
@@ -362,9 +362,9 @@ const render = {
       const bans = await api('/bans');
       window._bansData = bans;
       el.innerHTML = `<div class="toolbar">
-        <input type="text" id="ban-search" placeholder="Search bans" value="${esc(_banFilter)}" oninput="filterBans(this.value)">
+        <input type="text" id="ban-search" placeholder="Search bans" oninput="filterBans(this.value)">
       </div><div id="ban-list"></div>`;
-      filterBans(_banFilter);
+      filterBans('');
     } catch { el.innerHTML = '<div class="empty">Failed to load bans</div>'; }
   },
 
@@ -374,7 +374,7 @@ const render = {
     logOffset = 0;
     logItems = [];
     el.innerHTML = `<div class="toolbar">
-      <input type="text" id="log-search" placeholder="Search log" value="${esc(storageGet('admin_log_q', ''))}" oninput="filterLog(this.value)">
+      <input type="text" id="log-search" placeholder="Search log" oninput="filterLog(this.value)">
     </div><div id="log-list"></div>`;
     await loadMoreLog();
   },
@@ -437,12 +437,12 @@ const render = {
 };
 
 // --- Audit ---
-let auditOffset = 0, auditItems = [], _auditFilter = storageGet('admin_audit_q', '').toLowerCase();
+let auditOffset = 0, auditItems = [], _auditFilter = '';
 render.audit = async () => {
   dbg('[RENDER] audit');
   const el = document.getElementById('content');
   auditOffset = 0; auditItems = [];
-  el.innerHTML = `<div class="toolbar"><input type="text" id="audit-search" placeholder="Search audit" value="${esc(storageGet('admin_audit_q', ''))}" oninput="filterAudit(this.value)"></div><div id="audit-list"></div>`;
+  el.innerHTML = `<div class="toolbar"><input type="text" id="audit-search" placeholder="Search audit" oninput="filterAudit(this.value)"></div><div id="audit-list"></div>`;
   await loadMoreAudit();
 };
 async function loadMoreAudit() {
@@ -488,7 +488,7 @@ function renderAudit(hasMore) {
     </tr>`).join('') + '</tbody></table>' +
     (hasMore && !_auditFilter ? '<div class="load-more"><button onclick="loadMoreAudit()">Load more</button></div>' : '');
 }
-function filterAudit(q) { dbg('[FILTER] audit:', q); _auditFilter = q.toLowerCase(); storageSet('admin_audit_q', q); renderAudit(auditOffset > 0 && auditItems.length === auditOffset); }
+function filterAudit(q) { dbg('[FILTER] audit:', q); _auditFilter = q.toLowerCase(); renderAudit(auditOffset > 0 && auditItems.length === auditOffset); }
 
 // --- Admins ---
 render.admins = async () => {
@@ -597,7 +597,7 @@ async function reportAction(reportId, action) {
 }
 
 // --- Users ---
-function onUserSearch(q) { dbg('[SEARCH]', q); searchQuery = q; storageSet('admin_users_q', q); clearTimeout(searchTimer); searchTimer = setTimeout(loadUsers, 300); }
+function onUserSearch(q) { dbg('[SEARCH]', q); searchQuery = q; clearTimeout(searchTimer); searchTimer = setTimeout(loadUsers, 300); }
 function toggleOnline() { dbg('[FILTER] online:', !onlineOnly); onlineOnly = !onlineOnly; storageSet('admin_users_online', onlineOnly ? 'true' : 'false'); document.querySelector('.toggle')?.classList.toggle('on', onlineOnly); loadUsers(); }
 
 async function loadUsers() {
@@ -781,8 +781,6 @@ async function adminDeleteUser(userId) {
 // --- Banned ---
 function filterBans(q) {
   dbg('[FILTER] bans:', q);
-  _banFilter = q;
-  storageSet('admin_bans_q', q);
   const el = document.getElementById('ban-list');
   if (!el || !window._bansData) return;
   const lq = q.toLowerCase();
@@ -813,8 +811,7 @@ async function unban(banId) {
 }
 
 // --- Log ---
-let _logFilter = storageGet('admin_log_q', '').toLowerCase();
-let _banFilter = storageGet('admin_bans_q', '');
+let _logFilter = '';
 async function loadMoreLog() {
   dbg('[LOG] load offset:', logOffset);
   try {
@@ -844,7 +841,7 @@ function renderLog(hasMore) {
   </tr>`).join('') + '</tbody></table>' +
     (hasMore && !_logFilter ? '<div class="load-more"><button onclick="loadMoreLog()">Load more</button></div>' : '');
 }
-function filterLog(q) { dbg('[FILTER] log:', q); _logFilter = q.toLowerCase(); storageSet('admin_log_q', q); renderLog(logOffset > 0 && logItems.length === logOffset); }
+function filterLog(q) { dbg('[FILTER] log:', q); _logFilter = q.toLowerCase(); renderLog(logOffset > 0 && logItems.length === logOffset); }
 
 // --- Rooms ---
 let _modalRoomId = '';
