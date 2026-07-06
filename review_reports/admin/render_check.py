@@ -30,6 +30,21 @@ SETTINGS = {
     "room_ttl_minutes": 1440,
     "meetup_ttl_minutes": 60,
 }
+MOCK_USER = {
+    "id": "u-1",
+    "display_name": "Bob",
+    "username": "bob",
+    "country": "IT",
+    "providers": ["email"],
+    "last_seen": None,
+    "last_active": None,
+    "is_online": False,
+    "has_push": False,
+    "strike_count": 0,
+    "is_banned": False,
+    "muted_until": None,
+    "mute_count": 0,
+}
 
 
 def run_for_role(role):
@@ -65,6 +80,10 @@ def run_for_role(role):
                 return route.fulfill(
                     status=200, content_type="application/json", body="[]"
                 )
+            if "/chat/api/admin/users" in url:
+                return route.fulfill(
+                    status=200, content_type="application/json", body=_json([MOCK_USER])
+                )
             if "/chat/api/admin/" in url:
                 return route.fulfill(
                     status=200, content_type="application/json", body="[]"
@@ -94,6 +113,57 @@ def _json(obj):
     import json
 
     return json.dumps(obj)
+
+
+def check_persistence_and_menu():
+    """Verify the last tab is restored on reload, and the Users '...' menu is grouped."""
+    me = {"role": "super_admin", "kind": "cookie", "label": "alice", "email_hash": "abc"}
+    problems = []
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+
+        def handle(route):
+            url = route.request.url
+            if "/shared.js" in url:
+                return route.fulfill(status=200, content_type="application/javascript", body=SHARED_JS)
+            if "/chat/api/admin/stats" in url:
+                return route.fulfill(status=200, content_type="application/json", body=_json(STATS))
+            if "/chat/api/admin/me" in url:
+                return route.fulfill(status=200, content_type="application/json", body=_json(me))
+            if "/chat/api/admin/settings" in url:
+                return route.fulfill(status=200, content_type="application/json", body=_json(SETTINGS))
+            if "/chat/api/admin/users" in url:
+                return route.fulfill(status=200, content_type="application/json", body=_json([MOCK_USER]))
+            if "/chat/api/admin/" in url:
+                return route.fulfill(status=200, content_type="application/json", body="[]")
+            return route.fulfill(status=200, content_type="text/html", body=ADMIN_HTML)
+
+        page.route("**/*", handle)
+        page.goto("https://example.test/admin-panel")
+        page.wait_for_selector(".tabs .tab", timeout=5000)
+        # switch to Users, which should persist to localStorage
+        page.click('.tab[data-tab="users"]')
+        page.wait_for_selector("#user-tbody", timeout=5000)
+        # reload: the active tab should be restored to Users, not Rooms
+        page.goto("https://example.test/admin-panel")
+        page.wait_for_selector(".tab.active", timeout=5000)
+        active = page.query_selector(".tab.active")
+        active_tab = active.get_attribute("data-tab") if active else None
+        if active_tab != "users":
+            problems.append(f"tab not restored on reload (active={active_tab})")
+        # the Users menu should render grouped actions for a super-admin
+        # (the menu is display:none until opened, so wait for it attached, not visible)
+        page.wait_for_selector(".dropdown-menu", state="attached", timeout=5000)
+        menu = page.query_selector(".dropdown-menu").inner_html()
+        for label in ("Strike", "Mute 30 min", "Ban", "Delete user"):
+            if label not in menu:
+                problems.append(f"menu missing '{label}'")
+        seps = menu.count("dropdown-sep")
+        if seps < 2:
+            problems.append(f"menu not grouped (only {seps} separators)")
+        browser.close()
+    return problems
 
 
 def main():
@@ -133,6 +203,11 @@ def main():
             ok = False
     if errs2:
         print("  console errors (admin):", errs2[:5])
+        ok = False
+
+    pm = check_persistence_and_menu()
+    print("persistence + menu:", "OK" if not pm else pm)
+    if pm:
         ok = False
 
     print("RENDER CHECK:", "PASS" if ok else "FAIL")

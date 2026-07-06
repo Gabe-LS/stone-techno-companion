@@ -231,8 +231,14 @@ async function init() {
   </div>`;
   document.getElementById('admin-me').innerHTML = renderMeChip();
   statsInterval = setInterval(refreshStats, 15000);
-  currentTab = 'rooms';
-  await render.rooms();
+  // Restore the last-viewed tab across reloads, falling back to Rooms when the
+  // saved tab is unknown or not available to this role (e.g. Admins/Settings).
+  const validTabs = ['rooms', 'users', 'reports', 'banned', 'log', 'audit', 'admins', 'settings'];
+  let startTab = storageGet('admin_tab', 'rooms');
+  if (!validTabs.includes(startTab) || !document.querySelector('.tab[data-tab="' + startTab + '"]')) startTab = 'rooms';
+  currentTab = startTab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === startTab));
+  await render[startTab]();
   document.body.style.opacity = '1';
 }
 
@@ -268,6 +274,7 @@ async function refreshStats() {
 function switchTab(tab) {
   dbg('[TAB]', tab);
   currentTab = tab;
+  storageSet('admin_tab', tab);
   expandedUser = null;
   logOffset = 0;
   logItems = [];
@@ -587,8 +594,23 @@ async function loadUsers() {
 }
 
 function userRow(u) {
-  return `<tr class="${expandedUser === u.id ? 'expanded' : ''}" onclick="toggleUser('${esc(u.id)}')" style="cursor:pointer">
-    <td class="col-avatar"><img class="avatar" src="/chat/api/avatar/${esc(u.id)}?v=1" onerror="this.style.visibility='hidden'"></td>
+  const id = esc(u.id);
+  const isSuper = window._me && window._me.role === 'super_admin';
+  const isMuted = u.muted_until && u.muted_until > new Date().toISOString();
+  // Group actions by intent: restrict (escalating), restore (undo), destroy.
+  const restrict = [`<button class="dropdown-item warn" onclick="adminStrike('${id}')">Strike</button>`,
+                    `<button class="dropdown-item warn" onclick="adminMute('${id}')">Mute 30 min</button>`];
+  if (!u.is_banned) restrict.push(`<button class="dropdown-item danger" onclick="adminBan('${id}')">Ban</button>`);
+  const restore = [];
+  if (isMuted) restore.push(`<button class="dropdown-item" onclick="adminUnmute('${id}')">Unmute</button>`);
+  if (isSuper) restore.push(`<button class="dropdown-item" onclick="adminClearWarnings('${id}')">Clear warnings</button>`);
+  if (u.is_banned && isSuper) restore.push(`<button class="dropdown-item" onclick="adminUnban('${id}')">Unban</button>`);
+  const sep = '<div class="dropdown-sep"></div>';
+  let menu = restrict.join('');
+  if (restore.length) menu += sep + restore.join('');
+  if (isSuper) menu += sep + `<button class="dropdown-item danger" onclick="adminDeleteUser('${id}')">Delete user</button>`;
+  return `<tr class="${expandedUser === u.id ? 'expanded' : ''}" onclick="toggleUser('${id}')" style="cursor:pointer">
+    <td class="col-avatar"><img class="avatar" src="/chat/api/avatar/${id}?v=1" onerror="this.style.visibility='hidden'"></td>
     <td>${esc(u.display_name || u.id)}</td>
     <td style="color:var(--text-sec)">${esc(u.username ? '@' + u.username : '--')}</td>
     <td class="col-narrow">${esc(u.country || '--')}</td>
@@ -599,19 +621,7 @@ function userRow(u) {
     <td class="col-narrow">${warningPill(u)}</td>
     <td class="col-actions"><div class="dropdown" onclick="event.stopPropagation();toggleDropdown(this)">
       <button class="btn btn-neutral kebab" title="Actions" aria-label="Actions">...</button>
-      <div class="dropdown-menu">
-        <button class="dropdown-item warn" onclick="adminStrike('${esc(u.id)}')">Strike</button>
-        <button class="dropdown-item warn" onclick="adminMute('${esc(u.id)}')">Mute</button>
-        ${(u.muted_until && u.muted_until > new Date().toISOString())
-            ? `<button class="dropdown-item warn" onclick="adminUnmute('${esc(u.id)}')">Unmute</button>` : ''}
-        ${window._me && window._me.role === 'super_admin' ? `<button class="dropdown-item" onclick="adminClearWarnings('${esc(u.id)}')">Clear warnings</button>` : ''}
-        <div class="dropdown-sep"></div>
-        ${u.is_banned
-          ? (window._me && window._me.role === 'super_admin' ? `<button class="dropdown-item" onclick="adminUnban('${esc(u.id)}')">Unban</button>` : '')
-          : `<button class="dropdown-item danger" onclick="adminBan('${esc(u.id)}')">Ban</button>`}
-        ${window._me && window._me.role === 'super_admin'
-          ? `<div class="dropdown-sep"></div><button class="dropdown-item danger" onclick="adminDeleteUser('${esc(u.id)}')">Delete user</button>` : ''}
-      </div>
+      <div class="dropdown-menu">${menu}</div>
     </div></td>
   </tr><tr id="detail-row-${esc(u.id)}" style="display:none"><td colspan="10" style="padding:0"></td></tr>`;
 }
