@@ -3517,7 +3517,18 @@ async function openMeetupMapPicker() {
   });
   if (!defaultLayer) defaultLayer = bases['Aerial HD (10cm)'];
   defaultLayer.addTo(_meetupMap);
-  L.control.layers(bases, null, { collapsed: false }).addTo(_meetupMap);
+  // Optional transparent street/place-name overlay — toggle in the layer control,
+  // sits above the base tiles but below the marker. CAVEAT: CARTO labels are free
+  // for NON-COMMERCIAL use only and cap at z18 (overzoomed above); for a
+  // license-clean/offline overlay, swap for self-hosted OSM labels.
+  _meetupMap.createPane('labels');
+  _meetupMap.getPane('labels').style.zIndex = 350;
+  _meetupMap.getPane('labels').style.pointerEvents = 'none';
+  const labels = L.tileLayer(`https://{s}.basemaps.cartocdn.com/rastertiles/light_only_labels/{z}/{x}/{y}${retina}.png`, {
+    attribution: '© CARTO © OpenStreetMap contributors', subdomains: 'abcd', pane: 'labels',
+    minZoom, maxNativeZoom: 18, maxZoom: isMT ? 20 : 19
+  });
+  L.control.layers(bases, { 'Street names': labels }, { collapsed: false }).addTo(_meetupMap);
   _meetupMarker = L.marker(center, { draggable: true }).addTo(_meetupMap);
   let _userMoved = false;
   _meetupMarker.on('dragstart', () => { _userMoved = true; });
