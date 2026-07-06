@@ -410,6 +410,7 @@ let _googleClientId = null;
 let _googleInitialized = false;
 let _siteShort = null;
 let _msgCharLimit = 1000;
+let _maptilerKey = null;
 let _dmListCache = {};
 let _roomEncrypted = new Set();
 let _unencryptedRooms = new Set();
@@ -496,6 +497,7 @@ async function renderAuth() {
       _googleClientId = cfg.google_client_id;
       _siteShort = cfg.site_short;
       if (cfg.msg_char_limit) _msgCharLimit = cfg.msg_char_limit;
+      _maptilerKey = cfg.maptiler_key || null;
       if (_siteShort) document.title = 'Chat · ' + _siteShort;
       dbg('[AUTH] google client id loaded:', _googleClientId ? 'yes' : 'no');
     } catch (e) { dbg('[AUTH] config fetch failed:', e.message); }
@@ -3383,6 +3385,7 @@ function openMeetupModal() {
       <div style="display:flex;gap:8px">
         <input id="meetup-location" class="modal-input" placeholder="e.g. Main bar area" style="flex:1">
         <button type="button" id="meetup-gps-btn" class="modal-btn-secondary" onclick="useMeetupGPS()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="vertical-align:middle"><path d="M4 10.1433C4 5.64588 7.58172 2 12 2C16.4183 2 20 5.64588 20 10.1433C20 14.6055 17.4467 19.8124 13.4629 21.6744C12.5343 22.1085 11.4657 22.1085 10.5371 21.6744C6.55332 19.8124 4 14.6055 4 10.1433Z" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="10" r="3" stroke="currentColor" stroke-width="1.5"/></svg> GPS</button>
+        <button type="button" class="modal-btn-secondary" onclick="openMeetupMapPicker()">Map</button>
       </div>
       <label class="modal-label" for="meetup-note">Note (optional)</label>
       <textarea id="meetup-note" class="modal-textarea" placeholder="Any extra info..." rows="2"></textarea>
@@ -3431,6 +3434,80 @@ function useMeetupGPS() {
     showToast(err && err.code === err.PERMISSION_DENIED ? 'Location permission denied — check browser settings' : 'Could not get location');
     restore();
   }, { timeout: 10000, maximumAge: 60000 });
+}
+
+let _leafletLoading = null;
+function _loadLeaflet() {
+  if (window.L) return Promise.resolve();
+  if (_leafletLoading) return _leafletLoading;
+  _leafletLoading = new Promise((resolve, reject) => {
+    const css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    document.head.appendChild(css);
+    const s = document.createElement('script');
+    s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    s.onload = () => resolve();
+    s.onerror = () => { _leafletLoading = null; reject(new Error('leaflet')); };
+    document.head.appendChild(s);
+  });
+  return _leafletLoading;
+}
+
+let _meetupMap = null, _meetupMarker = null;
+async function openMeetupMapPicker() {
+  dbg('[MEETUP] openMeetupMapPicker, maptiler=' + !!_maptilerKey);
+  try { await _loadLeaflet(); } catch (e) { showToast('Could not load map'); return; }
+  let center = _meetupCoords ? [_meetupCoords.lat, _meetupCoords.lng] : null;
+  if (!center) {
+    center = await new Promise(res => {
+      if (!navigator.geolocation) return res(null);
+      navigator.geolocation.getCurrentPosition(p => res([p.coords.latitude, p.coords.longitude]), () => res(null), { timeout: 6000, maximumAge: 60000 });
+    });
+  }
+  if (!center) center = [51.51, 6.86]; // fallback region
+  document.getElementById('meetup-map-overlay')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'meetup-map-overlay';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal" onclick="event.stopPropagation()" style="width:min(92vw,520px)">
+    <div class="modal-header"><span class="modal-title">Pick meeting point</span><button class="modal-close" aria-label="Close" onclick="closeMeetupMapPicker()">&times;</button></div>
+    <div class="modal-body">
+      <div id="meetup-map" style="height:min(60vh,420px);border-radius:var(--radius-md);overflow:hidden"></div>
+      <div style="font-size:var(--font-xs);color:var(--color-muted);margin-top:6px">Drag the pin or tap the map to set the spot.</div>
+    </div>
+    <div class="modal-footer"><button type="button" class="modal-btn-primary" onclick="confirmMeetupMapPin()">Use this location</button></div>
+  </div>`;
+  overlay.addEventListener('click', closeMeetupMapPicker);
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('open'));
+  const tileUrl = _maptilerKey
+    ? 'https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=' + encodeURIComponent(_maptilerKey)
+    : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const attribution = _maptilerKey
+    ? '© MapTiler © OpenStreetMap contributors'
+    : '© OpenStreetMap contributors';
+  _meetupMap = L.map('meetup-map').setView(center, 16);
+  L.tileLayer(tileUrl, { attribution, maxZoom: 19 }).addTo(_meetupMap);
+  _meetupMarker = L.marker(center, { draggable: true }).addTo(_meetupMap);
+  _meetupMap.on('click', e => _meetupMarker.setLatLng(e.latlng));
+  setTimeout(() => { try { _meetupMap && _meetupMap.invalidateSize(); } catch (e) {} }, 120);
+}
+function confirmMeetupMapPin() {
+  if (_meetupMarker) {
+    const ll = _meetupMarker.getLatLng();
+    _meetupCoords = { lat: ll.lat, lng: ll.lng };
+    const field = document.getElementById('meetup-location');
+    if (field && !field.value.trim()) field.value = ll.lat.toFixed(4) + ', ' + ll.lng.toFixed(4);
+    showToast('Meeting point set');
+  }
+  closeMeetupMapPicker();
+}
+function closeMeetupMapPicker() {
+  const o = document.getElementById('meetup-map-overlay');
+  if (_meetupMap) { try { _meetupMap.remove(); } catch (e) {} _meetupMap = null; }
+  _meetupMarker = null;
+  if (o) { o.classList.remove('open'); setTimeout(() => o.remove(), 200); }
 }
 
 function submitMeetup() {
@@ -4774,6 +4851,7 @@ async function route() {
       _googleClientId = cfg.google_client_id;
       _siteShort = cfg.site_short;
       if (cfg.msg_char_limit) _msgCharLimit = cfg.msg_char_limit;
+      _maptilerKey = cfg.maptiler_key || null;
       if (_siteShort) document.title = 'Chat · ' + _siteShort;
       dbg('[CONFIG] loaded, site_short:', _siteShort, 'msg_char_limit:', _msgCharLimit);
     } catch (e) { dbg('[CONFIG] fetch failed:', e.message); }
@@ -4861,11 +4939,14 @@ window.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   const actionSheet = document.getElementById('action-sheet');
   if (actionSheet) { closeActionSheet(); return; }
-  const modal = document.querySelector('.modal-overlay');
+  const overlays = document.querySelectorAll('.modal-overlay');
+  const modal = overlays[overlays.length - 1];
   if (modal) {
     // Route through the modal's own close fn when it has one, so focus
-    // return / state cleanup (e.g. the meetup modal's focus restore) runs.
-    if (modal.id === 'meetup-modal') closeMeetupModal();
+    // return / state cleanup runs. Close the topmost overlay first (a map
+    // picker can sit on top of the meetup modal).
+    if (modal.id === 'meetup-map-overlay') closeMeetupMapPicker();
+    else if (modal.id === 'meetup-modal') closeMeetupModal();
     else modal.remove();
     return;
   }

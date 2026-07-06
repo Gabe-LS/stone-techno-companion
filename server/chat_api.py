@@ -447,6 +447,7 @@ async def get_config():
         "google_client_id": google_id if google_id else None,
         "site_short": _SITE_SHORT or None,
         "msg_char_limit": msg_limit,
+        "maptiler_key": os.environ.get("MAPTILER_KEY") or None,
     }
 
 
