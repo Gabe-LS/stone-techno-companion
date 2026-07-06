@@ -118,8 +118,9 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .meetup-details .md-map { display: inline-block; margin-top: var(--space-xs); color: var(--color-accent); font-weight: 600; font-size: var(--font-sm); }
 .meetup-details .md-photo { display: block; max-width: 100%; max-height: 200px; border-radius: var(--radius-md); margin-top: var(--space-xs); }
 .poi-marker { background: none; border: none; }
-.leaflet-tooltip.poi-tip { background: rgba(20,20,20,.82); color: #fff; border: none; box-shadow: none; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 5px; white-space: nowrap; }
+.leaflet-tooltip.poi-tip { display: none; background: rgba(20,20,20,.82); color: #fff; border: none; box-shadow: none; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 5px; white-space: nowrap; }
 .leaflet-tooltip.poi-tip::before { display: none; }
+.poi-labels-on .leaflet-tooltip.poi-tip { display: block; }
 .meetup-details .md-cancel { display: block; margin-top: var(--space-sm); padding: var(--space-xs) var(--space-md); border: 1px solid #c0392b; color: #c0392b; background: none; border-radius: var(--radius-pill); font-family: inherit; font-size: var(--font-xs); font-weight: 600; cursor: pointer; }
 .meetup-going { font-weight: 400; }
 .meetup-join-wide { width: 260px; max-width: 100%; box-sizing: border-box; display: block; margin-top: var(--space-xs); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-md); font-size: var(--font-sm); }
@@ -3478,6 +3479,12 @@ function _poiIcon(type) {
 }
 
 let _meetupMap = null, _meetupMarker = null;
+// POI name labels only show at (near) the closest zoom, to avoid clutter.
+function _updatePoiLabels() {
+  if (!_meetupMap) return;
+  const on = _meetupMap.getZoom() >= _meetupMap.getMaxZoom();
+  _meetupMap.getContainer().classList.toggle('poi-labels-on', on);
+}
 // Venue bounding box [[south, west], [north, east]] — panning is locked to this.
 const MEETUP_VENUE_BOUNDS = [[51.486247, 7.025843], [51.492693, 7.046281]];
 async function openMeetupMapPicker() {
@@ -3514,6 +3521,8 @@ async function openMeetupMapPicker() {
   const retina = (window.devicePixelRatio || 1) > 1 ? '@2x' : ''; // sharper tiles on hi-dpi screens
   _meetupMap = L.map('meetup-map', { minZoom, maxZoom: isMT ? 20 : 19, maxBoundsViscosity: 1.0 }).setView(center, startZoom);
   _meetupMap.setMaxBounds(_vb);
+  _meetupMap.on('zoomend', _updatePoiLabels);
+  _updatePoiLabels();
   const bases = {};
   let defaultLayer = null;
   if (isMT) {
