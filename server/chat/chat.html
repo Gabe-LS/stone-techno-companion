@@ -120,10 +120,8 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .poi-dot-marker { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; box-sizing: border-box; cursor: pointer; }
 .poi-label-marker { display: none; background: rgba(49,46,129,.9); color: #fff; font-size: 12px; font-weight: 600; padding: 1px 6px; border-radius: 5px; white-space: nowrap; pointer-events: none; }
 .poi-labels-on .poi-label-marker, .poi-label-marker.hover { display: block; }
-/* Smaller map attribution; collapsed to an "i" that expands only on click. */
-#meetup-map .maplibregl-ctrl-attrib { font-size: 9px; }
-#meetup-map .maplibregl-ctrl-attrib.maplibregl-compact { min-height: 20px; border-radius: 10px; }
-#meetup-map .maplibregl-ctrl-attrib-button { width: 20px; height: 20px; background-size: 12px; }
+/* Smaller attribution text only (the "i" button keeps its default size). */
+#meetup-map .maplibregl-ctrl-attrib-inner { font-size: 10px; line-height: 1.3; }
 .meetup-details .md-cancel { display: block; margin-top: var(--space-sm); padding: var(--space-xs) var(--space-md); border: 1px solid #c0392b; color: #c0392b; background: none; border-radius: var(--radius-pill); font-family: inherit; font-size: var(--font-xs); font-weight: 600; cursor: pointer; }
 .meetup-going { font-weight: 400; }
 .meetup-join-wide { width: 260px; max-width: 100%; box-sizing: border-box; display: block; margin-top: var(--space-xs); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-md); font-size: var(--font-sm); }
@@ -3559,6 +3557,9 @@ async function openMeetupMapPicker() {
     // in view no matter the aspect ratio, and can't be cropped by maxBounds.
     _meetupMap.setMinZoom(_meetupMap.getZoom());
     _meetupMap.setMaxBounds(_meetupMap.getBounds());
+    // Collapse the attribution to just the "i" on load (it defaults open).
+    const _attrib = _meetupMap.getContainer().querySelector('details.maplibregl-ctrl-attrib');
+    if (_attrib) { _attrib.open = false; _attrib.classList.remove('maplibregl-compact-show'); }
     _updatePoiLabels();
     // Festival POIs as HTML markers (coloured dot + hover/max-zoom name label).
     _loadFestivalPois().then(pois => {
