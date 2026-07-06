@@ -3416,6 +3416,9 @@ function openMeetupModal() {
     verify('openMeetupModal', document.getElementById('meetup-location'), 'location input exists');
   });
   document.getElementById('meetup-title').focus();
+  // Warm the Leaflet library in the background so the map opens instantly if the
+  // user taps "Map" while filling out the form.
+  _loadLeaflet().catch(() => {});
 }
 
 function useMeetupGPS() {
@@ -3460,16 +3463,13 @@ const MEETUP_VENUE_BOUNDS = [[51.486247, 7.025843], [51.492693, 7.046281]];
 async function openMeetupMapPicker() {
   dbg('[MEETUP] openMeetupMapPicker, maptiler=' + !!_maptilerKey);
   try { await _loadLeaflet(); } catch (e) { showToast('Could not load map'); return; }
-  let center = _meetupCoords ? [_meetupCoords.lat, _meetupCoords.lng] : null;
-  if (!center) {
-    center = await new Promise(res => {
-      if (!navigator.geolocation) return res(null);
-      navigator.geolocation.getCurrentPosition(p => res([p.coords.latitude, p.coords.longitude]), () => res(null), { timeout: 6000, maximumAge: 60000 });
-    });
-  }
   const _vb = L.latLngBounds(MEETUP_VENUE_BOUNDS);
-  // If GPS is off-site (planning from home) or unavailable, start on the venue.
-  if (!center || !_vb.contains(L.latLng(center))) center = [_vb.getCenter().lat, _vb.getCenter().lng];
+  // Open instantly on the existing pin (if on-site) or the venue centre — never
+  // block the map on a slow GPS fix. If there's no pin yet, we jump to the user's
+  // GPS in the background once it resolves (below).
+  const center = (_meetupCoords && _vb.contains(L.latLng([_meetupCoords.lat, _meetupCoords.lng])))
+    ? [_meetupCoords.lat, _meetupCoords.lng]
+    : [_vb.getCenter().lat, _vb.getCenter().lng];
   document.getElementById('meetup-map-overlay')?.remove();
   const overlay = document.createElement('div');
   overlay.id = 'meetup-map-overlay';
@@ -3501,8 +3501,21 @@ async function openMeetupMapPicker() {
   _meetupMap.setMaxBounds(_vb);
   L.tileLayer(tileUrl, tileOpts).addTo(_meetupMap);
   _meetupMarker = L.marker(center, { draggable: true }).addTo(_meetupMap);
-  _meetupMap.on('click', e => _meetupMarker.setLatLng(e.latlng));
+  let _userMoved = false;
+  _meetupMarker.on('dragstart', () => { _userMoved = true; });
+  _meetupMap.on('click', e => { _userMoved = true; _meetupMarker.setLatLng(e.latlng); });
   setTimeout(() => { try { _meetupMap && _meetupMap.invalidateSize(); } catch (e) {} }, 120);
+  // No pin yet: fetch GPS in the background and recenter to it if it's on-site
+  // and the user hasn't already placed the pin themselves.
+  if (!_meetupCoords && navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(p => {
+      const ll = L.latLng(p.coords.latitude, p.coords.longitude);
+      if (!_userMoved && _meetupMap && _vb.contains(ll)) {
+        _meetupMap.setView(ll, startZoom);
+        _meetupMarker.setLatLng(ll);
+      }
+    }, () => {}, { timeout: 8000, maximumAge: 60000 });
+  }
 }
 function confirmMeetupMapPin() {
   if (_meetupMarker) {
