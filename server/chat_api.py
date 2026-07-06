@@ -403,7 +403,7 @@ def _authenticate(
 ) -> dict:
     ban = is_banned(db, provider, provider_id, device_fingerprint)
     if ban:
-        raise HTTPException(403, f"You have been banned: {ban['reason']}")
+        raise HTTPException(403, "This account cannot sign in.")
 
     user = find_user_by_provider(db, provider, provider_id)
     if user:
@@ -714,8 +714,10 @@ async def auth_google(request: Request, response: Response):
             if user and not is_user_banned(db, user["id"]):
                 add_user_provider(db, user["id"], "google", provider_id)
                 logger.info("Linked google provider to existing user %s", user["id"])
+            elif user:
+                raise HTTPException(403, "This account cannot sign in.")
         result = _authenticate(db, "google", provider_id, name, None, response)
-        if email:
+        if email and email_verified:
             add_user_provider(db, result["id"], "email", hash_email(email))
         return result
     finally:
@@ -783,8 +785,10 @@ async def auth_google_code(request: Request, response: Response):
             if user and not is_user_banned(db, user["id"]):
                 add_user_provider(db, user["id"], "google", provider_id)
                 logger.info("Linked google provider to existing user %s", user["id"])
+            elif user:
+                raise HTTPException(403, "This account cannot sign in.")
         result = _authenticate(db, "google", provider_id, name, None, response)
-        if email:
+        if email and email_verified:
             add_user_provider(db, result["id"], "email", hash_email(email))
         return result
     finally:
