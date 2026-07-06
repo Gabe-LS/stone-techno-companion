@@ -1785,7 +1785,13 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     location_label=(data.get("label") or "")[:100],
                     note=(data.get("note") or "")[:200],
                 )
-                if stage_id:
+                invite_room = get_room(db, stage_id) if stage_id else None
+                if (
+                    stage_id
+                    and invite_room
+                    and invite_room["type"] in ("stage", "general")
+                    and not invite_room["is_read_only"]
+                ):
                     invite_content = json.dumps(
                         {
                             "meetup_id": meetup["id"],
@@ -1793,12 +1799,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                             "meetup_time": meetup_time,
                         }
                     )
-                    invite_room = get_room(db, stage_id)
-                    invite_ttl = (
-                        invite_room["ttl_minutes"]
-                        if invite_room is not None
-                        else DEFAULT_MESSAGE_TTL_MIN
-                    )
+                    invite_ttl = invite_room["ttl_minutes"]
                     invite_msg = create_message(
                         db,
                         stage_id,
