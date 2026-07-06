@@ -1951,8 +1951,10 @@ def get_admin_actions(
 ) -> list[dict]:
     rows = db.execute(
         "SELECT a.id, a.actor, a.action, a.target_user_id, u.display_name AS target_name, "
-        "a.target_room_id, a.detail, a.created_at "
-        "FROM admin_actions a LEFT JOIN users u ON u.id = a.target_user_id "
+        "a.target_room_id, r.name AS target_room_name, a.detail, a.created_at "
+        "FROM admin_actions a "
+        "LEFT JOIN users u ON u.id = a.target_user_id "
+        "LEFT JOIN rooms r ON r.id = a.target_room_id "
         "ORDER BY a.created_at DESC LIMIT ? OFFSET ?",
         (limit, offset),
     ).fetchall()

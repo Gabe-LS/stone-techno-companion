@@ -219,6 +219,25 @@ def test_audit_records_actions(client):
     assert all(a["actor"] == "token" for a in audit if a["action"] == "set_main")
 
 
+def test_audit_entries_are_descriptive(client):
+    from chat_db import create_room
+
+    create_room(_test_db, "party", "test-event", "general", "Party")
+    # a room action: the audit entry should resolve the room's name, not just the id
+    client.post("/chat/api/admin/rooms/party/main", headers=TOKEN)
+    client.patch(
+        "/chat/api/admin/rooms/party",
+        json={"is_read_only": True, "description": "x"},
+        headers=TOKEN,
+    )
+    audit = client.get("/chat/api/admin/audit", headers=TOKEN).json()
+    set_main = next(a for a in audit if a["action"] == "set_main")
+    assert set_main["target_room_name"] == "Party"  # room name resolved, not the slug
+    upd = next(a for a in audit if a["action"] == "update_room")
+    # detail names which fields changed, so the entry is concrete
+    assert "is_read_only" in upd["detail"] and "description" in upd["detail"]
+
+
 # --- Stage C: message view/delete, settings, meetups, reports filter ---
 
 

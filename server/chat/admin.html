@@ -453,20 +453,37 @@ async function loadMoreAudit() {
     renderAudit(items.length === 50);
   } catch { (document.getElementById('audit-list') || document.getElementById('content')).innerHTML = '<div class="empty">Failed to load audit</div>'; }
 }
+const AUDIT_LABELS = {
+  ban: 'Ban', unban: 'Unban', delete_ban: 'Delete ban', mute: 'Mute', unmute: 'Unmute',
+  strike: 'Strike', clear_warnings: 'Clear warnings', delete_user: 'Delete user',
+  create_room: 'Create room', update_room: 'Edit room', delete_room: 'Delete room',
+  set_main: 'Set main room', reorder: 'Reorder rooms', resolve_report: 'Resolve report',
+  add_admin: 'Add admin', remove_admin: 'Remove admin', update_settings: 'Update settings',
+  delete_message: 'Delete message',
+};
+function auditLabel(a) { return AUDIT_LABELS[a] || a; }
+function auditWho(i) {
+  return i.target_name || i.target_room_name || i.target_room_id || (i.target_user_id ? i.target_user_id.slice(0, 8) : '');
+}
+function auditDesc(i) {
+  const parts = [];
+  const who = auditWho(i);
+  if (who) parts.push(who);
+  if (i.detail) parts.push(i.detail);
+  return parts.join(' — ');
+}
 function renderAudit(hasMore) {
   const el = document.getElementById('audit-list') || document.getElementById('content');
   const items = _auditFilter ? auditItems.filter(i =>
     (i.actor || '').toLowerCase().includes(_auditFilter) ||
-    (i.action || '').toLowerCase().includes(_auditFilter) ||
-    (i.target_name || '').toLowerCase().includes(_auditFilter) ||
-    (i.detail || '').toLowerCase().includes(_auditFilter)) : auditItems;
+    auditLabel(i.action).toLowerCase().includes(_auditFilter) ||
+    auditDesc(i).toLowerCase().includes(_auditFilter)) : auditItems;
   if (!items.length) { el.innerHTML = '<div class="empty">No admin actions</div>'; return; }
-  el.innerHTML = `<table class="tbl"><thead><tr><th class="col-narrow">Actor</th><th class="col-narrow">Action</th><th>Target</th><th>Detail</th><th class="col-narrow">Time</th></tr></thead><tbody>` +
+  el.innerHTML = `<table class="tbl"><thead><tr><th class="col-narrow">Actor</th><th class="col-narrow">Action</th><th>Description</th><th class="col-narrow">Time</th></tr></thead><tbody>` +
     items.map(i => `<tr>
       <td class="col-narrow" style="color:var(--text-sec)">${esc(i.actor)}</td>
-      <td class="col-narrow"><span class="pill pill-gray">${esc(i.action)}</span></td>
-      <td>${esc(i.target_name || i.target_room_id || (i.target_user_id ? i.target_user_id.slice(0, 8) : '--'))}</td>
-      <td class="truncate" style="color:var(--text-sec)">${esc(i.detail || '')}</td>
+      <td class="col-narrow"><span class="pill pill-gray">${esc(auditLabel(i.action))}</span></td>
+      <td>${esc(auditDesc(i) || '--')}</td>
       <td class="col-narrow" style="color:var(--text-muted)">${ago(i.created_at)}</td>
     </tr>`).join('') + '</tbody></table>' +
     (hasMore && !_auditFilter ? '<div class="load-more"><button onclick="loadMoreAudit()">Load more</button></div>' : '');

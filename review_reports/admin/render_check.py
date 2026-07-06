@@ -61,6 +61,17 @@ MOCK_ROOM = {
     "message_count": 3,
     "last_message_at": None,
 }
+MOCK_AUDIT = {
+    "id": "a-1",
+    "actor": "token",
+    "action": "set_main",
+    "target_user_id": None,
+    "target_name": None,
+    "target_room_id": "party",
+    "target_room_name": "Party",
+    "detail": None,
+    "created_at": "2026-07-06T10:00:00+00:00",
+}
 
 
 def run_for_role(role):
@@ -153,6 +164,8 @@ def check_persistence_and_menu():
                 return route.fulfill(status=200, content_type="application/json", body=_json([MOCK_ROOM]))
             if "/chat/api/admin/users" in url:
                 return route.fulfill(status=200, content_type="application/json", body=_json([MOCK_USER]))
+            if "/chat/api/admin/audit" in url:
+                return route.fulfill(status=200, content_type="application/json", body=_json([MOCK_AUDIT]))
             if "/chat/api/admin/" in url:
                 return route.fulfill(status=200, content_type="application/json", body="[]")
             return route.fulfill(status=200, content_type="text/html", body=ADMIN_HTML)
@@ -206,6 +219,20 @@ def check_persistence_and_menu():
         toggle = page.query_selector(".toggle")
         if toggle and "on" not in (toggle.get_attribute("class") or ""):
             problems.append("online-only toggle not restored as active")
+
+        # Audit entries must be humanized and never show a blank description.
+        page.click('.tab[data-tab="audit"]')
+        page.wait_for_selector("#audit-list table", timeout=5000)
+        audit_html = page.query_selector("#audit-list table").inner_html()
+        if "Set main room" not in audit_html:
+            problems.append("audit action not humanized (missing 'Set main room')")
+        if "Party" not in audit_html:
+            problems.append("audit description empty (room name 'Party' missing)")
+        # confirm no row renders a bare '--' description for this entry
+        first_row = page.query_selector("#audit-list tbody tr")
+        cells = [c.inner_text().strip() for c in first_row.query_selector_all("td")] if first_row else []
+        if len(cells) >= 3 and cells[2] in ("", "--"):
+            problems.append(f"audit description blank (cells={cells})")
         browser.close()
     return problems
 

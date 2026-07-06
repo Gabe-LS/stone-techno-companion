@@ -2617,7 +2617,13 @@ async def admin_update_room(room_id: str, request: Request):
         from chat_ws import manager
 
         asyncio.create_task(manager.broadcast_to_all({"event": "rooms_changed"}))
-        log_admin_action(db, actor["label"], "update_room", target_room_id=room_id)
+        log_admin_action(
+            db,
+            actor["label"],
+            "update_room",
+            target_room_id=room_id,
+            detail=", ".join(k for k in body) or None,
+        )
         return {"ok": True}
     finally:
         db.close()
@@ -2670,7 +2676,7 @@ async def admin_reorder_rooms(request: Request):
         from chat_ws import manager
 
         asyncio.create_task(manager.broadcast_to_all({"event": "rooms_changed"}))
-        log_admin_action(db, actor["label"], "reorder", detail=str(len(order)))
+        log_admin_action(db, actor["label"], "reorder", detail=f"{len(order)} rooms")
         return {"ok": True}
     finally:
         db.close()
