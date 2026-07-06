@@ -536,10 +536,76 @@ def _load_pois() -> list:
     return []
 
 
+# Category synonyms -> our canonical type; anything else -> "other".
+_POI_CAT_ALIASES = {
+    "floor": "stage", "bar": "drinks", "wine bar": "drinks", "winebar": "drinks",
+    "toilet": "wc", "toilets": "wc", "first aid": "services", "firstaid": "services",
+    "shuttle": "services", "transport": "services", "entrance": "other",
+    "awareness": "other",
+}
+_POI_TYPES = {"stage", "drinks", "food", "wc", "water", "services", "shop", "other"}
+
+
+def _normalize_poi_category(cat) -> str:
+    c = (cat or "").strip().lower()
+    c = _POI_CAT_ALIASES.get(c, c)
+    return c if c in _POI_TYPES else "other"
+
+
+def _parse_geojson_pois(gj: dict) -> list:
+    """Normalize a MapTiler dataset (GeoJSON FeatureCollection) to our POI list.
+    Reads the point coords, `name`, and a `Category`/`category` property."""
+    out = []
+    for f in (gj.get("features") or []):
+        geom = f.get("geometry") or {}
+        if geom.get("type") != "Point":
+            continue
+        coords = geom.get("coordinates") or []
+        if len(coords) < 2:
+            continue
+        try:
+            lng, lat = round(float(coords[0]), 6), round(float(coords[1]), 6)
+        except (TypeError, ValueError):
+            continue
+        props = f.get("properties") or {}
+        ptype = _normalize_poi_category(props.get("Category") or props.get("category"))
+        name = (props.get("name") or "").strip() or ptype.title()
+        out.append({"type": ptype, "name": name, "lat": lat, "lng": lng})
+    return out
+
+
+_pois_cache = {"at": 0.0, "data": None}
+_POIS_TTL = 120  # seconds — live edits in MapTiler appear within this window
+
+
 @router.get("/pois")
 async def list_pois():
-    """Festival points of interest (stages, bars, entrances, ...) for the map
-    picker. Reads KMZ/KML/JSON from server/static/. Returns [] if none present."""
+    """Festival points of interest for the map picker. Prefers a published
+    MapTiler dataset (MAPTILER_DATASET_ID) fetched server-side + cached, so the
+    key stays off the client and edits appear live; falls back to the cached copy
+    on error, then to a local KMZ/KML/JSON in server/static/."""
+    import time
+
+    ds = os.environ.get("MAPTILER_DATASET_ID")
+    key = os.environ.get("MAPTILER_KEY")
+    if ds and key:
+        now = time.monotonic()
+        if _pois_cache["data"] is not None and now - _pois_cache["at"] < _POIS_TTL:
+            return _pois_cache["data"]
+        try:
+            import httpx
+
+            url = f"https://api.maptiler.com/data/{ds}/features.json?key={key}"
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                r = await client.get(url)
+                r.raise_for_status()
+                data = _parse_geojson_pois(r.json())
+            _pois_cache["data"], _pois_cache["at"] = data, now
+            return data
+        except Exception:
+            logger.warning("[POIS] MapTiler dataset fetch failed", exc_info=True)
+            if _pois_cache["data"] is not None:
+                return _pois_cache["data"]
     return _load_pois()
 
 

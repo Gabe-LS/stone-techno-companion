@@ -283,6 +283,7 @@ Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DBs at `server/d
 | `CHAT_EVENT_ID` | No | Event ID (default: `stone-techno-2026`) |
 | `CHAT_DB_PATH` | No | Test/dev override for chat.db location. Used by the browser verification harness (`tests/e2ee_browser_check.py`) to point at an isolated scratch DB. |
 | `MAPTILER_KEY` | No | MapTiler Cloud API key for the meetup map picker (exposed to the client via `/chat/api/config`). If unset, the picker falls back to free OpenStreetMap raster tiles. MapTiler free tier = 100k map loads/mo, no card, hard-stops (no surprise bill). |
+| `MAPTILER_DATASET_ID` | No | MapTiler dataset id for festival POIs. When set (with `MAPTILER_KEY`), `GET /chat/api/pois` fetches the dataset's `features.json` server-side, normalizes it (point coords + `name` + `Category`→our type, unknown→`other`), and caches it 120s — so organizers edit pins live in MapTiler with no redeploy, the key stays off the client, and it falls back to the cached copy then to `server/static/festival-pois.kml` on error. |
 
 ### DNS for Email (deftlab.dev)
 
