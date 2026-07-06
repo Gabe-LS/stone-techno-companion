@@ -2216,11 +2216,15 @@ async def admin_update_settings(request: Request):
     body = await _admin_json(request)
     db = _get_db()
     try:
+        changed = []
         if "room_sort" in body:
             if body["room_sort"] not in ("auto", "manual"):
                 raise HTTPException(400, "room_sort must be 'auto' or 'manual'")
+            old = get_setting(db, "room_sort", "auto")
+            if old != body["room_sort"]:
+                changed.append(f"room_sort: {old} -> {body['room_sort']}")
             set_setting(db, "room_sort", body["room_sort"])
-        for key, (_default, lo, hi) in _SETTINGS_INT_DEFAULTS.items():
+        for key, (default, lo, hi) in _SETTINGS_INT_DEFAULTS.items():
             if key not in body:
                 continue
             v = body[key]
@@ -2228,8 +2232,16 @@ async def admin_update_settings(request: Request):
                 raise HTTPException(
                     400, f"{key} must be an integer between {lo} and {hi}"
                 )
+            old = get_setting(db, key, default)
+            if str(old) != str(v):
+                changed.append(f"{key}: {old} -> {v}")
             set_setting(db, key, str(v))
-        log_admin_action(db, actor["label"], "update_settings", detail=str(body))
+        log_admin_action(
+            db,
+            actor["label"],
+            "update_settings",
+            detail="; ".join(changed) if changed else "no changes",
+        )
         return {"ok": True}
     finally:
         db.close()
@@ -2614,18 +2626,32 @@ async def admin_update_room(room_id: str, request: Request):
             if not isinstance(v, str) or len(v) > 500:
                 raise HTTPException(400, "description must be a string (max 500)")
         # The client sends the whole form on every save, so diff against the
-        # current values (room still holds them) to log only what actually changed.
+        # current values (room still holds them) to log only what actually changed,
+        # recording old -> new so the audit says exactly what was edited.
         bool_fields = ("is_moderated", "is_read_only", "auto_join", "allows_media")
         editable = bool_fields + ("name", "description", "ttl_minutes", "position")
+
+        def _fmt(k, v):
+            if k in bool_fields:
+                return "on" if v else "off"
+            if v is None:
+                return "none"
+            if v == "":
+                return "(empty)"
+            s = str(v)
+            return s if len(s) <= 40 else s[:37] + "..."
+
         changed = []
         for k in body:
             if k not in editable or k not in room.keys():
                 continue
-            if k in bool_fields:
-                if bool(room[k]) != bool(body[k]):
-                    changed.append(k)
-            elif room[k] != body[k]:
-                changed.append(k)
+            differs = (
+                bool(room[k]) != bool(body[k])
+                if k in bool_fields
+                else room[k] != body[k]
+            )
+            if differs:
+                changed.append(f"{k}: {_fmt(k, room[k])} -> {_fmt(k, body[k])}")
         update_room(db, room_id, **body)
         from chat_ws import manager
 
@@ -2635,7 +2661,7 @@ async def admin_update_room(room_id: str, request: Request):
             actor["label"],
             "update_room",
             target_room_id=room_id,
-            detail=", ".join(changed) if changed else "no changes",
+            detail="; ".join(changed) if changed else "no changes",
         )
         return {"ok": True}
     finally:

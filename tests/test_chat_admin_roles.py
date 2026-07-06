@@ -243,8 +243,8 @@ def test_audit_entries_are_descriptive(client):
     set_main = next(a for a in audit if a["action"] == "set_main")
     assert set_main["target_room_name"] == "Party"  # room name resolved, not the slug
     upd = next(a for a in audit if a["action"] == "update_room")
-    # only the actually-changed field appears, not the whole form
-    assert upd["detail"] == "is_read_only"
+    # only the actually-changed field appears, with old -> new values
+    assert upd["detail"] == "is_read_only: off -> on"
 
 
 # --- Stage C: message view/delete, settings, meetups, reports filter ---
@@ -295,6 +295,10 @@ def test_settings_get_and_super_only_patch(client):
         ).status_code
         == 200
     )
+    # the audit records the old -> new value
+    audit = client.get("/chat/api/admin/audit", headers=TOKEN).json()
+    upd = next(a for a in audit if a["action"] == "update_settings")
+    assert upd["detail"] == "msg_char_limit: 1000 -> 500"
     # invalid (out of range / bool)
     assert (
         client.patch(
