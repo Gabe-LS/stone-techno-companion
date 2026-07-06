@@ -47,6 +47,7 @@ from chat_db import (
     delete_user_messages,
     purge_expired_messages,
     purge_expired_meetups,
+    delete_meetup,
     purge_expired_sessions,
     purge_old_reports,
     purge_expired_strikes,
@@ -2118,6 +2119,28 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                             "room_id": room_id_del,
                         },
                     )
+                    # Deleting a meetup invite card cancels the whole meetup
+                    # (room + attendees) when done by its creator.
+                    if msg_row["type"] == "meetup_invite":
+                        try:
+                            _mid = json.loads(msg_row["content"]).get("meetup_id")
+                        except (json.JSONDecodeError, TypeError):
+                            _mid = None
+                        _mrow = (
+                            db.execute(
+                                "SELECT creator_id FROM meetups WHERE id = ?", (_mid,)
+                            ).fetchone()
+                            if _mid
+                            else None
+                        )
+                        if _mrow and _mrow["creator_id"] == user_id:
+                            delete_meetup(db, _mid)
+                            await manager.broadcast_to_room(
+                                _mid, {"event": "meetup_expired", "meetup_id": _mid}
+                            )
+                            manager.rooms.pop(_mid, None)
+                            manager._room_meta.pop(_mid, None)
+                            await manager.broadcast_to_all({"event": "rooms_changed"})
 
             elif event == "report_message":
                 if not manager.check_rate_limit(user_id):
