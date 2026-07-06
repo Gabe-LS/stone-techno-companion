@@ -1107,6 +1107,12 @@ async def get_message_context(message_id: str, request: Request):
                 (msg["room_id"], user["id"]),
             ).fetchone():
                 raise HTTPException(404, "Message not found")
+        if room and room["type"] == "meetup":
+            if not db.execute(
+                "SELECT 1 FROM meetup_attendees WHERE meetup_id = ? AND user_id = ?",
+                (msg["room_id"], user["id"]),
+            ).fetchone():
+                raise HTTPException(404, "Message not found")
         return {
             "message_id": message_id,
             "room_id": msg["room_id"],
