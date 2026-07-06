@@ -110,3 +110,35 @@ self.addEventListener('pushsubscriptionchange', function (event) {
     }).catch(function () {})
   );
 });
+
+// --- Offline map cache -------------------------------------------------------
+// Cache-first for the meetup map's static assets so the picker works on flaky /
+// no network: the self-hosted NRW aerial tiles (/dop), the MapLibre library, and
+// the OpenFreeMap streets/labels/fonts. Everything else is passed through
+// untouched (no respondWith) so normal requests behave exactly as before. Tiles
+// are effectively immutable, so no revalidation — just cache on first view.
+var MAP_CACHE = 'stc-map-v1';
+self.addEventListener('fetch', function (event) {
+  var req = event.request;
+  if (req.method !== 'GET') return;
+  var url;
+  try { url = new URL(req.url); } catch (e) { return; }
+  var isMap =
+    url.pathname.indexOf('/vendor/maplibre/') === 0 ||
+    url.pathname.indexOf('/dop/') === 0 ||
+    url.hostname === 'tiles.openfreemap.org';
+  if (!isMap) return;
+  event.respondWith(
+    caches.open(MAP_CACHE).then(function (cache) {
+      return cache.match(req).then(function (hit) {
+        if (hit) return hit;
+        return fetch(req).then(function (res) {
+          if (res && (res.ok || res.type === 'opaque')) {
+            cache.put(req, res.clone()).catch(function () {});
+          }
+          return res;
+        });
+      });
+    })
+  );
+});
