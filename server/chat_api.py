@@ -1277,9 +1277,16 @@ async def create_meetup_endpoint(request: Request):
         if not title or not meetup_time:
             raise HTTPException(400, "title and meetup_time required")
         try:
-            datetime.fromisoformat(meetup_time)
+            _mt = datetime.fromisoformat(meetup_time)
         except (ValueError, TypeError):
             raise HTTPException(400, "Invalid meetup_time format")
+        _now_dt = datetime.now(timezone.utc)
+        if (
+            _mt.tzinfo is None
+            or _mt <= _now_dt
+            or _mt > _now_dt + timedelta(days=30)
+        ):
+            raise HTTPException(400, "Pick a valid meetup time in the future.")
 
         from chat_moderation import get_word_filter
         _wf = get_word_filter()

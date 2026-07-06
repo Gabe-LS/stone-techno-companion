@@ -3287,6 +3287,7 @@ function submitMeetup() {
   if (!title) { showToast('Please enter a title'); return; }
   if (!dateVal) { showToast('Please pick a date'); return; }
   const meetupDate = new Date(`${dateVal}T${String(hour).padStart(2,'0')}:${String(min).padStart(2,'0')}:00`);
+  if (meetupDate <= new Date()) { showToast('Pick a time in the future'); return; }
   const payload = { stage_id: currentRoom, title, meetup_time: meetupDate.toISOString() };
   if (_meetupCoords) { payload.lat = _meetupCoords.lat; payload.lng = _meetupCoords.lng; }
   if (locationLabel) payload.label = locationLabel;

@@ -1770,8 +1770,22 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 if not title or not meetup_time:
                     continue
                 try:
-                    datetime.fromisoformat(meetup_time)
+                    _mt = datetime.fromisoformat(meetup_time)
                 except (ValueError, TypeError):
+                    continue
+                _now_dt = datetime.now(timezone.utc)
+                if (
+                    _mt.tzinfo is None
+                    or _mt <= _now_dt
+                    or _mt > _now_dt + timedelta(days=30)
+                ):
+                    await manager.send_to_user(
+                        user_id,
+                        {
+                            "event": "create_meetup_error",
+                            "reason": "Pick a valid meetup time in the future.",
+                        },
+                    )
                     continue
                 from chat_moderation import get_word_filter
                 _wf = get_word_filter()
