@@ -541,11 +541,7 @@ def delete_user(db: sqlite3.Connection, user_id: str) -> None:
         ).fetchall()
     ]
     for meetup_id in meetup_ids:
-        delete_room(db, meetup_id)
-        db.execute("DELETE FROM meetup_attendees WHERE meetup_id = ?", (meetup_id,))
-        db.execute("DELETE FROM meetups WHERE id = ?", (meetup_id,))
-    if meetup_ids:
-        db.commit()
+        delete_meetup(db, meetup_id)
 
     db.execute("DELETE FROM users WHERE id = ?", (user_id,))
     db.commit()
@@ -1343,10 +1339,12 @@ def delete_meetup(db: sqlite3.Connection, meetup_id: str) -> bool:
     row = db.execute("SELECT id FROM meetups WHERE id = ?", (meetup_id,)).fetchone()
     if not row:
         return False
-    delete_room(db, meetup_id)  # meetup room id equals the meetup id
+    # Delete meetup rows first, then the room LAST: delete_room's single commit
+    # flushes attendee/meetup/room deletes as one atomic transaction, so a crash
+    # can't leave a meetups row pointing at an already-deleted room (ghost meetup).
     db.execute("DELETE FROM meetup_attendees WHERE meetup_id = ?", (meetup_id,))
     db.execute("DELETE FROM meetups WHERE id = ?", (meetup_id,))
-    db.commit()
+    delete_room(db, meetup_id)  # meetup room id equals the meetup id; commits here
     return True
 
 
@@ -1379,7 +1377,10 @@ def purge_expired_meetups(db: sqlite3.Connection) -> list[str]:
         db.execute("DELETE FROM rooms WHERE id = ?", (mid,))
 
     if expired_ids:
-        db.execute("DELETE FROM meetups WHERE expires_at <= ?", (now,))
+        placeholders = ",".join("?" * len(expired_ids))
+        db.execute(
+            f"DELETE FROM meetups WHERE id IN ({placeholders})", expired_ids
+        )
         db.commit()
 
     uploads_dir = Path(__file__).resolve().parent / "chat" / "uploads"
