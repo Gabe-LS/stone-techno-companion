@@ -1261,6 +1261,9 @@ def create_meetup(
         (meetup_id, creator_id, now),
     )
     db.commit()
+    # Mirror attendance into room_memberships so the meetup room participates in
+    # the shared membership/unread/reachable-count/push machinery.
+    join_room_membership(db, creator_id, meetup_id)
 
     return {
         "id": meetup_id,
@@ -1293,6 +1296,7 @@ def join_meetup(db: sqlite3.Connection, meetup_id: str, user_id: str) -> bool:
         db.commit()
     except sqlite3.IntegrityError:
         return False
+    join_room_membership(db, user_id, meetup_id)
     return True
 
 
@@ -1302,6 +1306,7 @@ def leave_meetup(db: sqlite3.Connection, meetup_id: str, user_id: str) -> None:
         (meetup_id, user_id),
     )
     db.commit()
+    leave_room_membership(db, user_id, meetup_id)
 
 
 def get_meetup_attendees(db: sqlite3.Connection, meetup_id: str) -> list[sqlite3.Row]:
