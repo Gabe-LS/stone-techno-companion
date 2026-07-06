@@ -1251,6 +1251,12 @@ async def create_meetup_endpoint(request: Request):
         except (ValueError, TypeError):
             raise HTTPException(400, "Invalid meetup_time format")
 
+        from chat_moderation import get_word_filter
+        _wf = get_word_filter()
+        _mtext = " ".join(filter(None, [title, body.get("note") or "", body.get("label") or ""]))
+        if _mtext.strip() and _wf.check(_mtext):
+            raise HTTPException(400, "That meetup contains content that isn't allowed.")
+
         meetup = create_meetup(
             db,
             user["id"],

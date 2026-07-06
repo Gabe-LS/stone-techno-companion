@@ -1773,6 +1773,12 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     datetime.fromisoformat(meetup_time)
                 except (ValueError, TypeError):
                     continue
+                from chat_moderation import get_word_filter
+                _wf = get_word_filter()
+                _mtext = " ".join(filter(None, [title, data.get("note") or "", data.get("label") or ""]))
+                if _mtext.strip() and _wf.check(_mtext):
+                    await manager.send_to_user(user_id, {"event": "create_meetup_error", "reason": "That meetup contains content that isn't allowed."})
+                    continue
                 meetup = create_meetup(
                     db,
                     user_id,
