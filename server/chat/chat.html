@@ -4776,7 +4776,13 @@ window.addEventListener('keydown', (e) => {
   const actionSheet = document.getElementById('action-sheet');
   if (actionSheet) { closeActionSheet(); return; }
   const modal = document.querySelector('.modal-overlay');
-  if (modal) { modal.remove(); return; }
+  if (modal) {
+    // Route through the modal's own close fn when it has one, so focus
+    // return / state cleanup (e.g. the meetup modal's focus restore) runs.
+    if (modal.id === 'meetup-modal') closeMeetupModal();
+    else modal.remove();
+    return;
+  }
   closeViewer();
 });
 document.addEventListener('gesturestart', e => e.preventDefault());
