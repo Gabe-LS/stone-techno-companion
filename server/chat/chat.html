@@ -3492,17 +3492,22 @@ async function openMeetupMapPicker() {
   const startZoom = 18;
   const minZoom = startZoom - 1;
   const retina = (window.devicePixelRatio || 1) > 1 ? '@2x' : ''; // sharper tiles on hi-dpi screens
-  const tileUrl = isMT
-    ? `https://api.maptiler.com/maps/hybrid/{z}/{x}/{y}${retina}.jpg?key=` + encodeURIComponent(_maptilerKey)
-    : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-  // MapTiler raster tiles are 512px; tell Leaflet (default 256) so labels render
-  // at the right size and the zoom level is correct.
-  const tileOpts = isMT
-    ? { attribution: '© MapTiler © OpenStreetMap contributors', tileSize: 512, zoomOffset: -1, minZoom, maxZoom: 20, crossOrigin: true }
-    : { attribution: '© OpenStreetMap contributors', minZoom, maxZoom: 19 };
   _meetupMap = L.map('meetup-map', { minZoom, maxZoom: isMT ? 20 : 19, maxBoundsViscosity: 1.0 }).setView(center, startZoom);
   _meetupMap.setMaxBounds(_vb);
-  L.tileLayer(tileUrl, tileOpts).addTo(_meetupMap);
+  if (isMT) {
+    // MapTiler raster tiles are 512px; tell Leaflet (default 256) so labels render
+    // at the right size and the zoom level is correct.
+    const mkMT = (style, ext) => L.tileLayer(
+      `https://api.maptiler.com/maps/${style}/{z}/{x}/{y}${retina}.${ext}?key=` + encodeURIComponent(_maptilerKey),
+      { attribution: '© MapTiler © OpenStreetMap contributors', tileSize: 512, zoomOffset: -1, minZoom, maxZoom: 20, crossOrigin: true }
+    );
+    const satellite = mkMT('hybrid', 'jpg');
+    const streets = mkMT('streets-v2', 'png');
+    satellite.addTo(_meetupMap); // default layer
+    L.control.layers({ 'Satellite': satellite, 'Streets': streets }, null, { collapsed: false }).addTo(_meetupMap);
+  } else {
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors', minZoom, maxZoom: 19 }).addTo(_meetupMap);
+  }
   _meetupMarker = L.marker(center, { draggable: true }).addTo(_meetupMap);
   let _userMoved = false;
   _meetupMarker.on('dragstart', () => { _userMoved = true; });
