@@ -3282,7 +3282,7 @@ function openMeetupModal() {
       <label class="modal-label">Location</label>
       <div style="display:flex;gap:8px">
         <input id="meetup-location" class="modal-input" placeholder="e.g. Main bar area" style="flex:1">
-        <button class="modal-btn-secondary" onclick="useMeetupGPS()">📍 GPS</button>
+        <button type="button" id="meetup-gps-btn" class="modal-btn-secondary" onclick="useMeetupGPS()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="vertical-align:middle"><path d="M4 10.1433C4 5.64588 7.58172 2 12 2C16.4183 2 20 5.64588 20 10.1433C20 14.6055 17.4467 19.8124 13.4629 21.6744C12.5343 22.1085 11.4657 22.1085 10.5371 21.6744C6.55332 19.8124 4 14.6055 4 10.1433Z" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="10" r="3" stroke="currentColor" stroke-width="1.5"/></svg> GPS</button>
       </div>
       <label class="modal-label">Note (optional)</label>
       <textarea id="meetup-note" class="modal-textarea" placeholder="Any extra info..." rows="2"></textarea>
@@ -3306,11 +3306,19 @@ function openMeetupModal() {
 function useMeetupGPS() {
   dbg('[MEETUP] useMeetupGPS');
   if (!navigator.geolocation) { showToast('Geolocation not available'); return; }
+  const btn = document.getElementById('meetup-gps-btn');
+  const orig = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Locating…'; }
+  const restore = () => { if (btn) { btn.disabled = false; btn.innerHTML = orig; } };
   navigator.geolocation.getCurrentPosition(pos => {
     _meetupCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
     document.getElementById('meetup-location').value = `${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`;
     showToast('Location set');
-  }, () => showToast('Could not get location'));
+    restore();
+  }, err => {
+    showToast(err && err.code === err.PERMISSION_DENIED ? 'Location permission denied — check browser settings' : 'Could not get location');
+    restore();
+  }, { timeout: 10000, maximumAge: 60000 });
 }
 
 function submitMeetup() {
