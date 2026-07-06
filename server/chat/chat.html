@@ -3545,18 +3545,20 @@ async function openMeetupMapPicker() {
     container: 'meetup-map',
     style: _meetupMapStyle(),
     bounds: [[west, south], [east, north]],
-    fitBoundsOptions: { padding: 0, animate: false },
+    fitBoundsOptions: { padding: 12, animate: false },
     minZoom: 1, maxZoom,
-    maxBounds: [[west, south], [east, north]],
     attributionControl: { compact: true },
     dragRotate: false, pitchWithRotate: false, touchPitch: false
   });
   _meetupMap.touchZoomRotate.disableRotation();
   _meetupMap.on('zoom', _updatePoiLabels);
   _meetupMap.on('load', () => {
-    // Opened fit-to-bounds, so the current zoom IS the fit; lock the floor there
-    // => default zoom == min zoom (can zoom in, not out).
+    // The fit-to-square already shows the whole POI area (+EXPAND) for THIS
+    // container's shape/size. Lock the zoom floor here (default zoom == min zoom)
+    // and clamp panning to exactly what's visible — so the POIs are ALWAYS fully
+    // in view no matter the aspect ratio, and can't be cropped by maxBounds.
     _meetupMap.setMinZoom(_meetupMap.getZoom());
+    _meetupMap.setMaxBounds(_meetupMap.getBounds());
     _updatePoiLabels();
     // Festival POIs as HTML markers (coloured dot + hover/max-zoom name label).
     _loadFestivalPois().then(pois => {
