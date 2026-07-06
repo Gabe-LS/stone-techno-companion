@@ -117,10 +117,9 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .meetup-details .md-k { font-weight: 700; color: var(--color-accent); margin-right: var(--space-xs); text-transform: uppercase; font-size: var(--font-xs); }
 .meetup-details .md-map { display: inline-block; margin-top: var(--space-xs); color: var(--color-accent); font-weight: 600; font-size: var(--font-sm); }
 .meetup-details .md-photo { display: block; max-width: 100%; max-height: 200px; border-radius: var(--radius-md); margin-top: var(--space-xs); }
-.poi-marker-wrap { position: relative; width: 14px; height: 14px; }
-.poi-marker-wrap .poi-dot { display: block; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; box-sizing: border-box; }
-.poi-marker-wrap .poi-tip { display: none; position: absolute; left: 18px; top: 50%; transform: translateY(-50%); background: rgba(49,46,129,.9); color: #fff; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 5px; white-space: nowrap; pointer-events: none; }
-.poi-labels-on .poi-marker-wrap .poi-tip, .poi-marker-wrap:hover .poi-tip { display: block; }
+.poi-dot-marker { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; box-sizing: border-box; cursor: pointer; }
+.poi-label-marker { display: none; background: rgba(49,46,129,.9); color: #fff; font-size: 12px; font-weight: 600; padding: 1px 6px; border-radius: 5px; white-space: nowrap; pointer-events: none; }
+.poi-labels-on .poi-label-marker, .poi-label-marker.hover { display: block; }
 .meetup-details .md-cancel { display: block; margin-top: var(--space-sm); padding: var(--space-xs) var(--space-md); border: 1px solid #c0392b; color: #c0392b; background: none; border-radius: var(--radius-pill); font-family: inherit; font-size: var(--font-xs); font-weight: 600; cursor: pointer; }
 .meetup-going { font-weight: 400; }
 .meetup-join-wide { width: 260px; max-width: 100%; box-sizing: border-box; display: block; margin-top: var(--space-xs); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-md); font-size: var(--font-sm); }
@@ -3568,14 +3567,27 @@ async function openMeetupMapPicker() {
       if (!_meetupMap || !Array.isArray(pois)) return;
       pois.forEach(p => {
         if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return;
-        const el = document.createElement('div');
-        el.className = 'poi-marker-wrap';
-        el.innerHTML = `<span class="poi-dot" style="background:${_poiColor(p.type)}"></span><span class="poi-tip">${escapeHtml(String(p.name || ''))}</span>`;
-        new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([p.lng, p.lat]).addTo(_meetupMap);
+        // Dot and label are SEPARATE markers so we can layer them independently:
+        // dots (z1) < pin (z2) < labels (z3), so labels never hide behind a dot.
+        const dot = document.createElement('div');
+        dot.className = 'poi-dot-marker';
+        dot.style.background = _poiColor(p.type);
+        dot.style.zIndex = '1';
+        const label = document.createElement('div');
+        label.className = 'poi-label-marker';
+        label.textContent = String(p.name || '');
+        label.style.zIndex = '3';
+        new maplibregl.Marker({ element: dot, anchor: 'center' }).setLngLat([p.lng, p.lat]).addTo(_meetupMap);
+        new maplibregl.Marker({ element: label, anchor: 'left', offset: [10, 0] }).setLngLat([p.lng, p.lat]).addTo(_meetupMap);
+        dot.addEventListener('mouseenter', () => label.classList.add('hover'));
+        dot.addEventListener('mouseleave', () => label.classList.remove('hover'));
+        // Tapping a POI drops the meeting pin exactly on it.
+        dot.addEventListener('click', (e) => { e.stopPropagation(); _userMoved = true; _meetupMarker.setLngLat([p.lng, p.lat]); });
       });
     });
   });
   _meetupMarker = new maplibregl.Marker({ draggable: true, color: '#4f46e5' }).setLngLat(center).addTo(_meetupMap);
+  _meetupMarker.getElement().style.zIndex = '2'; // above POI dots, below POI labels
   let _userMoved = false;
   _meetupMarker.on('dragstart', () => { _userMoved = true; });
   _meetupMap.on('click', (e) => { _userMoved = true; _meetupMarker.setLngLat(e.lngLat); });
