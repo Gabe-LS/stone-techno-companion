@@ -1350,6 +1350,31 @@ async def _broadcast_meetup_updated(meetup_id: str, attendees: list) -> None:
     )
 
 
+@router.delete("/meetups/{meetup_id}")
+async def cancel_meetup_endpoint(meetup_id: str, request: Request):
+    user, db = _get_user_from_cookie(request)
+    try:
+        m = db.execute(
+            "SELECT creator_id FROM meetups WHERE id = ?", (meetup_id,)
+        ).fetchone()
+        if not m:
+            raise HTTPException(404, "Meetup not found")
+        if m["creator_id"] != user["id"]:
+            raise HTTPException(403, "Only the creator can cancel this meetup.")
+        delete_meetup(db, meetup_id)
+        from chat_ws import manager
+
+        await manager.broadcast_to_room(
+            meetup_id, {"event": "meetup_expired", "meetup_id": meetup_id}
+        )
+        manager.rooms.pop(meetup_id, None)
+        manager._room_meta.pop(meetup_id, None)
+        await manager.broadcast_to_all({"event": "rooms_changed"})
+        return {"ok": True}
+    finally:
+        db.close()
+
+
 @router.delete("/meetups/{meetup_id}/join")
 async def leave_meetup_endpoint(meetup_id: str, request: Request):
     user, db = _get_user_from_cookie(request)

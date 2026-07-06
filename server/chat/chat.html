@@ -111,6 +111,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .msg-card.card-meetup { background: var(--user-1-bg); box-shadow: inset 0 0 0 1px var(--color-accent); }
 .meetup-join { display: inline-block; padding: var(--space-xs) var(--space-md); border: 1px solid var(--color-accent); border-radius: var(--radius-pill); font-size: var(--font-xs); font-weight: 600; cursor: pointer; background: none; color: var(--color-accent); font-family: inherit; margin-top: var(--space-sm); }
 .meetup-join.joined { background: var(--color-accent); color: #fff; }
+.meetup-join.meetup-cancel { border-color: #c0392b; color: #c0392b; }
 .meetup-going { font-weight: 400; }
 .meetup-join-wide { width: 260px; display: block; margin-top: var(--space-xs); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-md); font-size: var(--font-sm); }
 .msg-card.card-location { background: var(--user-5-bg); box-shadow: inset 0 0 0 1px var(--color-success); }
@@ -2233,7 +2234,7 @@ function renderMessage(m) {
           ${c.note ? `<div class="card-meta" style="opacity:.85">${escapeHtml(c.note)}</div>` : ''}
         </div>
       </div>
-      ${isCreator ? '' : '<button class="meetup-join meetup-join-wide" data-meetup-id="' + mid + '" onclick="event.stopPropagation();toggleMeetupJoin(\'' + mid + '\',this)">Join</button>'}`;
+      ${isCreator ? '<button class="meetup-join meetup-join-wide meetup-cancel" onclick="event.stopPropagation();cancelMeetup(\'' + mid + '\')">Cancel meetup</button>' : '<button class="meetup-join meetup-join-wide" data-meetup-id="' + mid + '" onclick="event.stopPropagation();toggleMeetupJoin(\'' + mid + '\',this)">Join</button>'}`;
       setTimeout(() => loadMeetupJoinState(mid), 0);
     }
   } catch {
@@ -3237,6 +3238,17 @@ async function toggleMeetupJoin(meetupId, btn) {
       wsSend('join_room', { room_id: meetupId });
       dbg('[MEETUP] joined room for notifications', meetupId);
     }
+  } catch (e) { showToast(e.message); }
+}
+
+async function cancelMeetup(meetupId) {
+  dbg('[MEETUP] cancelMeetup', meetupId);
+  if (!confirm('Cancel this meetup? This removes it and its chat for everyone.')) return;
+  try {
+    await api('/meetups/' + meetupId, { method: 'DELETE' });
+    showToast('Meetup cancelled');
+    const at = document.querySelector('.tabs button.active');
+    if (at && /meetup/i.test(at.textContent)) loadMeetups();
   } catch (e) { showToast(e.message); }
 }
 
