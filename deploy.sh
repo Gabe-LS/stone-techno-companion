@@ -86,7 +86,7 @@ fi
 echo ""
 
 # --- Step 0: Sync env vars to VPS ---
-echo "[0/6] Syncing env vars to VPS..."
+echo "[0/7] Syncing env vars to VPS..."
 if [ ! -f "$LOCAL_ENV" ]; then
     echo "  ERROR: $LOCAL_ENV not found"
     exit 1
@@ -140,30 +140,66 @@ else
     echo "  Synced $NVARS vars to VPS"
 fi
 
-# --- Step 1: Backup VPS data locally ---
+# --- Step 1: VAPID key preflight ---
+# The .env sync above pushes the LOCAL VAPID_PUBLIC_KEY to production, but the
+# private key production signs with is the pem already on the VPS. If they do
+# not form a pair, every push fails silently (FCM rejects, Apple/Mozilla may
+# not). Verify BEFORE anything changes.
 echo ""
-echo "[1/6] Downloading VPS data backup..."
-# Checkpoint WAL-mode SQLite DBs first so the copied .db files are
-# self-contained and consistent (committed data may otherwise live only
-# in -wal sidecars captured at a different instant)
+echo "[1/7] VAPID preflight (local public key vs VPS private pem)..."
+LOCAL_VAPID_PUB=$(grep "^VAPID_PUBLIC_KEY=" "$LOCAL_ENV" | cut -d= -f2-)
+VPS_PEM_EXISTS=$(ssh "$VPS" "[ -f $VPS_DIR/server/data/vapid_private.pem ] && echo yes || echo no")
+if [ "$VPS_PEM_EXISTS" = "no" ]; then
+    echo "  No vapid_private.pem on VPS yet — skipping (first deploy of push?)"
+else
+    VPS_VAPID_PUB=$(ssh "$VPS" "cat $VPS_DIR/server/data/vapid_private.pem" | python3 -c "
+import sys, base64
+from cryptography.hazmat.primitives.serialization import load_pem_private_key, Encoding, PublicFormat
+key = load_pem_private_key(sys.stdin.buffer.read(), password=None)
+pub = key.public_key().public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
+print(base64.urlsafe_b64encode(pub).rstrip(b'=').decode())")
+    if [ "$LOCAL_VAPID_PUB" = "$VPS_VAPID_PUB" ]; then
+        echo "  VAPID key pair verified (local public key matches VPS pem)"
+    else
+        echo "  ERROR: local VAPID_PUBLIC_KEY does not match the VPS vapid_private.pem."
+        echo "  Deploying would break every push subscription. Fix ONE of:"
+        echo "    a) put the VPS-matching public key in $LOCAL_ENV:"
+        echo "       VAPID_PUBLIC_KEY=$VPS_VAPID_PUB"
+        echo "    b) or replace the VPS pem with the local one (invalidates"
+        echo "       existing prod subscriptions):"
+        echo "       scp <local-pem> $VPS:$VPS_DIR/server/data/vapid_private.pem"
+        exit 1
+    fi
+fi
+
+# --- Step 2: Backup VPS data locally ---
+echo ""
+echo "[2/7] Downloading VPS data backup..."
+# VACUUM INTO writes a transactionally consistent snapshot of each DB even
+# under concurrent writes (no torn .db/-wal pairs, no checkpoint needed).
+# The snapshot dir then becomes both the local download AND the VPS-side
+# backup (step 3), so both backups are the same verified bytes.
 if [ "$DRY_RUN" = true ]; then
-    echo "  [DRY RUN] Would checkpoint SQLite WALs on VPS"
+    echo "  [DRY RUN] Would snapshot DBs on VPS via VACUUM INTO"
 else
     ssh "$VPS" "python3 - <<'PY'
-import glob, sqlite3
+import glob, os, shutil, sqlite3
+snap = '$VPS_DIR/server/data-snap.$TIMESTAMP'
+os.makedirs(snap, exist_ok=True)
 for db in glob.glob('$VPS_DIR/server/data/*.db'):
-    try:
-        c = sqlite3.connect(db, timeout=10)
-        c.execute('PRAGMA wal_checkpoint(TRUNCATE)')
-        c.close()
-        print('  checkpointed ' + db)
-    except Exception as e:
-        print('  WARN: checkpoint failed for %s: %s' % (db, e))
+    dest = os.path.join(snap, os.path.basename(db))
+    c = sqlite3.connect(db, timeout=10)
+    c.execute('VACUUM INTO ?', (dest,))
+    c.close()
+    print('  snapshot ' + os.path.basename(db))
+for f in glob.glob('$VPS_DIR/server/data/*.pem'):
+    shutil.copy2(f, snap)
+    print('  copied ' + os.path.basename(f))
 PY"
 fi
 run mkdir -p "$LOCAL_BACKUPS"
 run rsync -az --progress \
-    "$VPS:$VPS_DIR/server/data/" \
+    "$VPS:$VPS_DIR/server/data-snap.$TIMESTAMP/" \
     "$LOCAL_BACKUPS/$TIMESTAMP/"
 if [ "$DRY_RUN" = false ]; then
     echo "  Saved to $LOCAL_BACKUPS/$TIMESTAMP/"
@@ -186,25 +222,55 @@ if [ "$DRY_RUN" = false ]; then
         echo "  (no chat-uploads dir on VPS yet, skipping)"
 fi
 
-# --- Step 2: Backup on VPS (timestamped, keeps previous) ---
+# --- Step 3: Backup on VPS (timestamped, keeps previous) ---
 echo ""
-echo "[2/6] Creating VPS-side backup..."
-run ssh "$VPS" "cd $VPS_DIR && cp -r server/data server/data.bak.$TIMESTAMP"
-echo "  Created server/data.bak.$TIMESTAMP on VPS"
+echo "[3/7] Creating VPS-side backup..."
+run ssh "$VPS" "mv $VPS_DIR/server/data-snap.$TIMESTAMP $VPS_DIR/server/data.bak.$TIMESTAMP"
+echo "  Created server/data.bak.$TIMESTAMP on VPS (verified snapshot)"
 
-# --- Step 3: Pull latest code ---
+# --- Step 4: Pull latest code ---
 echo ""
-echo "[3/6] Pulling latest code on VPS..."
+echo "[4/7] Pulling latest code on VPS..."
 run ssh "$VPS" "cd $VPS_DIR && git pull origin main"
 
-# --- Step 4: Rebuild and restart container ---
+# --- Step 5: Seed chat.db (first chat deploy only) ---
+# Builds a clean production chat.db from the LOCAL dev database: keeps the
+# curated group rooms + chat_settings, strips all messages/users/test data,
+# and pre-creates the owner account (see server/seed_chat_db.py). Uploaded
+# ONLY when the VPS has no chat.db — this can never overwrite live prod data.
 echo ""
-echo "[4/6] Rebuilding container..."
+echo "[5/7] Chat DB seed..."
+VPS_HAS_CHATDB=$(ssh "$VPS" "[ -f $VPS_DIR/server/data/chat.db ] && echo yes || echo no")
+if [ "$VPS_HAS_CHATDB" = "yes" ]; then
+    echo "  chat.db already exists on VPS — skipping seed (live data untouched)"
+elif [ ! -f "server/data/chat.db" ]; then
+    echo "  No local chat.db to seed from — container will create a fresh one"
+else
+    SEED_EMAIL="gabrielelosurdo@gmail.com"
+    if ! grep "^CHAT_ADMIN_EMAILS=" "$LOCAL_ENV" | grep -q "$SEED_EMAIL"; then
+        echo "  WARNING: $SEED_EMAIL is not in CHAT_ADMIN_EMAILS in $LOCAL_ENV —"
+        echo "  the seeded owner account will NOT be super-admin. Ctrl-C to fix, or continuing in 10s..."
+        [ "$DRY_RUN" = true ] || sleep 10
+    fi
+    SEED_TMP=$(mktemp -d)
+    if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY RUN] Would build seed from server/data/chat.db and upload"
+    else
+        python3 server/seed_chat_db.py --out "$SEED_TMP/chat.db" --email "$SEED_EMAIL"
+        rsync -az "$SEED_TMP/chat.db" "$VPS:$VPS_DIR/server/data/chat.db"
+        echo "  Seeded chat.db uploaded to VPS"
+    fi
+    rm -rf "$SEED_TMP"
+fi
+
+# --- Step 6: Rebuild and restart container ---
+echo ""
+echo "[6/7] Rebuilding container..."
 run ssh "$VPS" "cd $VPS_DIR/server && docker compose up -d --build --force-recreate"
 
-# --- Step 5: Health check ---
+# --- Step 7: Health check ---
 echo ""
-echo "[5/6] Health check..."
+echo "[7/7] Health check..."
 if [ "$DRY_RUN" = true ]; then
     echo "  [DRY RUN] Would check container health + chat API"
 else
