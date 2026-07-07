@@ -35,6 +35,7 @@ python -m pytest tests/ -v
 ## Conventions
 
 - **No emojis** — anywhere: code, logs, comments, commit messages, generated files.
+- **No em dashes as punctuation** in any NEW text: UI copy, docs, comments, commit messages, assistant replies. Use commas, colons, periods, or parentheses instead. (Pre-existing text is left as is; do not churn old files to fix it.)
 - **Every action logs via `dbg()`** — this is a hard rule for new frontend code, not just a description of the existing calls. Any user-triggered or automated action must emit a timecoded `dbg()` line so behavior is diagnosable from the console. Output is OFF in production by default: `dbg()`/`verify()` success lines print only when `localStorage.stc_debug === '1'` (set it and reload to diagnose in the field); `verify()` failures always print.
 - **Check the port before starting a server** — `lsof -ti :<port>` first, never bind blindly. A dev server may already be running (local dev uses 64728).
 

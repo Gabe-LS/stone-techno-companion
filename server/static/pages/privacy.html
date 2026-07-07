@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#111111">
 <meta name="robots" content="noindex, nofollow">
-<title>Privacy — Stone Techno Companion</title>
+<title>Privacy · Stone Techno Companion</title>
 <link rel="stylesheet" href="/shared.css">
 <style>
   body {
@@ -44,44 +44,44 @@
 </head>
 <body>
 <h1>Privacy</h1>
-<div class="updated">Stone Techno Companion — July 2026</div>
+<div class="updated">Stone Techno Companion, July 2026</div>
 
 <p>This app is built to know as little about you as possible and to forget what it knows quickly. In plain words:</p>
 
 <h2>What we never have</h2>
 <ul>
-  <li><strong>No passwords.</strong> Sign-in is a magic link or Google — there is no password to store or leak.</li>
+  <li><strong>No passwords.</strong> Sign-in is a magic link or Google, so there is no password to store or leak.</li>
   <li><strong>No stored email address.</strong> We keep only a one-way cryptographic hash of it, enough to recognize you next time. The address itself is used to send your sign-in link and then discarded (within 15 minutes).</li>
   <li><strong>No IP logs, no request logs, no third-party trackers or ads.</strong> Usage statistics are self-hosted and anonymous.</li>
   <li><strong>No readable login tokens.</strong> Session and sign-in tokens are stored only as one-way hashes.</li>
 </ul>
 
 <h2>Direct messages</h2>
-<p><strong>DMs are end-to-end encrypted.</strong> They are encrypted on your device and can only be decrypted on your and your recipient's devices — the server stores ciphertext it cannot read, notifications show no content, and DMs are never scanned. Photos and videos inside DMs are stored on the server (not end-to-end encrypted) and auto-delete with the conversation.</p>
+<p><strong>DMs are end-to-end encrypted.</strong> They are encrypted on your device and can only be decrypted on your and your recipient's devices. The server stores ciphertext it cannot read, notifications show no content, and DMs are never scanned. Photos and videos inside DMs are stored on the server (not end-to-end encrypted) and auto-delete with the conversation.</p>
 
 <h2>Group chat</h2>
 <ul>
   <li>Messages <strong>auto-delete within 24 hours</strong> and are erased from disk, not just marked deleted.</li>
-  <li>To keep the chat safe, every group message (including photos/videos) is <strong>checked by an automated moderation service (OpenAI)</strong> before delivery. OpenAI processes it under its API terms (not used for training) — this is the one third party that sees message content, and only in group rooms.</li>
+  <li>To keep the chat safe, every group message (including photos/videos) is <strong>checked by an automated moderation service (OpenAI)</strong> before delivery. OpenAI processes it under its API terms (not used for training). This is the one third party that sees message content, and only in group rooms.</li>
   <li>If a message is reported, a snapshot of it is kept for the moderators even after the original expires.</li>
 </ul>
 
 <h2>Meetups &amp; location</h2>
 <ul>
-  <li>Sharing your location is always an explicit action — nothing tracks you in the background.</li>
+  <li>Sharing your location is always an explicit action. Nothing tracks you in the background.</li>
   <li>Meetup coordinates are rounded (~11 m) and <strong>visible only to people who joined</strong> that meetup. Everything about a meetup auto-deletes about an hour after it happens.</li>
 </ul>
 
 <h2>What we do keep</h2>
 <ul>
-  <li>Your profile: username, optional display name, country, avatar — visible to other festival-goers by design.</li>
+  <li>Your profile: username, optional display name, country, and avatar. These are visible to other festival-goers by design.</li>
   <li>Your favorites and personal schedule on the line-up page (tied to an anonymous session, not your identity).</li>
-  <li>Push notification subscriptions, if you enable them — notification content is encrypted in transit so the push services (Apple/Google/Mozilla) cannot read it.</li>
+  <li>Push notification subscriptions, if you enable them. Notification content is encrypted in transit so the push services (Apple/Google/Mozilla) cannot read it.</li>
   <li>Short-lived operational backups of the above, retained briefly for disaster recovery.</li>
 </ul>
 
 <h2>Deletion</h2>
-<p>Almost everything deletes itself. For full account deletion, ask any admin in the chat — the account, profile, avatar, messages, and push subscriptions are removed immediately; bans, if any, are retained in anonymized form.</p>
+<p>Almost everything deletes itself. For full account deletion, ask any admin in the chat: the account, profile, avatar, messages, and push subscriptions are removed immediately; bans, if any, are retained in anonymized form.</p>
 
 </body>
 </html>
