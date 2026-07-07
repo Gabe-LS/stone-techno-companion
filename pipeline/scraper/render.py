@@ -592,7 +592,9 @@ def render_output_html(
          viewport-anchored paint available). Above scrolling cells and floor
          pills, below the pinned time column, tabs, title, and bar. */
       .tt-v-scroll { overflow: visible; margin: 0; padding: 0 var(--space-md); }
-      .view-timetable .tt-v-scroll::before, .view-timetable .tt-v-scroll::after { content: ''; position: fixed; top: 0; bottom: 0; width: var(--space-md); background: var(--color-bg); z-index: 4; }
+      /* 100lvh, not bottom:0: on iOS the layout viewport ends where the
+         collapsing Safari toolbar begins, leaving the strips short */
+      .view-timetable .tt-v-scroll::before, .view-timetable .tt-v-scroll::after { content: ''; position: fixed; top: 0; height: 100vh; height: 100lvh; width: var(--space-md); background: var(--color-bg); z-index: 4; }
       .view-timetable .tt-v-scroll::before { left: 0; }
       .view-timetable .tt-v-scroll::after { right: 0; }
       .view-timetable body { width: max-content; min-width: 100%; padding-left: 0; padding-right: 0; }
