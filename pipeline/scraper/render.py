@@ -734,6 +734,9 @@ def render_output_html(
             '    <button type="button" onclick="switchView(\'timetable\', document.getElementById(\'btn-timetable\')); closeMenu()" id="dd-timetable">Timetable</button>'
         )
     parts.append(
+        '    <button type="button" onclick="dbg(\'[NAV] chat (menu)\'); window.open(\'/chat\',\'_self\')">Chat</button>'
+    )
+    parts.append(
         '    <button type="button" onclick="dbg(\'[NAV] transport (menu)\'); window.open(\'/public-transport\',\'_self\')">Transport</button>'
     )
     parts.append('    <div class="dd-divider"></div>')
