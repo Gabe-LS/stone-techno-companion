@@ -589,8 +589,11 @@ def render_output_html(
       .tt-v-scroll { overflow: visible; margin: 0; }
       .view-timetable body { width: max-content; min-width: 100%; padding-left: 0; padding-right: 0; }
       .view-timetable .cmd-bar { position: sticky; left: 0; width: 100vw; margin: 0; }
-      .view-timetable #page-title { position: sticky; left: 0; width: 100vw; padding-left: var(--space-md); padding-right: var(--space-md); }
-      .view-timetable .filter-bar { position: sticky; left: 0; width: 100vw; padding-left: var(--space-md); padding-right: var(--space-md); }
+      /* Full-bleed boxes for opacity, but the bottom rules stay inset like
+         the list view: transparent border keeps the box height, an inset
+         background line draws the visible rule. */
+      .view-timetable #page-title { position: sticky; left: 0; width: 100vw; padding-left: var(--space-md); padding-right: var(--space-md); border-bottom-color: transparent; background-image: linear-gradient(var(--color-text), var(--color-text)); background-repeat: no-repeat; background-origin: border-box; background-clip: border-box; background-size: calc(100% - 2 * var(--space-md)) 2px; background-position: var(--space-md) 100%; }
+      .view-timetable .filter-bar { position: sticky; left: 0; width: 100vw; padding-left: var(--space-md); padding-right: var(--space-md); border-bottom-color: transparent; background-image: linear-gradient(var(--color-line-hour), var(--color-line-hour)); background-repeat: no-repeat; background-origin: border-box; background-clip: border-box; background-size: calc(100% - 2 * var(--space-md)) 1px; background-position: var(--space-md) 100%; }
 
       .tt-table { border-collapse: separate; border-spacing: 0; table-layout: fixed; width: calc(40px + var(--num-floors) * 40vw); }
       .tt-table thead th { position: sticky; top: calc(var(--sticky-top-h2, 106px) + 1.5 * var(--font-lg) + 13px); z-index: 2; background: var(--color-bg); padding: var(--space-xs) 2px; text-align: center; vertical-align: top; }
