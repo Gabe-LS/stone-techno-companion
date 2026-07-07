@@ -346,14 +346,16 @@
      styles are shared: see shared.css PAGE CHROME. */
   .day-tab { flex: 1; min-width: 0; text-align: center; }
 
-  .sticky-top { top: 28px; z-index: 30; }
+  /* margin-top mirrors the lineup h1's 21px/16px gap below the bar; as a
+     margin on the sticky element it vanishes when stuck, same as the lineup */
+  .sticky-top { top: 28px; z-index: 30; margin-top: 21px; }
   .route-title { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; padding: var(--space-md) 0 var(--space-sm); border-bottom: 2px solid var(--color-text); }
   .live-indicator { color: var(--color-text); }
 
   @media (max-width: 768px) {
     body { padding: 0 var(--space-md) var(--space-xl); }
     .cmd-bar { margin-left: -12px; margin-right: -12px; }
-    .sticky-top { top: var(--header-h); }
+    .sticky-top { top: var(--header-h); margin-top: var(--space-lg); }
     .route-title { font-size: var(--font-xl); padding: var(--space-sm) 0 6px; }
   }
 </style>

@@ -270,6 +270,7 @@ def render_output_html(
         ".view-timetable #view-label::after{content:'Timetable';font-size:16px}"
         ".view-timetable #page-title{font-size:0}"
         ".view-timetable #page-title::after{content:'Timetable';font-size:var(--font-2xl)}"
+        "@media (max-width:768px){.view-timetable #page-title::after{font-size:var(--font-xl)}}"
         ".view-timetable #btn-schedule{display:inline-block!important}"
         ".view-timetable #dd-timetable{display:none}"
         ".view-timetable #dd-list{display:block}"
@@ -337,7 +338,9 @@ def render_output_html(
     /* --- Command bar --- */
 
     /* --- Sticky headings --- */
-    h1 { margin-bottom: var(--space-xl); font-size: var(--font-2xl); position: sticky; top: 28px; background: var(--color-bg); z-index: 30; padding: var(--space-md) 0 var(--space-sm); border-bottom: 2px solid #222; }
+    /* margin-top is explicit (not the em-based UA default) so the timetable
+       view's font-size:0 title trick cannot collapse it */
+    h1 { margin-top: 21px; margin-bottom: var(--space-xl); font-size: var(--font-2xl); position: sticky; top: 28px; background: var(--color-bg); z-index: 30; padding: var(--space-md) 0 var(--space-sm); border-bottom: 2px solid #222; }
     section.date-section { margin-bottom: 48px; }
     .date-section > h2 { position: sticky; top: 96px; background: var(--color-bg); z-index: 20; padding: 10px 0 var(--space-sm); margin-bottom: var(--space-sm); font-size: var(--font-xl); border-bottom: 1px solid var(--color-line-hour); }
     h3.period-heading { position: sticky; top: 150px; background: var(--color-bg); z-index: var(--z-sticky); padding: var(--space-sm) 0 6px; margin: var(--space-xl) 0 var(--space-md); font-size: var(--font-lg); color: #333; text-transform: uppercase; letter-spacing: 0.05em; }
@@ -455,7 +458,7 @@ def render_output_html(
     /* ===== MEDIA QUERIES ===== */
     @media (max-width: 480px) {
       body { padding: 0 var(--space-md); }
-      h1 { font-size: var(--font-xl); padding: var(--space-sm) 0 6px; }
+      h1 { margin-top: var(--space-lg); font-size: var(--font-xl); padding: var(--space-sm) 0 6px; }
       .date-section > h2 { font-size: var(--font-lg); padding: 6px 0; }
       h3.period-heading { font-size: var(--font-base); padding: 6px 0 var(--space-xs); margin: var(--space-lg) 0 var(--space-sm); }
       li.artist-item { gap: 10px; padding: 10px; align-items: flex-start; flex-wrap: wrap; }
