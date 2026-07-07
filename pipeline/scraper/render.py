@@ -461,7 +461,10 @@ def render_output_html(
     /* --- Filter visibility via CSS :has() --- */
     .filter-active section.date-section:not(:has(.artist-item.hearted)) { display: none; }
     .filter-active ul.artist-list:not(:has(.artist-item.hearted)) { display: none; }
-    .filter-active h4.location-heading:has(+ ul.artist-list:not(:has(.artist-item.hearted))) { display: none; }
+    /* location-heading visibility is JS-driven (updateGroupVisibility), not :has() --
+       a :has(+ ul:not(:has(...))) selector re-evaluates broadly on every heart
+       toggle; a plain class avoids that cost. */
+    .filter-active h4.location-heading.no-hearted { display: none; }
 
     /* ===== MEDIA QUERIES ===== */
     @media (max-width: 480px) {
@@ -1747,6 +1750,12 @@ def render_output_html(
     let shareToken = storageGet('stc_share_token');
     let localPicks; try { localPicks = new Set(JSON.parse(storageGet('stc_picks') || '[]')); } catch { localPicks = new Set(); storageRemove('stc_picks'); }
     let localSchedule; try { localSchedule = new Set(JSON.parse(storageGet('stc_schedule') || '[]')); } catch { localSchedule = new Set(); storageRemove('stc_schedule'); }
+    // syncedPicks/syncedSchedule mirror the last known server-confirmed state.
+    // reconcile() uses them to tell "server deleted this since we last synced"
+    // apart from "never told the server about this yet" -- without that, a
+    // stale local id would be re-POSTed after another device deleted it there.
+    let syncedPicks; try { syncedPicks = new Set(JSON.parse(storageGet('stc_synced_picks') || '[]')); } catch { syncedPicks = new Set(); storageRemove('stc_synced_picks'); }
+    let syncedSchedule; try { syncedSchedule = new Set(JSON.parse(storageGet('stc_synced_schedule') || '[]')); } catch { syncedSchedule = new Set(); storageRemove('stc_synced_schedule'); }
     let readOnly = false;
     let filterActive = false;
     let scheduleFilterActive = false;
@@ -1757,6 +1766,8 @@ def render_output_html(
     function saveLocal() {
       storageSet('stc_picks', JSON.stringify([...localPicks]));
       storageSet('stc_schedule', JSON.stringify([...localSchedule]));
+      storageSet('stc_synced_picks', JSON.stringify([...syncedPicks]));
+      storageSet('stc_synced_schedule', JSON.stringify([...syncedSchedule]));
     }
 
     function updateUI() {
@@ -1811,6 +1822,17 @@ def render_output_html(
         }
         h3.style.display = found ? '' : 'none';
       });
+      // Driven by JS + a plain class rather than a nested :has() selector
+      // (that :has() re-evaluated on every heart toggle across the whole
+      // page, even with the filter off) -- location-heading is always
+      // immediately followed by its ul.artist-list, so a direct sibling
+      // check is all that's needed.
+      document.querySelectorAll('h4.location-heading').forEach(h4 => {
+        if (!filterActive) { h4.classList.remove('no-hearted'); return; }
+        const ul = h4.nextElementSibling;
+        const hasHearted = !!(ul && ul.matches('ul.artist-list') && ul.querySelector('.artist-item.hearted'));
+        h4.classList.toggle('no-hearted', !hasHearted);
+      });
     }
 
     // Delegated event listeners for list view
@@ -1850,6 +1872,12 @@ def render_output_html(
           shareToken = data.share_token;
           storageSet('stc_session_id', sessionId);
           storageSet('stc_share_token', shareToken);
+          // syncedPicks/syncedSchedule describe the PREVIOUS session; a fresh
+          // session has no other-device deletions, so carrying them over could
+          // make reconcile() drop a local pick whose re-push below failed.
+          syncedPicks = new Set();
+          syncedSchedule = new Set();
+          saveLocal();
           connectWS(sessionId);
           for (const id of localPicks) {
             fetch(API + '/session/' + sessionId + '/pick/' + id, {method: 'POST'}).catch(() => {});
@@ -1865,6 +1893,15 @@ def render_output_html(
 
     function track(event, data) { if (typeof umami !== 'undefined') umami.track(event, data); }
 
+    // Per-id promise chains for toggleHeart/toggleSchedule: a rapid double-tap
+    // on the same artist fires two overlapping network requests (POST then
+    // DELETE, or vice versa) with no ordering guarantee between them, which
+    // can leave the server out of sync with the (instant, optimistic) UI
+    // until the next reconcile(). Chaining by id keeps each id's requests
+    // strictly sequential without delaying the optimistic UI update at all.
+    const _pickSyncChain = new Map();
+    const _scheduleSyncChain = new Map();
+
     async function toggleHeart(btn) {
       if (readOnly) return;
       const el = btn.closest('[data-artist-id]');
@@ -1878,28 +1915,39 @@ def render_output_html(
       btn.setAttribute('aria-pressed', adding);
       el.classList.toggle('hearted', adding);
       saveLocal();
+      if (filterActive) updateGroupVisibility();
 
-      await ensureSession();
-      if (!sessionId) return;
+      const run = async () => {
+        await ensureSession();
+        if (!sessionId) return;
 
-      try {
-        const method = adding ? 'POST' : 'DELETE';
-        const res = await fetch(API + '/session/' + sessionId + '/pick/' + id, {method});
-        if (res.status === 404) {
-          sessionId = null; shareToken = null;
-          storageRemove('stc_session_id');
-          storageRemove('stc_share_token');
-          await ensureSession();
-          return;
-        }
-        if (!res.ok && res.status !== 204) {
-          if (adding) localPicks.delete(id); else localPicks.add(id);
-          btn.classList.toggle('active', !adding);
-          btn.setAttribute('aria-pressed', !adding);
-          el.classList.toggle('hearted', !adding);
-          saveLocal();
-        }
-      } catch (e) { dbg('toggleHeart sync failed', e.message); }
+        try {
+          const method = adding ? 'POST' : 'DELETE';
+          const res = await fetch(API + '/session/' + sessionId + '/pick/' + id, {method});
+          if (res.status === 404) {
+            sessionId = null; shareToken = null;
+            storageRemove('stc_session_id');
+            storageRemove('stc_share_token');
+            await ensureSession();
+            return;
+          }
+          if (!res.ok && res.status !== 204) {
+            if (adding) localPicks.delete(id); else localPicks.add(id);
+            btn.classList.toggle('active', !adding);
+            btn.setAttribute('aria-pressed', !adding);
+            el.classList.toggle('hearted', !adding);
+            saveLocal();
+            if (filterActive) updateGroupVisibility();
+          } else {
+            if (adding) syncedPicks.add(id); else syncedPicks.delete(id);
+            saveLocal();
+          }
+        } catch (e) { dbg('toggleHeart sync failed', e.message); }
+      };
+      const prev = _pickSyncChain.get(id) || Promise.resolve();
+      const chained = prev.then(run);
+      _pickSyncChain.set(id, chained);
+      await chained;
     }
 
     async function toggleSchedule(btn) {
@@ -1916,27 +1964,36 @@ def render_output_html(
       el.classList.toggle('scheduled', adding);
       saveLocal();
 
-      await ensureSession();
-      if (!sessionId) return;
+      const run = async () => {
+        await ensureSession();
+        if (!sessionId) return;
 
-      try {
-        const method = adding ? 'POST' : 'DELETE';
-        const res = await fetch(API + '/session/' + sessionId + '/schedule/' + id, {method});
-        if (res.status === 404) {
-          sessionId = null; shareToken = null;
-          storageRemove('stc_session_id');
-          storageRemove('stc_share_token');
-          await ensureSession();
-          return;
-        }
-        if (!res.ok && res.status !== 204) {
-          if (adding) localSchedule.delete(id); else localSchedule.add(id);
-          btn.classList.toggle('active', !adding);
-          btn.setAttribute('aria-pressed', !adding);
-          el.classList.toggle('scheduled', !adding);
-          saveLocal();
-        }
-      } catch (e) { dbg('toggleSchedule sync failed', e.message); }
+        try {
+          const method = adding ? 'POST' : 'DELETE';
+          const res = await fetch(API + '/session/' + sessionId + '/schedule/' + id, {method});
+          if (res.status === 404) {
+            sessionId = null; shareToken = null;
+            storageRemove('stc_session_id');
+            storageRemove('stc_share_token');
+            await ensureSession();
+            return;
+          }
+          if (!res.ok && res.status !== 204) {
+            if (adding) localSchedule.delete(id); else localSchedule.add(id);
+            btn.classList.toggle('active', !adding);
+            btn.setAttribute('aria-pressed', !adding);
+            el.classList.toggle('scheduled', !adding);
+            saveLocal();
+          } else {
+            if (adding) syncedSchedule.add(id); else syncedSchedule.delete(id);
+            saveLocal();
+          }
+        } catch (e) { dbg('toggleSchedule sync failed', e.message); }
+      };
+      const prev = _scheduleSyncChain.get(id) || Promise.resolve();
+      const chained = prev.then(run);
+      _scheduleSyncChain.set(id, chained);
+      await chained;
     }
 
     async function loadFromServer(code) {
@@ -1945,7 +2002,9 @@ def render_output_html(
         if (!res.ok) return;
         const data = await res.json();
         localPicks = new Set(data.picks);
+        syncedPicks = new Set(data.picks);
         if (data.schedule) localSchedule = new Set(data.schedule);
+        if (data.schedule) syncedSchedule = new Set(data.schedule);
         readOnly = data.readonly;
         if (!readOnly) {
           sessionId = data.session_id || null;
@@ -1984,15 +2043,31 @@ def render_output_html(
         const serverPicks = new Set(data.picks);
         const serverSchedule = new Set(data.schedule || []);
         const syncs = [];
+        // A local id absent from the server is either a genuinely new offline
+        // pick (never synced -- push it) or one this device previously synced
+        // that another device has since deleted server-side (missed WS
+        // broadcast -- drop it locally instead of resurrecting it with a
+        // re-POST). syncedPicks/syncedSchedule (the last known server-
+        // confirmed state) is what tells the two cases apart.
+        const pushedPicks = [];
         for (const id of localPicks) {
-          if (!serverPicks.has(id)) syncs.push(fetch(API + '/session/' + sessionId + '/pick/' + id, {method: 'POST'}).catch(() => {}));
+          if (serverPicks.has(id)) continue;
+          if (syncedPicks.has(id)) { localPicks.delete(id); continue; }
+          pushedPicks.push(id);
+          syncs.push(fetch(API + '/session/' + sessionId + '/pick/' + id, {method: 'POST'}).catch(() => {}));
         }
+        const pushedSchedule = [];
         for (const id of localSchedule) {
-          if (!serverSchedule.has(id)) syncs.push(fetch(API + '/session/' + sessionId + '/schedule/' + id, {method: 'POST'}).catch(() => {}));
+          if (serverSchedule.has(id)) continue;
+          if (syncedSchedule.has(id)) { localSchedule.delete(id); continue; }
+          pushedSchedule.push(id);
+          syncs.push(fetch(API + '/session/' + sessionId + '/schedule/' + id, {method: 'POST'}).catch(() => {}));
         }
         await Promise.all(syncs);
         for (const id of serverPicks) localPicks.add(id);
         for (const id of serverSchedule) localSchedule.add(id);
+        syncedPicks = new Set([...serverPicks, ...pushedPicks]);
+        syncedSchedule = new Set([...serverSchedule, ...pushedSchedule]);
         saveLocal();
         applyHearts();
       } catch (e) { dbg('reconcile failed', e.message); }
@@ -2018,7 +2093,9 @@ def render_output_html(
           }
           if (data.picks) {
             localPicks = new Set(data.picks);
+            syncedPicks = new Set(data.picks);
             if (data.schedule) localSchedule = new Set(data.schedule);
+            if (data.schedule) syncedSchedule = new Set(data.schedule);
             saveLocal();
             applyHearts();
             if (data.readonly !== undefined) {
@@ -2227,7 +2304,9 @@ def render_output_html(
         if (!res.ok) return;
         const data = await res.json();
         localPicks = new Set(data.picks);
+        syncedPicks = new Set(data.picks);
         if (data.schedule) localSchedule = new Set(data.schedule);
+        if (data.schedule) syncedSchedule = new Set(data.schedule);
         readOnly = data.readonly;
         if (!readOnly) {
           sessionId = data.session_id || null;
@@ -2752,7 +2831,9 @@ def render_output_html(
           if (res.ok) {
             const data = await res.json();
             localPicks = new Set(data.picks);
+            syncedPicks = new Set(data.picks);
             if (data.schedule) localSchedule = new Set(data.schedule);
+            if (data.schedule) syncedSchedule = new Set(data.schedule);
             sessionId = data.session_id;
             shareToken = data.share_token;
             storageSet('stc_session_id', sessionId);
