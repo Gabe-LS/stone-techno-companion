@@ -1,0 +1,25 @@
+services:
+  stc-monitor:
+    build: .
+    container_name: stc-monitor
+    restart: unless-stopped
+    environment:
+      # Festival timezone: keeps the transport departures probe querying the
+      # correct local date/time.
+      TZ: Europe/Berlin
+      # Hourly at minute 0, same cadence as the Mac cron. Override if needed.
+      CRON_SCHEDULE: "0 * * * *"
+    volumes:
+      # The monitor script, copied next to this compose file (see README).
+      # Mounted read-only so updating it never needs an image rebuild.
+      - ./monitor.sh:/app/monitor.sh:ro
+      # SSH key dir (id_ed25519 + optional config/known_hosts). Read-only;
+      # the entrypoint copies keys inside with ssh-safe permissions.
+      - ./ssh:/keys:ro
+      # Monitor log (self-rotated by monitor.sh at ~512 KB).
+      - ./logs:/app/logs
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "3"
