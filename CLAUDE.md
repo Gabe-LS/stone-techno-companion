@@ -208,7 +208,7 @@ Supported link fields: `instagram`, `soundcloud`, `spotify`, `linktree`, `youtub
 Toggled via the command bar. Appears automatically when artists have `start_time`/`end_time` in `schedule`.
 
 - **Desktop**: CSS grid with sticky floor headers and time labels
-- **Mobile**: HTML `<table>` with native scroll, sticky `<thead>`, `table-layout: fixed`, dynamic `--row-h` (10px or 14px based on artist density)
+- **Mobile**: HTML `<table>`, `table-layout: fixed`, dynamic `--row-h` (10px or 14px based on artist density). The DOCUMENT scrolls both axes (no inner scroller): the chrome (bar, title, day tabs) compacts and pins like the list view, the floor-name `<thead>` pins below it, and the time column pins left; `body { width: max-content }` plus `sticky left: 0` on the chrome keeps it viewport-fixed during horizontal panning
 - **Scroll position**: saved per view — switching between lineup and timetable restores where you were
 - **Popup → Bio**: clicking artist name/photo in the timetable popup closes it and opens the bio modal
 - **B2B sets**: multiple artists in same time slot render as one card with per-artist hearts
