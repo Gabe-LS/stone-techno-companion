@@ -340,7 +340,10 @@ def render_output_html(
 
     /* --- Sticky headings --- */
     /* margin-top is explicit (not the em-based UA default) so the timetable
-       view's font-size:0 title trick cannot collapse it */
+       view's font-size:0 title trick cannot collapse it. The ::before strip
+       keeps that margin band opaque while the h1 travels to its pin, so
+       scrolling content never shows through the header area. */
+    h1::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: 21px; background: var(--color-bg); }
     h1 { margin-top: 21px; margin-bottom: var(--space-xl); font-size: var(--font-2xl); position: sticky; top: var(--sticky-top-h1, 28px); background: var(--color-bg); z-index: 30; padding: var(--space-md) 0 var(--space-sm); border-bottom: 2px solid #222; }
     section.date-section { margin-bottom: 48px; }
     .date-section > h2 { position: sticky; top: var(--sticky-top-h2, 96px); background: var(--color-bg); z-index: 20; padding: 10px 0 var(--space-sm); margin-bottom: var(--space-sm); font-size: var(--font-xl); border-bottom: 1px solid var(--color-line-hour); }
@@ -460,6 +463,7 @@ def render_output_html(
     @media (max-width: 480px) {
       body { padding: 0 var(--space-md); }
       h1 { margin-top: var(--space-lg); font-size: var(--font-xl); padding: var(--space-sm) 0 6px; }
+      h1::before { height: var(--space-lg); }
       .date-section > h2 { font-size: var(--font-lg); padding: 6px 0; }
       h3.period-heading { font-size: var(--font-base); padding: 6px 0 var(--space-xs); margin: var(--space-lg) 0 var(--space-sm); }
       li.artist-item { gap: 10px; padding: 10px; align-items: flex-start; flex-wrap: wrap; }
@@ -485,6 +489,7 @@ def render_output_html(
     /* --- Timetable view --- */
 
     /* Filter bar */
+    .filter-bar::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: var(--space-sm); background: var(--color-bg); }
     /* min-height mirrors the date h2 box (1.5 line-height x its font + same padding/border) so both sticky bars are equal-height */
     .filter-bar { position: sticky; top: var(--sticky-top-h2, 98px); z-index: 20; background: var(--color-bg); display: flex; align-items: center; justify-content: space-between; padding: 10px 0 var(--space-sm); margin: 0.83em 0 var(--space-sm); gap: var(--space-sm); border-bottom: 1px solid var(--color-line-hour); min-height: calc(1.5 * var(--font-xl) + 19px); }
 
@@ -555,7 +560,7 @@ def render_output_html(
 
     /* Tablet (768px) */
     @media (max-width: 768px) {
-      html, body { overscroll-behavior-y: none; }
+      html, body { overscroll-behavior: none; }
       .floor-header > span:first-child { font-size: var(--font-xs); padding: 6px 2px; }
       .tt-block { font-size: var(--font-xs); padding: 6px 7px; margin: 2px; gap: 5px; }
     }
@@ -607,6 +612,7 @@ def render_output_html(
       .tt-table .tt-block { position: absolute; top: 1.5px; left: 1px; right: 1px; bottom: 2.5px; }
 
       .filter-bar { padding: 6px 0; margin: 0 0 var(--space-xs); min-height: calc(1.5 * var(--font-lg) + 13px); }
+      .filter-bar::after { height: var(--space-xs); }
 
       .tt-popup { width: calc(100vw - var(--space-xl)); max-width: none; left: var(--space-md) !important; }
       .tt-popup .popup-photo, .tt-popup .popup-photo-placeholder { width: 64px; height: 64px; }
