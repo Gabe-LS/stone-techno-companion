@@ -84,6 +84,35 @@ for path in /shared.css /sw.js /manifest.json; do
     [ "$code" = "200" ] && ok "static $path (200)" || fail "static $path (HTTP $code)"
 done
 
+# Chat WebSocket route must be reachable THROUGH the proxy. An unauthenticated
+# probe gets 101 (accepted then closed) or 400/403 from the app — all prove the
+# upgrade path works. 404/5xx means Caddy or the app is not routing WS.
+ws_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 \
+    -H "Connection: Upgrade" -H "Upgrade: websocket" \
+    -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+    "$SITE/ws/chat/monitor-probe" || echo "000")
+case "$ws_code" in
+    101|400|403) ok "chat WebSocket upgrade path ($ws_code)" ;;
+    *)           fail "chat WebSocket upgrade path (HTTP $ws_code)" ;;
+esac
+
+# Lineup data endpoints: bios lazy-load + favorites API (hearts.db path)
+bios_ok=$(curl -s --max-time 15 "$SITE/bios.json" | python3 -c "import json,sys; json.load(sys.stdin); print('yes')" 2>/dev/null || echo no)
+[ "$bios_ok" = "yes" ] && ok "bios.json (valid JSON)" || fail "bios.json (not valid JSON)"
+me_ok=$(curl -s --max-time 15 "$SITE/api/me" | python3 -c "import json,sys; json.load(sys.stdin); print('yes')" 2>/dev/null || echo no)
+[ "$me_ok" = "yes" ] && ok "favorites API /api/me (valid JSON)" || fail "favorites API /api/me (not valid JSON)"
+
+# Meetup map POIs (MapTiler dataset -> server-side fetch -> JSON list)
+pois_ok=$(curl -s --max-time 15 "$SITE/chat/api/pois" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+print('yes' if isinstance(d, list) and len(d) > 0 else 'empty')" 2>/dev/null || echo no)
+case "$pois_ok" in
+    yes)   ok "meetup POIs (non-empty list)" ;;
+    empty) warn "meetup POIs (empty list — MapTiler down with cold cache?)" ;;
+    *)     fail "meetup POIs (not valid JSON)" ;;
+esac
+
 # TLS expiry — Caddy renews ~30 days out, so <21 days means renewal is failing
 expiry=$(echo | openssl s_client -servername "$HOST" -connect "$HOST:443" 2>/dev/null \
     | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
@@ -117,6 +146,24 @@ cores=\$(nproc)
 uploads_mb=\$(du -sm $VPS_DIR/server/chat-uploads 2>/dev/null | cut -f1)
 uploads_mb=\${uploads_mb:-0}
 errors_1h=\$(docker logs --since 1h stone-techno 2>&1 | grep -cE 'ERROR|CRITICAL|Traceback' || true)
+vapid_ok=\$(docker logs stone-techno 2>&1 | grep -c 'VAPID key pair verified' || true)
+mod=\$(docker exec stone-techno python3 - <<'PYMOD' 2>/dev/null
+import os
+k = os.environ.get('OPENAI_API_KEY')
+if not k:
+    print('nokey')
+else:
+    import httpx
+    try:
+        r = httpx.post('https://api.openai.com/v1/moderations',
+                       json={'model': 'omni-moderation-latest', 'input': 'ping'},
+                       headers={'Authorization': 'Bearer ' + k}, timeout=10)
+        print('ok' if r.status_code == 200 else 'http%d' % r.status_code)
+    except Exception:
+        print('err')
+PYMOD
+)
+mod=\${mod:-execfail}
 dbcheck=\$(python3 - <<'PY'
 import glob, sqlite3
 bad = []
@@ -132,7 +179,7 @@ for db in glob.glob('$VPS_DIR/server/data/*.db'):
 print(','.join(bad) if bad else 'ok')
 PY
 )
-echo "health=\$health restarts=\$restarts disk=\$disk mem_avail=\$mem_avail load1=\$load1 cores=\$cores uploads_mb=\$uploads_mb errors_1h=\$errors_1h dbcheck=\$dbcheck"
+echo "health=\$health restarts=\$restarts disk=\$disk mem_avail=\$mem_avail load1=\$load1 cores=\$cores uploads_mb=\$uploads_mb errors_1h=\$errors_1h dbcheck=\$dbcheck vapid_ok=\$vapid_ok mod=\$mod"
 EOF
 )
 
@@ -160,6 +207,20 @@ else
     esac
 
     [ "$dbcheck" = "ok" ] && ok "DB integrity (quick_check)" || fail "DB integrity: $dbcheck"
+
+    # Startup log line proves the push signing key pair is consistent. WARN not
+    # FAIL when absent: the line can rotate out of capped logs under traffic.
+    if [ "$vapid_ok" -ge 1 ] 2>/dev/null; then ok "VAPID key pair verified (startup log)"
+    else warn "VAPID verified line not in container logs (rotated out, or key check failed — verify manually)"; fi
+
+    # Moderation FAILS CLOSED: if OpenAI is unreachable, every message in
+    # moderated rooms is rejected while everything else looks green.
+    case "$mod" in
+        ok)       ok "moderation API reachable from container" ;;
+        nokey)    fail "OPENAI_API_KEY not set in container — moderated rooms are word-filter only" ;;
+        execfail) fail "moderation check could not run in container (old image or python/httpx missing)" ;;
+        *)        fail "moderation API unreachable from container ($mod) — sends in moderated rooms are being rejected" ;;
+    esac
 
     if [ "$errors_1h" -gt 20 ]; then warn "container log errors last hour: $errors_1h"
     elif [ "$errors_1h" -gt 0 ]; then warn "container log errors last hour: $errors_1h (docker logs --since 1h stone-techno)"
