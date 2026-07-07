@@ -335,8 +335,6 @@ def render_output_html(
     /* ===== COMPONENTS ===== */
 
     /* --- Command bar --- */
-    .cmd-group { display: flex; align-items: stretch; }
-    .cmd-sep { width: 1px; background: #444; margin: 6px var(--space-lg); }
 
     /* --- Sticky headings --- */
     h1 { margin-bottom: var(--space-xl); font-size: var(--font-2xl); position: sticky; top: 28px; background: var(--color-bg); z-index: 30; padding: var(--space-md) 0 var(--space-sm); border-bottom: 2px solid #222; }
