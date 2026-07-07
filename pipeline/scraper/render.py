@@ -383,8 +383,8 @@ def render_output_html(
     .filter-active .tt-block:not(.hearted):not(:has(.tt-artist-row.hearted)) { opacity: 0.15; }
 
     /* --- Bio overlay --- */
-    .modal-box.bio-box { background: var(--color-bg); border-radius: var(--radius-modal); padding: 0; width: 480px; max-width: 100%; color: var(--color-text); box-shadow: var(--shadow-modal); max-height: 80vh; overflow: hidden; text-align: left; }
-    .bio-scroll { max-height: 80vh; overflow-y: auto; padding: var(--space-xl); -webkit-overflow-scrolling: touch; }
+    .modal-box.bio-box { background: var(--color-bg); border-radius: var(--radius-modal); padding: 0; width: 480px; max-width: 100%; color: var(--color-text); box-shadow: var(--shadow-modal); max-height: 80vh; max-height: 80dvh; overflow: hidden; text-align: left; }
+    .bio-scroll { max-height: 80vh; max-height: 80dvh; overflow-y: auto; padding: var(--space-xl); -webkit-overflow-scrolling: touch; }
     .bio-header { display: flex; gap: var(--space-lg); align-items: flex-start; margin-bottom: var(--space-lg); }
     .bio-photo { width: 128px; height: 128px; border-radius: var(--radius-card); object-fit: cover; flex-shrink: 0; }
     .bio-photo-placeholder { width: 128px; height: 128px; border-radius: var(--radius-card); background: var(--color-surface-hover); flex-shrink: 0; }
@@ -1703,8 +1703,9 @@ def render_output_html(
       }, {threshold: 0}).observe(s);
     });
     function placeFadeSentinels() {
-      _fadePairs.forEach(([el, s]) => {
-        s.style.top = '-' + (parseFloat(getComputedStyle(el).top) || 0) + 'px';
+      const tops = _fadePairs.map(([el]) => parseFloat(getComputedStyle(el).top) || 0);
+      _fadePairs.forEach(([, s], i) => {
+        s.style.top = '-' + tops[i] + 'px';
       });
     }
     placeFadeSentinels();
@@ -2489,7 +2490,7 @@ def render_output_html(
       const mobileTT = window.matchMedia('(max-width: 768px)').matches;
       if (prevPanel && mobileTT) {
         const pv = _ttScroller(prevPanel);
-        _savedScrollTop[prevPanel.dataset.period] = pv
+        _savedScrollTop[prevPanel.dataset.date + '|' + prevPanel.dataset.period] = pv
           ? { top: pv.scrollTop, left: pv.scrollLeft }
           : { top: window.scrollY, left: window.scrollX };
       }
@@ -2497,7 +2498,7 @@ def render_output_html(
       const id = 'panel-' + date + '-' + period;
       const panel = document.getElementById(id);
       if (panel) panel.classList.add('active');
-      const saved = _carryScroll || _savedScrollTop[period] || { top: 0, left: 0 };
+      const saved = _carryScroll || _savedScrollTop[date + '|' + period] || { top: 0, left: 0 };
       _carryScroll = null;
       requestAnimationFrame(() => {
         truncateNames();
@@ -2847,7 +2848,11 @@ def render_output_html(
       root.setProperty('--sticky-top-h4', (barH + h1H + h2H + h3H) + 'px');
     }
     setStickyTops();
-    window.addEventListener('resize', function() { setStickyTops(); placeFadeSentinels(); });
+    var _stickyResizeRaf = 0;
+    window.addEventListener('resize', function() {
+      cancelAnimationFrame(_stickyResizeRaf);
+      _stickyResizeRaf = requestAnimationFrame(function() { setStickyTops(); placeFadeSentinels(); });
+    });
     document.body.style.opacity = '1';
     """)
     parts.append("  </script>")
