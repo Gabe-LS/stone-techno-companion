@@ -586,12 +586,9 @@ def render_output_html(
          the pinned chrome runs out of travel room near max scrollX and gets
          dragged left, and the 12px padding gutters let content show through.
          The chrome is true full-bleed (100vw) with its padding internal. */
-      /* The table is inset 12px each side like the header rules; fixed white
-         gutter strips keep those bands opaque while cells scroll beneath. */
+      /* The table is inset 12px each side (aligned with the header rules at
+         the scroll extremes); while panning, cells run edge to edge. */
       .tt-v-scroll { overflow: visible; margin: 0; padding: 0 var(--space-md); }
-      .view-timetable .tt-v-scroll::before, .view-timetable .tt-v-scroll::after { content: ''; position: fixed; top: 0; bottom: 0; width: var(--space-md); background: var(--color-bg); z-index: 4; }
-      .view-timetable .tt-v-scroll::before { left: 0; }
-      .view-timetable .tt-v-scroll::after { right: 0; }
       .view-timetable body { width: max-content; min-width: 100%; padding-left: 0; padding-right: 0; }
       .view-timetable .cmd-bar { position: sticky; left: 0; width: 100vw; margin: 0; }
       /* Full-bleed boxes for opacity, but the bottom rules stay inset like
@@ -602,11 +599,11 @@ def render_output_html(
 
       .tt-table { border-collapse: separate; border-spacing: 0; table-layout: fixed; width: calc(40px + var(--num-floors) * 40vw); }
       .tt-table thead th { position: sticky; top: calc(var(--sticky-top-h2, 106px) + 1.5 * var(--font-lg) + 13px); z-index: 2; background: var(--color-bg); padding: var(--space-xs) 2px; text-align: center; vertical-align: top; }
-      .tt-table thead th:first-child { left: var(--space-md); z-index: 3; background: var(--color-bg); width: 40px; min-width: 40px; }
+      .tt-table thead th:first-child { left: 0; z-index: 3; background: var(--color-bg); width: 40px; min-width: 40px; }
       .tt-floor-th > span:first-child { display: block; padding: 6px 10px; border-radius: var(--radius-pill); font-size: var(--font-xs); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0 3px; }
       .tt-floor-th .floor-curator { display: block; font-size: var(--font-xs); padding: 1px 0 2px; margin: 0; }
       /* Floor colors for mobile table — generated dynamically */
-      .tt-table tbody td.tt-time-td { position: sticky; left: var(--space-md); z-index: 1; background: var(--color-bg); font-size: var(--font-xs); color: var(--color-muted-icon); text-align: right; padding: 0 6px 0 0; vertical-align: top; width: 40px; min-width: 40px; line-height: var(--row-h); overflow: hidden; }
+      .tt-table tbody td.tt-time-td { position: sticky; left: 0; z-index: 1; background: var(--color-bg); font-size: var(--font-xs); color: var(--color-muted-icon); text-align: right; padding: 0 6px 0 0; vertical-align: top; width: 40px; min-width: 40px; line-height: var(--row-h); overflow: hidden; }
       .tt-table tbody td.tt-line-hour, .tt-table tbody td.tt-line-half { vertical-align: middle; }
       .tt-table tbody td { vertical-align: top; padding: 0; }
       .tt-table tbody td:not(.tt-time-td) { width: 40vw; min-width: 40vw; position: relative; }
