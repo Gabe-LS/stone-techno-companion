@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#111111">
 <link rel="stylesheet" href="/shared.css">
 <script src="/shared.js"></script>
@@ -58,7 +58,7 @@
     background: var(--color-bg);
     color: var(--color-text);
     line-height: 1.4;
-    padding: env(safe-area-inset-top) var(--space-4) var(--space-5);
+    padding: 0 var(--space-4) var(--space-5);
     min-height: 100dvh;
     -webkit-font-smoothing: antialiased;
   }
@@ -72,31 +72,9 @@
     padding: 0 var(--space-4) var(--space-3);
   }
 
-  header {
-    background: var(--color-accent);
-    color: #fff;
-    padding: var(--space-4);
-    margin: 0 calc(-1 * var(--space-4));
-  }
 
-  .header-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
 
-  .header-route {
-    font-size: var(--font-header);
-    font-weight: 700;
-    letter-spacing: -0.02em;
-  }
 
-  .header-info {
-    font-size: var(--font-sm);
-    opacity: 0.6;
-    margin-top: var(--space-1);
-    font-weight: 400;
-  }
 
   .live-indicator {
     display: none;
@@ -386,7 +364,7 @@
 </style>
 <style>
   /* App navigation bar: identical to the lineup/timetable pages */
-  .cmd-bar { position: sticky; top: 0; z-index: var(--z-header); background: var(--gray-900); color: #fff; display: flex; align-items: stretch; justify-content: space-between; height: 28px; font-size: var(--font-xs); padding: 0 var(--space-lg); }
+  .cmd-bar { position: sticky; top: 0; z-index: var(--z-header); background: var(--gray-900); color: #fff; display: flex; align-items: stretch; justify-content: space-between; height: 28px; font-size: var(--font-xs); padding: 0 var(--space-lg); margin: 0 calc(-1 * var(--space-4)); }
   .cmd-bar button { background: none; color: #aaa; border: none; padding: 0 var(--space-lg); font-size: var(--font-xs); white-space: nowrap; text-align: center; transition: color var(--transition-fast); letter-spacing: 0.03em; text-transform: uppercase; cursor: pointer; font-family: var(--font-family); }
   .cmd-bar .hamburger { color: #fff; }
   .cmd-bar button.active { color: #fff; }
@@ -395,7 +373,15 @@
   @media (hover: hover) { .cmd-bar button:not(.hamburger):hover { color: #fff; } }
   .view-label { display: none; }
   .cmd-dropdown { display: none; }
-  .sticky-top { top: 28px; }
+
+  /* Sticky block: route title + walk banner + day tabs pin together below the
+     nav bar, with the lineup-style fade gradient underneath when stuck */
+  .sticky-top { top: 28px; z-index: 30; }
+  .sticky-top::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 36px; background: linear-gradient(to bottom, rgba(248,248,248,1) 0%, rgba(248,248,248,0.9) 20%, rgba(248,248,248,0.75) 35%, rgba(248,248,248,0.5) 55%, rgba(248,248,248,0.15) 78%, rgba(248,248,248,0) 100%); pointer-events: none; opacity: 0; transition: opacity 0.15s; }
+  .sticky-top.stuck::after { opacity: 1; }
+  .route-title { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; padding: 12px 0 8px; border-bottom: 2px solid #222; }
+  .live-indicator { color: var(--color-text); }
+
   @media (max-width: 768px) {
     .cmd-bar { height: var(--header-h); -webkit-tap-highlight-color: transparent; }
     .cmd-bar .cmd-group { display: none; }
@@ -406,7 +392,11 @@
     .cmd-dropdown.open { display: flex; }
     .cmd-dropdown button { background: none; color: #fff; border: none; border-bottom: 1px solid var(--gray-700); padding: 10px var(--space-lg) 10px var(--space-xl); font-size: 13px; font-weight: 600; font-family: var(--font-family); text-align: left; line-height: 1.5; -webkit-tap-highlight-color: transparent; cursor: pointer; }
     .cmd-dropdown button:active { background: var(--gray-800); }
+
+    /* The header is the menu: the route is its second, dark line */
     .sticky-top { top: var(--header-h); }
+    .route-title { background: var(--gray-900); color: #fff; margin: 0 calc(-1 * var(--space-4)); padding: 2px var(--space-4) 12px; font-size: var(--font-lg); font-weight: 600; letter-spacing: 0; border-bottom: none; }
+    .live-indicator { color: #fff; }
   }
 </style>
 </head>
@@ -444,21 +434,26 @@
     document.getElementById('cmd-dropdown').classList.remove('open');
     document.getElementById('menu-overlay').classList.remove('open');
   }
+  window.addEventListener('DOMContentLoaded', function () {
+    var el = document.querySelector('.sticky-top');
+    var top = parseFloat(getComputedStyle(el).top) || 0;
+    var sentinel = document.createElement('div');
+    sentinel.style.cssText = 'height:0;width:0;pointer-events:none;visibility:hidden;position:relative;top:-' + top + 'px';
+    el.parentNode.insertBefore(sentinel, el);
+    new IntersectionObserver(function (entries) {
+      el.classList.toggle('stuck', entries[0].intersectionRatio === 0);
+    }, { threshold: 0 }).observe(sentinel);
+  });
 </script>
 
 <div class="sticky-top">
-  <header>
-    <div class="header-top">
-      <div>
-        <div class="header-route">Zollverein → Essen Hbf</div>
-        <div class="header-info">Tram 107 &amp; NachtExpress NE2</div>
-      </div>
-      <div id="live-indicator" class="live-indicator">
-        <div class="live-label"><span class="live-dot"></span><span>LIVE</span></div>
-        <div id="live-updated" class="live-updated"></div>
-      </div>
+  <div class="route-title">
+    <span>Zollverein → Essen Hbf</span>
+    <div id="live-indicator" class="live-indicator">
+      <div class="live-label"><span class="live-dot"></span><span>LIVE</span></div>
+      <div id="live-updated" class="live-updated"></div>
     </div>
-  </header>
+  </div>
   <div id="location-banner" class="location-banner">
     <span class="location-text">Walk time unknown</span>
     <button id="locate-btn" type="button">Locate me</button>

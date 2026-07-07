@@ -710,6 +710,9 @@ def render_output_html(
     parts.append(
         '      <button type="button" onmousedown="this.blur()" onclick="window.open(\'/chat\',\'_self\')">Chat</button>'
     )
+    parts.append(
+        '      <button type="button" onmousedown="this.blur()" onclick="dbg(\'[NAV] transport (cmd-bar)\'); window.open(\'/public-transport\',\'_self\')">Transport</button>'
+    )
     if has_timetable:
         parts.append('      <span class="cmd-sep"></span>')
     parts.append(
@@ -721,9 +724,6 @@ def render_output_html(
         )
     parts.append("    </div>")
     parts.append('    <div class="cmd-group cmd-group-right">')
-    parts.append(
-        '      <button type="button" onmousedown="this.blur()" onclick="dbg(\'[NAV] transport (cmd-bar)\'); window.open(\'/public-transport\',\'_self\')">Transport</button>'
-    )
     parts.append(
         '      <button type="button" onmousedown="this.blur()" onclick="openShareModal()">Share</button>'
     )
