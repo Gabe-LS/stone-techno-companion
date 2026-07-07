@@ -579,24 +579,71 @@ def render_output_html(
       .timetable { display: none !important; }
       .tt-table-wrap { display: block !important; min-height: 300px; }
 
-      /* The DOCUMENT is the only scroller (both axes): the chrome compacts
-         and pins exactly like the list view, and the floor row / time column
-         stick against the page. Body side padding is zeroed in this view so
-         the sticky containing block spans the full scroll extent: otherwise
-         the pinned chrome runs out of travel room near max scrollX and gets
-         dragged left, and the 12px padding gutters let content show through.
-         The chrome is true full-bleed (100vw) with its padding internal. */
-      .tt-v-scroll { overflow: visible; margin: 0; }
-      .view-timetable body { width: max-content; min-width: 100%; padding-left: 0; padding-right: 0; }
-      .view-timetable .cmd-bar { position: sticky; left: 0; width: 100vw; margin: 0; }
-      /* Full-bleed boxes for opacity, but the bottom rules stay inset like
-         the list view: transparent border keeps the box height, an inset
-         background line draws the visible rule. */
-      .view-timetable #page-title { position: sticky; left: 0; width: 100vw; padding-left: var(--space-md); padding-right: var(--space-md); border-bottom-color: transparent; background-image: linear-gradient(var(--color-text), var(--color-text)); background-repeat: no-repeat; background-origin: border-box; background-clip: border-box; background-size: calc(100% - 2 * var(--space-md)) 2px; background-position: var(--space-md) 100%; }
-      .view-timetable .filter-bar { position: sticky; left: 0; width: 100vw; padding-left: var(--space-md); padding-right: var(--space-md); border-bottom-color: transparent; background-image: linear-gradient(var(--color-line-hour), var(--color-line-hour)); background-repeat: no-repeat; background-origin: border-box; background-clip: border-box; background-size: calc(100% - 2 * var(--space-md)) 1px; background-position: var(--space-md) 100%; }
+      /* Trimmed layout, CSS only: the page is a fixed flex column of
+         100dvh, and dvh tracks Safari's collapsing toolbar, so the page
+         always ends exactly at the toolbar's top and nothing ever paints
+         behind it. Document scrolling is impossible (overflow: hidden),
+         so the chrome physically cannot move and nothing can unpin. The
+         only scrolling surface is the per-panel .tt-v-scroll (both
+         axes); the floor row and time column stick against it, which is
+         the device-proven original design. The 12px side inset comes
+         from the body's own padding: the scroller's box is inset by it,
+         and an overflow box clips its content at its edge, so the inset
+         persists while panning with no gutter overlays. */
+      /* overflow: clip on the ROOT element (not just body): clip on the
+         root makes the viewport non-scrollable even programmatically,
+         while body's clip propagated to the viewport still allows
+         script scrolling (a stray 4px of overflow would let the page
+         shift and misalign the trimmed layout). */
+      .view-timetable { overflow: hidden; overflow: clip; }
+      .view-timetable body { height: 100vh; height: 100dvh; overflow: hidden; overflow: clip; display: flex; flex-direction: column; }
+      .view-timetable main { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+      .view-timetable #timetable-view { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+      .view-timetable .timetable-panel.active { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+      .view-timetable .tt-table-wrap { flex: 1 1 auto; min-height: 0; }
+      /* Chrome rows must never be squeezed: without flex: none they are
+         shrinkable flex items, and the panel's huge intrinsic content
+         height makes the shrink distribution compress them (the title
+         rendered 25px tall against 50px of content). Only the panel and
+         the containers above it may flex. */
+      .view-timetable body > :not(main), .view-timetable main > :not(#timetable-view), .view-timetable #timetable-view > :not(.timetable-panel), .view-timetable .timetable-panel.active > :not(.tt-table-wrap) { flex: none; }
+      /* Document-sticky chrome is meaningless in a non-scrolling page and
+         actively harmful: body { overflow: hidden } makes body the
+         scrollport, and the sticky top offsets (--sticky-top-*) push the
+         tabs DOWN once the collapsing title raises their flow position
+         above the threshold, opening a gap that overlaps the panel. */
+      .view-timetable .cmd-bar, .view-timetable #page-title, .view-timetable .filter-bar { position: static; }
+      /* The tabs' scroll-fade is for the sticky list-view bar; with the
+         filter-bar static its absolutely positioned fade escapes body's
+         clip (containing block = the root) and adds 4px of document
+         overflow, enough for a programmatic scroll to shift the page. */
+      .view-timetable .filter-bar::after { display: none; }
+      .tt-v-scroll { height: 100%; overflow: auto; scrollbar-width: none; -ms-overflow-style: none; overscroll-behavior: none; }
+      .tt-v-scroll::-webkit-scrollbar { display: none; }
+
+      /* Title compaction, CSS only, mirroring the list view: there the
+         headings never disappear, they scroll up until they pin under
+         the bar (only the whitespace above them compacts). Here a named
+         scroll timeline on the active panel's scroller slides the title
+         snug against the bar by compacting its top margin over the same
+         number of scrolled pixels (1:1, so it feels like real page
+         scroll), then it stays pinned, full size, rule and all.
+         timeline-scope on body makes the scroller's timeline reachable
+         from the title, which sits outside the scroller; only the ACTIVE
+         panel declares the timeline, so the name never has conflicting
+         owners. Safari without scroll-driven animations keeps a static
+         title. */
+      @supports (animation-timeline: scroll()) {
+        .view-timetable body { timeline-scope: --tt-vscroll; }
+        .view-timetable .timetable-panel.active .tt-v-scroll { scroll-timeline: --tt-vscroll block; }
+        .view-timetable #page-title { animation: tt-title-compact linear both; animation-timeline: --tt-vscroll; animation-range: 0px 16px; }
+      }
+      @keyframes tt-title-compact {
+        to { margin-top: 0; }
+      }
 
       .tt-table { border-collapse: separate; border-spacing: 0; table-layout: fixed; width: calc(40px + var(--num-floors) * 40vw); }
-      .tt-table thead th { position: sticky; top: calc(var(--sticky-top-h2, 106px) + 1.5 * var(--font-lg) + 13px); z-index: 2; background: var(--color-bg); padding: var(--space-xs) 2px; text-align: center; vertical-align: top; }
+      .tt-table thead th { position: sticky; top: 0; z-index: 2; background: var(--color-bg); padding: var(--space-xs) 2px; text-align: center; vertical-align: top; }
       .tt-table thead th:first-child { left: 0; z-index: 3; background: var(--color-bg); width: 40px; min-width: 40px; }
       .tt-floor-th > span:first-child { display: block; padding: 6px 10px; border-radius: var(--radius-pill); font-size: var(--font-xs); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0 3px; }
       .tt-floor-th .floor-curator { display: block; font-size: var(--font-xs); padding: 1px 0 2px; margin: 0; }
@@ -2426,11 +2473,21 @@ def render_output_html(
 
     let _savedScrollTop = {};
     let _carryScroll = null;
+    // On phones the panel's .tt-v-scroll is the scroller (the trimmed
+    // layout never scrolls the document); tablets scroll the document
+    // under the desktop grid. _ttScroller resolves the right target.
+    function _ttScroller(panel) {
+      if (!window.matchMedia('(max-width: 480px)').matches) return null;
+      return panel ? panel.querySelector('.tt-v-scroll') : null;
+    }
     function showPanel(date, period) {
       const prevPanel = document.querySelector('.timetable-panel.active');
       const mobileTT = window.matchMedia('(max-width: 768px)').matches;
       if (prevPanel && mobileTT) {
-        _savedScrollTop[prevPanel.dataset.period] = { top: window.scrollY, left: window.scrollX };
+        const pv = _ttScroller(prevPanel);
+        _savedScrollTop[prevPanel.dataset.period] = pv
+          ? { top: pv.scrollTop, left: pv.scrollLeft }
+          : { top: window.scrollY, left: window.scrollX };
       }
       document.querySelectorAll('.timetable-panel').forEach(p => p.classList.remove('active'));
       const id = 'panel-' + date + '-' + period;
@@ -2440,7 +2497,11 @@ def render_output_html(
       _carryScroll = null;
       requestAnimationFrame(() => {
         truncateNames();
-        if (mobileTT) window.scrollTo(saved.left, saved.top);
+        if (mobileTT) {
+          const nv = _ttScroller(panel);
+          if (nv) { nv.scrollTop = saved.top; nv.scrollLeft = saved.left; }
+          else window.scrollTo(saved.left, saved.top);
+        }
       });
       updateNowLine();
     }
@@ -2487,7 +2548,10 @@ def render_output_html(
     function switchDay(date, btn) {
       track('day-switch', {day: btn.textContent.trim()});
       const sameDay = date === currentDate;
-      _carryScroll = sameDay ? {top: 0, left: 0} : {top: window.scrollY, left: window.scrollX};
+      const pv = _ttScroller(document.querySelector('.timetable-panel.active'));
+      _carryScroll = sameDay ? {top: 0, left: 0}
+        : pv ? {top: pv.scrollTop, left: pv.scrollLeft}
+        : {top: window.scrollY, left: window.scrollX};
       currentDate = date;
       document.querySelectorAll('.day-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
