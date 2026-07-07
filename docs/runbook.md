@@ -35,8 +35,25 @@ Note: a failed chat module import crashes the server at startup **by design** (f
 
 ## Rollback / restore
 
-- **Code rollback**: `git revert <bad-commit>` locally, push, run `./deploy.sh`. The script backs up VPS data before changing anything and health-checks after.
-- **Backups**: the VPS keeps 5 timestamped backups; every `deploy.sh` run also downloads `server/data/` + `chat-uploads/` to local `backups/{timestamp}/` (each `.db` verified with `PRAGMA quick_check`).
+- **Fast code rollback** (~2 min, use this when a deploy goes bad):
+
+  ```bash
+  ./deploy.sh --rollback <known-good-commit>
+  ```
+
+  Resets the VPS worktree to that commit, rebuilds the container, and health-checks it (container only — the target may predate the chat API). Code only: data and `.env` are untouched. Manual equivalent:
+
+  ```bash
+  ssh root@209.38.244.136
+  cd /root/services/stone-techno
+  git reset --hard <known-good-commit>
+  cd server && docker compose up -d --build --force-recreate
+  ```
+
+  Known-good reference point: `868fda0` is the June 30 lineup-only build that ran in production until the first chat deploy (July 2026). Rolling back to it loses chat entirely but restores a proven-stable lineup site.
+
+- **Slow path** (when the bad commit should also leave history): `git revert <bad-commit>` locally, push, run `./deploy.sh` — full backups + chat health check included.
+- **Backups**: the VPS keeps 5 timestamped backups (`server/data.bak.*`); every `deploy.sh` run also downloads `server/data/` + `chat-uploads/` to local `backups/{timestamp}/` (each `.db` verified with `PRAGMA quick_check`).
 - **DB restore**: stop the container, replace `server/data/chat.db` (or `hearts.db`) with the backup copy, delete any stale `-wal`/`-shm` files next to it, start the container.
 - **.env restore**: `deploy.sh` keeps `.env.bak.{timestamp}` beside the live `.env` on the VPS.
 

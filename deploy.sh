@@ -4,6 +4,9 @@ set -euo pipefail
 # Stone Techno Companion — deploy script
 # Deploys server code to VPS with timestamped backup + local copy
 # Usage: ./deploy.sh [--dry-run]
+#        ./deploy.sh --rollback <commit>   # reset VPS code to <commit> + rebuild
+#                                          # (code only — data/.env restore stays
+#                                          # manual, see docs/runbook.md)
 
 cd "$(dirname "$0")"
 
@@ -13,6 +16,50 @@ LOCAL_BACKUPS="backups"
 LOCAL_ENV="server/.env"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 DRY_RUN=false
+
+check_container_health() {
+    # Sets STATUS. Waits up to ~35s for the healthcheck to settle.
+    sleep 5
+    STATUS=$(ssh "$VPS" "docker inspect stone-techno --format '{{.State.Health.Status}}' 2>/dev/null || echo 'unknown'")
+    if [ "$STATUS" != "healthy" ]; then
+        echo "  Container: $STATUS (waiting 30s...)"
+        sleep 30
+        STATUS=$(ssh "$VPS" "docker inspect stone-techno --format '{{.State.Health.Status}}' 2>/dev/null || echo 'unknown'")
+    fi
+    echo "  Container: $STATUS"
+}
+
+if [ "${1:-}" = "--rollback" ]; then
+    TARGET="${2:-}"
+    if [ -z "$TARGET" ]; then
+        echo "Usage: ./deploy.sh --rollback <commit>"
+        exit 1
+    fi
+    echo "=== Stone Techno Rollback -> $TARGET ==="
+    echo ""
+    echo "[1/3] Verifying commit exists on VPS..."
+    if ! ssh "$VPS" "cd $VPS_DIR && git rev-parse --verify --quiet $TARGET^{commit}" >/dev/null; then
+        echo "  ERROR: commit '$TARGET' not found in the VPS repo"
+        exit 1
+    fi
+    echo "[2/3] Resetting VPS worktree and rebuilding container..."
+    ssh "$VPS" "cd $VPS_DIR && git reset --hard $TARGET"
+    ssh "$VPS" "cd $VPS_DIR/server && docker compose up -d --build --force-recreate"
+    echo "[3/3] Health check (container only — target commit may predate the chat API)..."
+    check_container_health
+    if [ "$STATUS" != "healthy" ]; then
+        echo "  ERROR: container not healthy after rollback ($STATUS)."
+        echo "  Check: ssh $VPS 'docker logs stone-techno --tail 100'"
+        exit 1
+    fi
+    echo ""
+    echo "=== Rollback complete (code only) ==="
+    echo "If data or .env were damaged, restore manually on the VPS:"
+    echo "  cp -r $VPS_DIR/server/data.bak.<timestamp>/. $VPS_DIR/server/data/"
+    echo "  cp $VPS_DIR/server/.env.bak.<timestamp> $VPS_DIR/server/.env"
+    echo "(then docker compose restart; see docs/runbook.md)"
+    exit 0
+fi
 
 if [ "${1:-}" = "--dry-run" ]; then
     DRY_RUN=true
@@ -161,20 +208,12 @@ echo "[5/6] Health check..."
 if [ "$DRY_RUN" = true ]; then
     echo "  [DRY RUN] Would check container health + chat API"
 else
-    sleep 5
-    STATUS=$(ssh "$VPS" "docker inspect stone-techno --format '{{.State.Health.Status}}' 2>/dev/null || echo 'unknown'")
-    if [ "$STATUS" = "healthy" ]; then
-        echo "  Container: healthy"
-    else
-        echo "  Container: $STATUS (waiting 30s...)"
-        sleep 30
-        STATUS=$(ssh "$VPS" "docker inspect stone-techno --format '{{.State.Health.Status}}' 2>/dev/null || echo 'unknown'")
-        echo "  Container: $STATUS"
-    fi
+    check_container_health
     if [ "$STATUS" != "healthy" ]; then
         echo "  ERROR: container not healthy after deploy ($STATUS)."
         echo "  Previous data backup is at $LOCAL_BACKUPS/$TIMESTAMP/ and on the VPS."
-        echo "  Investigate (docker logs stone-techno) or roll back before retrying."
+        echo "  Investigate (docker logs stone-techno) or roll back:"
+        echo "    ./deploy.sh --rollback <previous-commit>"
         exit 1
     fi
 
