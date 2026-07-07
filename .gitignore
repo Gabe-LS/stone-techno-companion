@@ -29,7 +29,7 @@ server/chat-uploads/
 server/chat/tmp/
 server/static/bios.json
 server/static/index.html
-server/static/photos/
+server/static/photos
 server/static/thumbs
 server/static/timetable.json
 
