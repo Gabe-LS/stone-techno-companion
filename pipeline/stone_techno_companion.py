@@ -76,6 +76,15 @@ def deploy_to_vps(output_dir: Path, output_path: Path) -> None:
         thumbs_src = output_dir / "thumbs"
         if thumbs_src.is_dir():
             shutil.copytree(thumbs_src, staging_path / "thumbs")
+        # Normalize staging permissions before syncing: the staging dir is a
+        # mkdtemp (mode 700), and rsync -a copies that mode onto the VPS
+        # static dir itself, locking out the container's non-root appuser
+        # (every static route 500s). Dirs must be world-traversable (755) and
+        # files world-readable (644). Done here in Python because macOS ships
+        # openrsync, which does not support --chmod=D755,F644.
+        staging_path.chmod(0o755)
+        for p in staging_path.rglob("*"):
+            p.chmod(0o755 if p.is_dir() else 0o644)
         # No global --delete: the VPS static dir is the git worktree's
         # server/static, which also holds tracked assets not staged here —
         # a mirror sync would delete them and break the next git pull.
