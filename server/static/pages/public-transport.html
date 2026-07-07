@@ -95,12 +95,12 @@
   }
 
   .location-banner {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
+    background: var(--gray-50);
+    border: 1px solid var(--color-surface-hover);
     border-radius: var(--radius-md);
-    padding: var(--space-sm) var(--space-lg);
+    padding: var(--space-md);
     margin-top: var(--space-md);
-    font-size: var(--font-xs);
+    font-size: var(--font-sm);
     color: var(--color-text);
     display: flex;
     align-items: center;
@@ -173,25 +173,19 @@
   .day-panel { display: none; }
   .day-panel[aria-hidden="false"] { display: block; }
 
-  .dep-list {
-    list-style: none;
-    border: 1px solid var(--color-surface-hover);
-    border-radius: var(--radius-md);
-    overflow: clip;
-  }
+  .dep-list { list-style: none; padding: 0; margin: 0; }
 
+  /* Exact clone of the lineup's li.artist-item card */
   .dep-item {
     display: flex;
     align-items: center;
-    gap: var(--space-md);
-    padding: var(--space-md) var(--space-lg);
+    gap: var(--space-lg);
+    padding: var(--space-md);
+    margin-bottom: var(--space-sm);
     background: var(--gray-50);
-    border-bottom: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-surface-hover);
   }
-
-  .dep-item:first-child { border-radius: var(--radius-md) var(--radius-md) 0 0; }
-  .dep-item:last-child { border-bottom: none; border-radius: 0 0 var(--radius-md) var(--radius-md); }
-  .dep-item:only-child { border-radius: var(--radius-md); }
 
   .dep-item.is-past { color: var(--gray-500); }
   .dep-item.is-past .dep-time { color: var(--gray-500); }
@@ -203,8 +197,7 @@
 
   .dep-item.is-next {
     background: var(--transport-next-bg);
-    border-left: 3px solid var(--transport-next-border);
-    padding-left: calc(var(--space-lg) - 3px);
+    border-color: var(--transport-next-border);
   }
 
   .dep-item.is-next .dep-time { color: var(--transport-next-text); font-weight: 700; }
@@ -228,11 +221,12 @@
   }
 
   .dep-time {
-    font-size: var(--font-sm);
-    font-weight: 600;
+    font-size: var(--font-lg);
+    font-weight: 700;
     font-variant-numeric: tabular-nums;
     color: var(--color-text);
   }
+  @media (max-width: 768px) { .dep-time { font-size: var(--font-base); } }
 
   .dep-time-scheduled {
     font-size: var(--font-xs);
@@ -289,7 +283,7 @@
 
   .dep-dest {
     font-size: var(--font-sm);
-    color: var(--color-text-secondary);
+    color: var(--color-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -380,8 +374,7 @@
 
     /* The header is the menu: the route is its second, dark line */
     .sticky-top { top: var(--header-h); }
-    .route-title { background: var(--gray-900); color: #fff; margin: 0 calc(-1 * var(--space-lg)); padding: 2px var(--space-lg) 12px; font-size: var(--font-lg); font-weight: 600; letter-spacing: 0; border-bottom: none; }
-    .live-indicator { color: #fff; }
+    .route-title { font-size: var(--font-xl); padding: var(--space-sm) 0 6px; }
   }
 </style>
 </head>
