@@ -23,7 +23,6 @@
     --color-ontime: var(--color-success);
     --color-live-dot: var(--color-success);
     --color-canceled-bg: #fef2f2;
-    --fade-gradient: linear-gradient(to bottom, rgba(255,255,255,1) 0%, rgba(255,255,255,0.9) 20%, rgba(255,255,255,0.75) 35%, rgba(255,255,255,0.5) 55%, rgba(255,255,255,0.15) 78%, rgba(255,255,255,0) 100%);
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -38,7 +37,9 @@
     font-family: var(--font-family);
     background: var(--color-bg);
     color: var(--color-text);
-    padding: 0 var(--space-lg) var(--space-xl);
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 0 var(--space-xl) var(--space-xl);
     min-height: 100dvh;
   }
 
@@ -47,8 +48,7 @@
     top: 0;
     z-index: 10;
     background: var(--color-bg);
-    margin: 0 calc(-1 * var(--space-lg));
-    padding: 0 var(--space-lg) var(--space-md);
+    padding-bottom: var(--space-md);
   }
 
 
@@ -342,37 +342,17 @@
   }
 </style>
 <style>
-  /* App navigation bar: identical to the lineup/timetable pages */
-  .cmd-bar { position: sticky; top: 0; z-index: var(--z-header); background: var(--gray-900); color: #fff; display: flex; align-items: stretch; justify-content: space-between; height: 28px; font-size: var(--font-xs); padding: 0 var(--space-lg); margin: 0 calc(-1 * var(--space-lg)); }
-  .cmd-bar button { background: none; color: #aaa; border: none; padding: 0 var(--space-lg); font-size: var(--font-xs); white-space: nowrap; text-align: center; transition: color var(--transition-fast); letter-spacing: 0.03em; text-transform: uppercase; cursor: pointer; font-family: var(--font-family); }
-  .cmd-bar .hamburger { color: #fff; }
-  .cmd-bar button.active { color: #fff; }
-  .cmd-bar button:focus:not(:focus-visible) { outline: none; }
-  .cmd-bar button:focus-visible { outline: 1px solid #fff; outline-offset: -2px; }
-  @media (hover: hover) { .cmd-bar button:not(.hamburger):hover { color: #fff; } }
-  .view-label { display: none; }
-  .cmd-dropdown { display: none; }
+  /* Page-specific layout only. The command bar, dropdown, day-tab, and fade
+     styles are shared: see shared.css PAGE CHROME. */
+  .day-tab { flex: 1; min-width: 0; text-align: center; }
 
-  /* Sticky block: route title + walk banner + day tabs pin together below the
-     nav bar, with the lineup-style fade gradient underneath when stuck */
   .sticky-top { top: 28px; z-index: 30; }
-  .sticky-top::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 36px; background: var(--fade-gradient); pointer-events: none; opacity: 0; transition: opacity var(--transition-fast); }
-  .sticky-top.stuck::after { opacity: 1; }
   .route-title { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; padding: var(--space-md) 0 var(--space-sm); border-bottom: 2px solid var(--color-text); }
   .live-indicator { color: var(--color-text); }
 
   @media (max-width: 768px) {
-    .cmd-bar { height: var(--header-h); -webkit-tap-highlight-color: transparent; }
-    .cmd-bar .cmd-group { display: none; }
-    .cmd-bar .view-label { color: #fff; font-size: var(--font-base); font-weight: 600; letter-spacing: 0.02em; display: flex; align-items: center; height: 100%; padding-left: 40px; }
-    .nav-icon { display: flex; }
-    .hamburger { display: flex; }
-    .cmd-dropdown { position: fixed; top: var(--header-h); left: 0; right: 0; z-index: var(--z-menu); background: var(--gray-900); flex-direction: column; box-shadow: var(--shadow-modal); }
-    .cmd-dropdown.open { display: flex; }
-    .cmd-dropdown button { background: none; color: #fff; border: none; border-bottom: 1px solid var(--gray-700); padding: 10px var(--space-lg) 10px var(--space-xl); font-size: 13px; font-weight: 600; font-family: var(--font-family); text-align: left; line-height: 1.5; -webkit-tap-highlight-color: transparent; cursor: pointer; }
-    .cmd-dropdown button:active { background: var(--gray-800); }
-
-    /* The header is the menu: the route is its second, dark line */
+    body { padding: 0 var(--space-md) var(--space-xl); }
+    .cmd-bar { margin-left: -12px; margin-right: -12px; }
     .sticky-top { top: var(--header-h); }
     .route-title { font-size: var(--font-xl); padding: var(--space-sm) 0 6px; }
   }
@@ -388,13 +368,25 @@
     <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] timetable'); location.href='/timetable'">Timetable</button>
     <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] chat'); location.href='/chat'">Chat</button>
     <button type="button" class="active">Transport</button>
+    <span class="cmd-sep"></span>
+    <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] picks'); location.href='/line-up?action=picks'">Show My Picks</button>
+    <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] schedule'); location.href='/timetable?action=schedule'" style="display:none">Show My Schedule</button>
+  </div>
+  <div class="cmd-group cmd-group-right">
+    <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] share'); location.href='/line-up?action=share'">Share</button>
+    <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] sync'); location.href='/line-up?action=sync'">Sync</button>
+    <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] notifications'); location.href='/line-up?action=notifications'" aria-label="Notifications"><svg width="14" height="14" style="position:relative;top:1px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>
   </div>
   <button type="button" class="hamburger" onclick="toggleMenu()" aria-label="Menu"></button>
 </nav>
 <div class="cmd-dropdown" id="cmd-dropdown">
   <button type="button" onclick="dbg('[NAV] lineup (menu)'); location.href='/line-up'">Line-up</button>
   <button type="button" onclick="dbg('[NAV] timetable (menu)'); location.href='/timetable'">Timetable</button>
-  <button type="button" onclick="dbg('[NAV] chat (menu)'); location.href='/chat'">Chat</button>
+  <button type="button" onclick="dbg('[NAV] picks (menu)'); location.href='/line-up?action=picks'">Show My Picks</button>
+  <button type="button" onclick="dbg('[NAV] schedule (menu)'); location.href='/timetable?action=schedule'" style="display:none">Show My Schedule</button>
+  <button type="button" onclick="dbg('[NAV] share (menu)'); location.href='/line-up?action=share'">Share</button>
+  <button type="button" onclick="dbg('[NAV] sync (menu)'); location.href='/line-up?action=sync'">Sync</button>
+  <button type="button" onclick="dbg('[NAV] notifications (menu)'); location.href='/line-up?action=notifications'">Notifications</button>
   <button type="button" class="active" onclick="closeMenu()">Transport</button>
 </div>
 <div class="menu-overlay" id="menu-overlay" onclick="closeMenu()"></div>
@@ -424,7 +416,7 @@
   });
 </script>
 
-<div class="sticky-top">
+<div class="sticky-top fade-after">
   <div class="route-title">
     <span>Zollverein → Essen Hbf</span>
     <div id="live-indicator" class="live-indicator">

@@ -325,7 +325,6 @@ def render_output_html(
       --color-line-half: #e8e8e8;
       --radius-card: var(--radius-md);
       --radius-modal: 14px;
-      --fade-gradient: linear-gradient(to bottom, rgba(255,255,255,1) 0%, rgba(255,255,255,0.9) 20%, rgba(255,255,255,0.75) 35%, rgba(255,255,255,0.5) 55%, rgba(255,255,255,0.15) 78%, rgba(255,255,255,0) 100%);
     }
 
     /* ===== BASE OVERRIDES ===== */
@@ -336,23 +335,14 @@ def render_output_html(
     /* ===== COMPONENTS ===== */
 
     /* --- Command bar --- */
-    .cmd-bar { position: sticky; top: 0; z-index: var(--z-header); background: var(--gray-900); color: #fff; display: flex; align-items: stretch; justify-content: space-between; height: 28px; font-size: var(--font-xs); padding: 0 var(--space-lg); }
     .cmd-group { display: flex; align-items: stretch; }
-    .cmd-bar button { background: none; color: #aaa; border: none; padding: 0 var(--space-lg); font-size: var(--font-xs); white-space: nowrap; text-align: center; transition: color var(--transition-fast); letter-spacing: 0.03em; text-transform: uppercase; cursor: pointer; }
-    .cmd-bar .hamburger { color: #fff; }
-    .cmd-bar button:focus:not(:focus-visible) { outline: none; }
-    .cmd-bar button:focus-visible { outline: 1px solid #fff; outline-offset: -2px; }
-    .cmd-bar button.active { color: #fff; }
     .cmd-sep { width: 1px; background: #444; margin: 6px var(--space-lg); }
-    @media (hover: hover) { .cmd-bar button:not(.hamburger):hover { color: #fff; } }
 
     /* --- Sticky headings --- */
     h1 { margin-bottom: var(--space-xl); font-size: var(--font-2xl); position: sticky; top: 28px; background: var(--color-bg); z-index: 30; padding: var(--space-md) 0 var(--space-sm); border-bottom: 2px solid #222; }
     section.date-section { margin-bottom: 48px; }
     .date-section > h2 { position: sticky; top: 96px; background: var(--color-bg); z-index: 20; padding: 10px 0 var(--space-sm); margin-bottom: var(--space-sm); font-size: var(--font-xl); border-bottom: 1px solid var(--color-line-hour); }
     h3.period-heading { position: sticky; top: 150px; background: var(--color-bg); z-index: var(--z-sticky); padding: var(--space-sm) 0 6px; margin: var(--space-xl) 0 var(--space-md); font-size: var(--font-lg); color: #333; text-transform: uppercase; letter-spacing: 0.05em; }
-    .fade-after::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 36px; background: var(--fade-gradient); pointer-events: none; opacity: 0; transition: opacity var(--transition-fast); }
-    .fade-after.stuck::after { opacity: 1; }
     h4.location-heading { position: sticky; top: 190px; background: var(--color-bg); z-index: var(--z-sticky); font-size: var(--font-base); padding: 6px 0 var(--space-xs); margin: var(--space-lg) 0 var(--space-sm); color: #555; border-bottom: 1px solid var(--color-surface-hover); }
     h4.location-heading small { font-weight: normal; color: var(--color-muted); }
 
@@ -458,8 +448,6 @@ def render_output_html(
     .pin-real { position: absolute; inset: 0; opacity: 0; font-size: var(--font-base); width: 100%; height: 100%; border: none; padding: 0; margin: 0; -webkit-tap-highlight-color: transparent; }
 
     /* --- Desktop-hidden elements --- */
-    .view-label { display: none; }
-    .cmd-dropdown { display: none; }
 
     /* --- Filter visibility via CSS :has() --- */
     .filter-active section.date-section:not(:has(.artist-item.hearted)) { display: none; }
@@ -496,11 +484,6 @@ def render_output_html(
 
     /* Filter bar */
     .filter-bar { position: sticky; top: 98px; z-index: 20; background: var(--color-bg); display: flex; align-items: center; justify-content: space-between; padding: 10px 0 var(--space-sm); margin: 0.83em 0 var(--space-sm); gap: var(--space-sm); border-bottom: 1px solid var(--color-line-hour); }
-    .day-tabs, .period-tabs { display: flex; gap: 2px; }
-    .day-tab, .period-tab { padding: 7px 14px; border: 1px solid #ddd; border-radius: 6px; background: var(--color-surface); color: var(--color-text); font-size: var(--font-sm); font-weight: 600; transition: background var(--transition-fast), border-color var(--transition-fast); cursor: pointer; }
-    .day-tab.active { background: var(--color-text); color: var(--color-bg); border-color: var(--color-text); }
-    .period-tab.active { background: #333; color: var(--color-bg); border-color: #333; }
-    @media (hover: hover) { .day-tab:hover:not(.active), .period-tab:hover:not(.active) { background: var(--color-surface-hover); } }
 
     /* Floor headers */
     .floor-header-bar { display: grid; position: sticky; top: 148px; z-index: var(--z-sticky); background: var(--color-bg); padding: var(--space-sm) 0 6px; margin: var(--space-xl) 0 var(--space-md); align-items: start; }
@@ -570,27 +553,15 @@ def render_output_html(
     @media (max-width: 768px) {
       .floor-header > span:first-child { font-size: var(--font-xs); padding: 6px 2px; }
       .tt-block { font-size: var(--font-xs); padding: 6px 7px; margin: 2px; gap: 5px; }
-      .day-tab { padding: 6px 10px; font-size: var(--font-xs); }
     }
 
     /* Mobile timetable (480px) */
     @media (max-width: 480px) {
       h1 { margin-bottom: 0; }
 
-      .cmd-bar { height: var(--header-h); padding: 0 var(--space-lg); margin-left: -12px; margin-right: -12px; -webkit-tap-highlight-color: transparent; }
-      .cmd-bar .cmd-group { display: none; }
-      .cmd-bar .cmd-group-right { display: none !important; }
-      .cmd-sep { display: none; }
-      .cmd-bar .view-label { color: #fff; font-size: var(--font-base); font-weight: 600; letter-spacing: 0.02em; display: flex; align-items: center; height: 100%; padding-left: 40px; }
+      .cmd-bar { margin-left: -12px; margin-right: -12px; }
 
-      .nav-icon { display: flex; }
-      .hamburger { display: flex; }
 
-      .cmd-dropdown { position: fixed; top: var(--header-h); left: 0; right: 0; z-index: var(--z-menu); background: var(--gray-900); flex-direction: column; box-shadow: var(--shadow-modal); }
-      .cmd-dropdown.open { display: flex; }
-      .cmd-dropdown button { background: none; color: #fff; border: none; border-bottom: 1px solid var(--gray-700); padding: 10px var(--space-lg) 10px var(--space-xl); font-size: 13px; font-weight: 600; font-family: var(--font-family); text-align: left; line-height: 1.5; -webkit-tap-highlight-color: transparent; cursor: pointer; }
-      .cmd-dropdown button:active { background: var(--gray-800); }
-      .cmd-dropdown button.active { font-weight: 600; }
 
       .tt-photo, .tt-photo-placeholder { width: 30px; height: 30px; border-radius: var(--radius-sm); }
 
@@ -626,7 +597,6 @@ def render_output_html(
       .tt-table .tt-block { position: absolute; top: 1.5px; left: 1px; right: 1px; bottom: 2.5px; }
 
       .filter-bar { padding: 6px 0; margin: 0 0 var(--space-xs); top: 100px; }
-      .day-tab, .period-tab { padding: 5px 10px; font-size: var(--font-xs); }
 
       .tt-popup { width: calc(100vw - var(--space-xl)); max-width: none; left: var(--space-md) !important; }
       .tt-popup .popup-photo, .tt-popup .popup-photo-placeholder { width: 64px; height: 64px; }
@@ -1593,6 +1563,8 @@ def render_output_html(
     // Immediate view restore before anything renders
     (function() {
       var pathView = location.pathname === '/timetable' ? 'timetable' : location.pathname === '/line-up' ? 'list' : null;
+      // Captured before the view router strips the query string below
+      window.__deepAction = new URLSearchParams(location.search).get('action');
       var vp = pathView || new URLSearchParams(location.search).get('view');
       var v = vp || storageGet('stc_view');
       history.replaceState(null, '', v === 'timetable' ? '/timetable' : '/line-up');
@@ -1644,6 +1616,28 @@ def render_output_html(
         el.classList.toggle('stuck', e.intersectionRatio === 0);
       }, {threshold: 0}).observe(s);
     });
+
+    // Deep-linked actions from the identical command bars on other pages.
+    // The action param is captured before the view router strips the query.
+    (function () {
+      const run = {
+        picks: () => toggleFilter(document.getElementById('btn-filter')),
+        schedule: () => { const b = document.getElementById('btn-schedule'); if (b) toggleScheduleFilter(b); },
+        share: () => openShareModal(),
+        sync: () => openSyncModal(),
+        notifications: () => toggleNotifications(),
+      }[window.__deepAction];
+      if (!run) return;
+      // Wait for init to finish (it reveals the body and loads session state
+      // like shareToken) so the action sees the same state as a manual click.
+      let tries = 0;
+      const t = setInterval(() => {
+        if (document.body.style.opacity === '1' || ++tries > 30) {
+          clearInterval(t);
+          setTimeout(run, 100);
+        }
+      }, 100);
+    })();
 
     // Hearts
     const API = '/api';
