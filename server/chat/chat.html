@@ -349,6 +349,8 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
   .member-tabs button.active { color: var(--color-text); font-weight: 600; border-bottom-color: var(--color-text); }
   .member-list-items { flex: 1; overflow-y: auto; scrollbar-width: none; }
   .member-list-items::-webkit-scrollbar { display: none; }
+  .member-list-footer { flex-shrink: 0; padding: var(--space-sm) var(--space-lg); font-size: var(--font-xs); color: var(--color-muted); text-decoration: none; text-align: center; border-top: 1px solid var(--color-border); }
+  @media (hover: hover) { .member-list-footer:hover { color: var(--color-text); } }
   .member-item { display: flex; align-items: center; gap: var(--space-sm); padding: 0 var(--space-lg); height: 40px; cursor: pointer; }
   .member-item .avatar-sm { width: 26px; height: 26px; font-size: 11px; }
   .member-item:hover { background: var(--color-surface); }
@@ -375,6 +377,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
   .chat-menu::-webkit-scrollbar { display: none; }
   .chat-menu.open { display: flex; }
   .menu-section { background: none; color: #ccc; border: none; border-top: 1px solid var(--gray-700); padding: 14px var(--space-lg); font-size: 15px; text-align: left; font-family: inherit; display: flex; align-items: center; gap: var(--space-sm); width: 100%; font-weight: 600; cursor: pointer; }
+  .menu-footer { display: block; color: var(--gray-500); border-top: 1px solid var(--gray-700); padding: 14px var(--space-lg); font-size: var(--font-xs); text-decoration: none; }
   .menu-section .menu-arrow { margin-left: auto; width: 16px; height: 16px; flex-shrink: 0; }
   .menu-section .arrow-down { display: none; }
   .menu-section .arrow-right { display: block; }
@@ -1830,7 +1833,8 @@ function renderMemberList() {
     <button class="${memberTab === 'online' ? 'active' : ''}" onclick="switchMemberTab(this,'online')">Online</button>
     <button class="${memberTab === 'offline' ? 'active' : ''}" onclick="switchMemberTab(this,'offline')">Offline</button>
   </div>`;
-  el.innerHTML = tabsHtml + '<div class="member-list-items" id="member-items"></div>';
+  el.innerHTML = tabsHtml + '<div class="member-list-items" id="member-items"></div>'
+    + '<a class="member-list-footer" href="/privacy" onclick="dbg(\'[NAV] privacy footer (desktop)\')">Privacy</a>';
   renderMemberItems();
 }
 
@@ -2831,6 +2835,7 @@ function _renderChatMenuHtml() {
       <div class="menu-items" id="menu-online"></div>
       <button class="menu-section" onclick="toggleMenuSection('offline')">Offline <span class="menu-arrow"><svg class="arrow-right" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"/></svg><svg class="arrow-down" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M4.43057 8.51192C4.70014 8.19743 5.17361 8.161 5.48811 8.43057L12 14.0122L18.5119 8.43057C18.8264 8.16101 19.2999 8.19743 19.5695 8.51192C19.839 8.82642 19.8026 9.29989 19.4881 9.56946L12.4881 15.5695C12.2072 15.8102 11.7928 15.8102 11.5119 15.5695L4.51192 9.56946C4.19743 9.29989 4.161 8.82641 4.43057 8.51192Z"/></svg></span></button>
       <div class="menu-items" id="menu-offline"></div>
+      <a class="menu-footer" href="/privacy" onclick="dbg('[NAV] privacy footer (mobile menu)')">Privacy</a>
     </div>
     <div class="menu-overlay" id="menu-overlay" onclick="closeChatMenu()"></div>`;
 }

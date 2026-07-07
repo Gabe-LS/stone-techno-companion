@@ -86,7 +86,7 @@ except Exception:
     print('no')" 2>/dev/null || echo "no")
 [ "$cfg_ok" = "yes" ] && ok "chat API config (valid JSON)" || fail "chat API config (not valid JSON — chat down or not deployed)"
 
-for path in /shared.css /sw.js /manifest.json; do
+for path in /shared.css /sw.js /manifest.json /privacy; do
     code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$SITE$path" || echo "000")
     [ "$code" = "200" ] && ok "static $path (200)" || fail "static $path (HTTP $code)"
 done

@@ -8,19 +8,37 @@
 <title>Privacy · Stone Techno Companion</title>
 <link rel="stylesheet" href="/shared.css">
 <style>
-  body {
+  .page-header {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-header);
+    background: var(--gray-900);
+    color: #fff;
+    height: var(--header-h);
+    display: flex;
+    align-items: center;
+  }
+  .page-header a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--header-h);
+    height: var(--header-h);
+    color: #fff;
+  }
+  .page-header .title {
+    font-size: var(--font-base);
+    font-weight: 600;
+  }
+  main {
     max-width: 640px;
     margin: 0 auto;
-    padding: var(--space-2xl) var(--space-lg);
-  }
-  h1 {
-    font-size: var(--font-xl);
-    margin: 0;
+    padding: var(--space-xl) var(--space-lg) var(--space-2xl);
   }
   .updated {
     color: var(--color-muted);
     font-size: var(--font-sm);
-    margin: var(--space-xs) 0 var(--space-2xl);
+    margin: 0 0 var(--space-xl);
   }
   h2 {
     font-size: var(--font-lg);
@@ -43,7 +61,13 @@
 </style>
 </head>
 <body>
-<h1>Privacy</h1>
+<header class="page-header">
+  <a href="/line-up" aria-label="Back" onclick="if (history.length > 1) { history.back(); return false; }">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+  </a>
+  <span class="title">Privacy</span>
+</header>
+<main>
 <div class="updated">Stone Techno Companion, July 2026</div>
 
 <p>This app is built to know as little about you as possible and to forget what it knows quickly. In plain words:</p>
@@ -83,5 +107,6 @@
 <h2>Deletion</h2>
 <p>Almost everything deletes itself. For full account deletion, ask any admin in the chat: the account, profile, avatar, messages, and push subscriptions are removed immediately; bans, if any, are retained in anonymized form.</p>
 
+</main>
 </body>
 </html>
