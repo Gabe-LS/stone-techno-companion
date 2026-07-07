@@ -204,6 +204,9 @@ body {
 .view-label { display: none; }
 .cmd-dropdown { display: none; }
 
+/* Current page marker: chat's active-room treatment */
+.cmd-dropdown button.active { background: var(--gray-700); }
+
 /* Option rows: actions (not navigation) on the chat menu's lighter layer,
    with gray-700 press feedback like chat's room rows. */
 .cmd-dropdown button.dd-option { background: var(--gray-800); }

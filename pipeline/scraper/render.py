@@ -273,8 +273,8 @@ def render_output_html(
         ".view-timetable #page-title::after{content:'Timetable';font-size:var(--font-2xl)}"
         "@media (max-width:768px){.view-timetable #page-title::after{font-size:var(--font-xl)}}"
         ".view-timetable #btn-schedule{display:inline-block!important}"
-        ".view-timetable #dd-timetable{display:none}"
-        ".view-timetable #dd-list{display:block}"
+        ".view-list #dd-list{background:var(--gray-700)}"
+        ".view-timetable #dd-timetable{background:var(--gray-700)}"
         "body{opacity:0}"
         "</style>"
     )
@@ -718,17 +718,6 @@ def render_output_html(
 
     # Hamburger dropdown menu (fixed-positioned, outside nav)
     parts.append('  <div class="cmd-dropdown" id="cmd-dropdown">')
-    parts.append(
-        '    <button type="button" class="active" onclick="closeMenu()" id="dd-current">Line-up</button>'
-    )
-    parts.append(
-        '    <button type="button" class="dd-option dd-toggle" role="switch" aria-checked="false" onclick="toggleFilter(document.getElementById(\'btn-filter\'))" id="dd-filter">Show My Picks<span class="dd-switch" aria-hidden="true"></span></button>'
-    )
-    if has_timetable:
-        parts.append(
-            '    <button type="button" class="dd-option dd-toggle" role="switch" aria-checked="false" onclick="toggleScheduleFilter(document.getElementById(\'btn-schedule\'))" id="dd-schedule" style="display:none">Show My Schedule<span class="dd-switch" aria-hidden="true"></span></button>'
-        )
-    parts.append('    <div class="dd-divider"></div>')
     if has_timetable:
         parts.append(
             '    <button type="button" onclick="switchView(\'list\', document.getElementById(\'btn-list\')); closeMenu()" id="dd-list">Line-up</button>'
@@ -742,6 +731,14 @@ def render_output_html(
     parts.append(
         '    <button type="button" onclick="dbg(\'[NAV] transport (menu)\'); window.open(\'/public-transport\',\'_self\')">Transport</button>'
     )
+    parts.append('    <div class="dd-divider"></div>')
+    parts.append(
+        '    <button type="button" class="dd-option dd-toggle" role="switch" aria-checked="false" onclick="toggleFilter(document.getElementById(\'btn-filter\'))" id="dd-filter">Show My Picks<span class="dd-switch" aria-hidden="true"></span></button>'
+    )
+    if has_timetable:
+        parts.append(
+            '    <button type="button" class="dd-option dd-toggle" role="switch" aria-checked="false" onclick="toggleScheduleFilter(document.getElementById(\'btn-schedule\'))" id="dd-schedule" style="display:none">Show My Schedule<span class="dd-switch" aria-hidden="true"></span></button>'
+        )
     parts.append('    <div class="dd-divider"></div>')
     parts.append(
         '    <button type="button" class="dd-option" onclick="openShareModal(); closeMenu()">Share</button>'
@@ -1597,8 +1594,8 @@ def render_output_html(
         if (bt) bt.classList.add('active');
         var ddl = document.getElementById('dd-list');
         var ddt = document.getElementById('dd-timetable');
-        if (ddl) ddl.style.display = '';
-        if (ddt) ddt.style.display = 'none';
+        if (ddl) ddl.classList.remove('active');
+        if (ddt) ddt.classList.add('active');
       }
     })();
     """)
@@ -2313,15 +2310,11 @@ def render_output_html(
       const btnFilter = document.getElementById('btn-filter');
       const ddSched = document.getElementById('dd-schedule');
       const btnSched = document.getElementById('btn-schedule');
-      const ddCurrent = document.getElementById('dd-current');
-      if (ddCurrent && btnTT) {
-        ddCurrent.textContent = btnTT.classList.contains('active') ? 'Timetable' : 'Line-up';
-      }
       if (ddList && btnList) {
-        ddList.style.display = btnList.classList.contains('active') ? 'none' : '';
+        ddList.classList.toggle('active', btnList.classList.contains('active'));
       }
       if (ddTT && btnTT) {
-        ddTT.style.display = btnTT.classList.contains('active') ? 'none' : '';
+        ddTT.classList.toggle('active', btnTT.classList.contains('active'));
       }
       if (ddFilter && btnFilter) {
         ddFilter.setAttribute('aria-checked', btnFilter.classList.contains('active') ? 'true' : 'false');
