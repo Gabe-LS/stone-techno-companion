@@ -312,6 +312,12 @@ def apply_overrides(
     if event_id:
         curators = overrides.get("floor_curators", {})
         for key, note in curators.items():
+            if "." not in key:
+                print(
+                    f"  Override skipped: malformed floor_curators key '{key}' "
+                    "(expected 'date.stage_id')"
+                )
+                continue
             date, stage_id = key.split(".", 1)
             existing = db.execute(
                 "SELECT MAX(position) FROM stage_notes WHERE stage_id = ? AND date = ?",
