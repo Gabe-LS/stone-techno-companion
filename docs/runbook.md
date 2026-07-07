@@ -9,6 +9,21 @@ Incident procedures for the live event. Facts verified against `deploy.sh`, `ser
 ## Quick health check
 
 ```bash
+./monitor.sh          # full check: HTTP + chat API JSON + static + TLS expiry + latency,
+                      # container health/restarts, disk, memory, load, DB quick_check,
+                      # log errors last hour. Exit 1 on any FAIL.
+```
+
+Run it hourly via cron (`--quiet` prints only when something needs attention):
+
+```bash
+crontab -e
+0 * * * * cd "/Users/gabrielelosurdo/Documents/Developer/Scripts/Personal/Stone Techno Companion" && ./monitor.sh --quiet >> backups/monitor.log 2>&1
+```
+
+Manual equivalents when digging into a specific failure:
+
+```bash
 ssh root@209.38.244.136 "docker ps --filter name=stone-techno"          # container up + (healthy)?
 ssh root@209.38.244.136 "docker exec stone-techno curl -sf http://localhost:8080/chat/api/config"  # chat API alive?
 ssh root@209.38.244.136 "docker logs stone-techno --tail 200"           # look for [MOD], [PUSH], VAPID lines
