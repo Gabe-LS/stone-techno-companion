@@ -204,6 +204,13 @@ run rsync -az --progress \
 if [ "$DRY_RUN" = false ]; then
     echo "  Saved to $LOCAL_BACKUPS/$TIMESTAMP/"
     ls -lh "$LOCAL_BACKUPS/$TIMESTAMP/"
+    # An empty backup must fail loudly — a backup gate that checks nothing
+    # is worse than none (it reads as "covered" when it isn't).
+    DB_COUNT=$(find "$LOCAL_BACKUPS/$TIMESTAMP" -maxdepth 1 -name "*.db" | wc -l | tr -d ' ')
+    if [ "$DB_COUNT" -eq 0 ]; then
+        echo "  ERROR: backup contains no .db files — aborting before any change."
+        exit 1
+    fi
     # Verify the downloaded backup is restorable before anything destructive
     for db in "$LOCAL_BACKUPS/$TIMESTAMP"/*.db; do
         [ -f "$db" ] || continue
