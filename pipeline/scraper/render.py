@@ -574,11 +574,16 @@ def render_output_html(
       .timetable { display: none !important; }
       .tt-table-wrap { display: block !important; min-height: 300px; }
 
-      .tt-v-scroll { overflow: auto; scrollbar-width: none; -ms-overflow-style: none; overscroll-behavior: none; }
-      .tt-v-scroll::-webkit-scrollbar { display: none; }
+      /* The DOCUMENT is the only scroller (both axes): the chrome compacts
+         and pins exactly like the list view, and the floor row / time column
+         stick against the page. The wrapper only full-bleeds the table. */
+      .tt-v-scroll { overflow: visible; margin: 0 calc(-1 * var(--space-md)); }
+      .view-timetable body { width: max-content; min-width: 100%; }
+      .view-timetable .cmd-bar { position: sticky; left: 0; width: 100vw; margin-left: calc(-1 * var(--space-md)); margin-right: 0; }
+      .view-timetable #page-title, .view-timetable .filter-bar { position: sticky; left: 0; width: calc(100vw - 2 * var(--space-md)); }
 
       .tt-table { border-collapse: separate; border-spacing: 0; table-layout: fixed; width: calc(40px + var(--num-floors) * 40vw); }
-      .tt-table thead th { position: sticky; top: 0; z-index: 2; background: var(--color-bg); padding: var(--space-xs) 2px; text-align: center; vertical-align: top; }
+      .tt-table thead th { position: sticky; top: calc(var(--sticky-top-h2, 106px) + 1.5 * var(--font-lg) + 13px); z-index: 2; background: var(--color-bg); padding: var(--space-xs) 2px; text-align: center; vertical-align: top; }
       .tt-table thead th:first-child { left: 0; z-index: 3; background: var(--color-bg); width: 40px; min-width: 40px; }
       .tt-floor-th > span:first-child { display: block; padding: 6px 10px; border-radius: var(--radius-pill); font-size: var(--font-xs); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0 3px; }
       .tt-floor-th .floor-curator { display: block; font-size: var(--font-xs); padding: 1px 0 2px; margin: 0; }
@@ -2373,7 +2378,6 @@ def render_output_html(
         h1.textContent = h1.textContent.replace('Line-up', 'Timetable');
         requestAnimationFrame(truncateNames);
         updateNowLine();
-        requestAnimationFrame(() => { sizeMobileTable(); });
       } else {
         listView.style.display = '';
         ttView.style.display = 'none';
@@ -2410,21 +2414,19 @@ def render_output_html(
     let _carryScroll = null;
     function showPanel(date, period) {
       const prevPanel = document.querySelector('.timetable-panel.active');
-      if (prevPanel) {
-        const prevVScroll = prevPanel.querySelector('.tt-v-scroll');
-        if (prevVScroll) _savedScrollTop[prevPanel.dataset.period] = prevVScroll.scrollTop;
+      const mobileTT = window.matchMedia('(max-width: 768px)').matches;
+      if (prevPanel && mobileTT) {
+        _savedScrollTop[prevPanel.dataset.period] = { top: window.scrollY, left: window.scrollX };
       }
       document.querySelectorAll('.timetable-panel').forEach(p => p.classList.remove('active'));
       const id = 'panel-' + date + '-' + period;
       const panel = document.getElementById(id);
       if (panel) panel.classList.add('active');
-      const scrollY = _carryScroll ? _carryScroll.top : (_savedScrollTop[period] || 0);
-      const scrollX = _carryScroll ? _carryScroll.left : 0;
+      const saved = _carryScroll || _savedScrollTop[period] || { top: 0, left: 0 };
       _carryScroll = null;
       requestAnimationFrame(() => {
-        truncateNames(); sizeMobileTable();
-        const next = panel ? panel.querySelector('.tt-v-scroll') : null;
-        if (next) { next.scrollTop = scrollY; next.scrollLeft = scrollX; }
+        truncateNames();
+        if (mobileTT) window.scrollTo(saved.left, saved.top);
       });
       updateNowLine();
     }
@@ -2471,8 +2473,7 @@ def render_output_html(
     function switchDay(date, btn) {
       track('day-switch', {day: btn.textContent.trim()});
       const sameDay = date === currentDate;
-      const prevVScroll = document.querySelector('.timetable-panel.active .tt-v-scroll');
-      _carryScroll = sameDay ? {top: 0, left: 0} : (prevVScroll ? {top: prevVScroll.scrollTop, left: prevVScroll.scrollLeft} : null);
+      _carryScroll = sameDay ? {top: 0, left: 0} : {top: window.scrollY, left: window.scrollX};
       currentDate = date;
       document.querySelectorAll('.day-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
@@ -2599,7 +2600,7 @@ def render_output_html(
       if (popup.classList.contains('open') && !e.target.closest('.tt-popup')) closePopup();
     });
     document.addEventListener('scroll', () => closePopup(), {passive: true});
-    document.querySelectorAll('.tt-v-scroll').forEach(w => w.addEventListener('scroll', () => closePopup(), {passive: true}));
+    window.addEventListener('scroll', () => closePopup(), {passive: true});
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape' && !document.querySelector('.modal-overlay.open')) closePopup();
     });
@@ -2640,14 +2641,6 @@ def render_output_html(
 
 
 
-    function sizeMobileTable() {
-      document.querySelectorAll('.tt-v-scroll').forEach(vscroll => {
-        if (vscroll.offsetHeight === 0) return;
-        const top = vscroll.getBoundingClientRect().top;
-        vscroll.style.height = (window.innerHeight - top) + 'px';
-      });
-    }
-    window.addEventListener('resize', sizeMobileTable);
 
 
     """)
