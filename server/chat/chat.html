@@ -265,6 +265,16 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .modal-btn-secondary { padding: var(--space-md); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--font-sm); cursor: pointer; white-space: nowrap; font-family: inherit; }
 
 /* --- Auth screen --- */
+/* Signed-out layout is a single column at every width (the .app desktop
+   row layout is for sidebar + main-panel). Mobile keeps the chat header
+   with hamburger; desktop hides it and shows the shared cmd-bar instead,
+   so the top menu matches the other pages (line-up, transport). */
+.app.auth-mode { flex-direction: column; }
+.auth-cmd-bar { display: none; }
+@media (min-width: 768px) {
+  .auth-cmd-bar { display: flex; }
+  .auth-mode .header { display: none; }
+}
 .auth-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-lg); padding: var(--space-2xl); flex: 1; }
 .auth-screen h2 { margin: 0 0 var(--space-sm); font-size: var(--font-xl); }
 .auth-screen p { margin: 0; color: var(--color-muted); font-size: var(--font-sm); text-align: center; }
@@ -547,7 +557,16 @@ async function renderAuth() {
         <hr style="flex:1;border:none;border-top:1px solid var(--color-border)">
       </div>`
     : '';
+  document.getElementById('app').classList.add('auth-mode');
   document.getElementById('app').innerHTML = `
+    <nav class="cmd-bar auth-cmd-bar" aria-label="Main navigation">
+      <div class="cmd-group">
+        <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] lineup (auth cmd-bar)');location.href='/line-up'">Line-up</button>
+        <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] timetable (auth cmd-bar)');location.href='/timetable'">Timetable</button>
+        <button type="button" class="active">Chat</button>
+        <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] transport (auth cmd-bar)');location.href='/transport'">Transport</button>
+      </div>
+    </nav>
     <div class="header">
       <a href="/line-up" class="nav-icon" aria-label="Lineup section" onclick="event.preventDefault();dbg('[NAV] lineup section (calendar icon)');location.href=storageGet('stc_view')==='timetable'?'/timetable':'/line-up'">${ICON_CALENDAR}</a>
       <div class="header-info"><span class="title">Chat</span></div>
@@ -771,6 +790,7 @@ function renderProfilePrompt() {
   _selectedCountry = currentUser?.country || '';
   _usernameOk = !!(currentUser?.username);
   const countryDisplay = _selectedCountry ? FLAG(_selectedCountry) + ' ' + (COUNTRIES.find(c => c[0] === _selectedCountry)?.[1] || '') : '';
+  document.getElementById('app').classList.remove('auth-mode');
   document.getElementById('app').innerHTML = `
     <div class="profile-prompt">
       <h2>Set up your profile</h2>
@@ -2242,6 +2262,7 @@ async function renderMeetupDetails(roomId) {
 
 function renderChatView(roomName) {
   dbg('[CHAT] renderChatView', roomName);
+  document.getElementById('app').classList.remove('auth-mode');
   const onlineCount = (onlineByRoom[currentRoom] || []).length;
   const currentRoomObj = rooms.find(r => r.id === currentRoom);
   const memberCount = currentRoomType === 'dm' ? 2 : (currentRoomObj ? (currentRoomObj.member_count || 0) : 0);
