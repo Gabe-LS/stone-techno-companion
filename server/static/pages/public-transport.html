@@ -370,25 +370,12 @@
     <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] timetable'); location.href='/timetable'">Timetable</button>
     <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] chat'); location.href='/chat'">Chat</button>
     <button type="button" class="active">Transport</button>
-    <span class="cmd-sep"></span>
-    <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] picks'); location.href='/line-up?action=picks'">Show My Picks</button>
-    <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] schedule'); location.href='/timetable?action=schedule'" style="display:none">Show My Schedule</button>
-  </div>
-  <div class="cmd-group cmd-group-right">
-    <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] share'); location.href='/line-up?action=share'">Share</button>
-    <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] sync'); location.href='/line-up?action=sync'">Sync</button>
-    <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] notifications'); location.href='/line-up?action=notifications'" aria-label="Notifications"><svg width="14" height="14" style="position:relative;top:1px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>
   </div>
   <button type="button" class="hamburger" onclick="toggleMenu()" aria-label="Menu"></button>
 </nav>
 <div class="cmd-dropdown" id="cmd-dropdown">
   <button type="button" onclick="dbg('[NAV] lineup (menu)'); location.href='/line-up'">Line-up</button>
   <button type="button" onclick="dbg('[NAV] timetable (menu)'); location.href='/timetable'">Timetable</button>
-  <button type="button" onclick="dbg('[NAV] picks (menu)'); location.href='/line-up?action=picks'">Show My Picks</button>
-  <button type="button" onclick="dbg('[NAV] schedule (menu)'); location.href='/timetable?action=schedule'" style="display:none">Show My Schedule</button>
-  <button type="button" onclick="dbg('[NAV] share (menu)'); location.href='/line-up?action=share'">Share</button>
-  <button type="button" onclick="dbg('[NAV] sync (menu)'); location.href='/line-up?action=sync'">Sync</button>
-  <button type="button" onclick="dbg('[NAV] notifications (menu)'); location.href='/line-up?action=notifications'">Notifications</button>
   <button type="button" class="active" onclick="closeMenu()">Transport</button>
 </div>
 <div class="menu-overlay" id="menu-overlay" onclick="closeMenu()"></div>
