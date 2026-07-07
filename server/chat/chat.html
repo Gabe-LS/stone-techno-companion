@@ -268,8 +268,14 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .auth-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-lg); padding: var(--space-2xl); flex: 1; }
 .auth-screen h2 { margin: 0 0 var(--space-sm); font-size: var(--font-xl); }
 .auth-screen p { margin: 0; color: var(--color-muted); font-size: var(--font-sm); text-align: center; }
-#auth-code-row { display: flex; flex-direction: column; align-items: center; gap: var(--space-lg); border-top: 1px solid var(--color-border); padding-top: var(--space-lg); margin-top: var(--space-sm); }
-.auth-code-hint { max-width: 280px; }
+/* The stage swaps between the sign-in options and the code panel; its
+   height is locked in JS before the swap so the centered layout above
+   (the title) cannot move when the content changes. */
+.auth-stage { display: flex; flex-direction: column; align-items: center; }
+.auth-panel { display: flex; flex-direction: column; align-items: center; gap: var(--space-lg); }
+.auth-code-hint { max-width: 280px; text-wrap: balance; }
+.auth-back { background: none; border: none; color: var(--color-muted); font-size: var(--font-sm); cursor: pointer; font-family: inherit; padding: var(--space-xs); }
+@media (hover: hover) { .auth-back:hover { color: var(--color-text); } }
 .auth-btn { display: flex; align-items: center; justify-content: center; gap: var(--space-md); width: 280px; padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg); font-size: var(--font-base); cursor: pointer; font-family: inherit; }
 .auth-btn:active { background: var(--color-surface); }
 .auth-btn.sent { background: var(--color-success); border-color: var(--color-success); color: #fff; pointer-events: none; }
@@ -549,14 +555,19 @@ async function renderAuth() {
     </div>
     <div class="auth-screen">
       <h2>Sign in to chat</h2>
-      <p>Choose how to sign in. No passwords needed.</p>
-      ${googleSection}
-      <input class="auth-input" id="email-input" type="email" placeholder="your@email.com" onkeydown="if(event.key==='Enter')authEmail()">
-      <button class="auth-btn" id="email-send-btn" onclick="authEmail()">Send magic link</button>
-      <div id="auth-code-row" style="display:none">
-        <p class="auth-code-hint">Click the link in the email, or enter the 6-digit code here:</p>
-        <input class="auth-input" id="code-input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="6-digit code" onkeydown="if(event.key==='Enter')authEmailCode()">
-        <button class="auth-btn" id="code-btn" onclick="authEmailCode()">Sign in with code</button>
+      <div class="auth-stage" id="auth-stage">
+        <div class="auth-panel" id="auth-options">
+          <p>Choose how to sign in. No passwords needed.</p>
+          ${googleSection}
+          <input class="auth-input" id="email-input" type="email" placeholder="your@email.com" onkeydown="if(event.key==='Enter')authEmail()">
+          <button class="auth-btn" id="email-send-btn" onclick="authEmail()">Send magic link</button>
+        </div>
+        <div class="auth-panel" id="auth-code-panel" style="display:none">
+          <p class="auth-code-hint" id="auth-code-hint">Enter the 6-digit code from the email, or open its link in the browser.</p>
+          <input class="auth-input" id="code-input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="6-digit code" onkeydown="if(event.key==='Enter')authEmailCode()">
+          <button class="auth-btn" id="code-btn" onclick="authEmailCode()">Sign in</button>
+          <button type="button" class="auth-back" id="code-back-btn" onclick="authCodeBack()">Back to sign-in options</button>
+        </div>
       </div>
     </div>
     <div class="chat-menu" id="chat-menu">
@@ -661,11 +672,21 @@ async function authEmail() {
     await api('/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
     dbg('[AUTH] magic link sent, showing success state for 10s');
     showToast('Check your email for the sign-in link');
-    // The emailed link opens in the browser, whose storage iOS partitions
-    // away from the home-screen app: PWA users sign in by typing the
-    // emailed 6-digit code instead, so reveal the code input now.
-    const codeRow = document.getElementById('auth-code-row');
-    if (codeRow) { codeRow.style.display = ''; dbg('[AUTH] code input revealed'); }
+    // Swap the stage to the code panel: the emailed link opens in the
+    // browser, whose storage iOS partitions away from the home-screen
+    // app, so PWA users sign in by typing the emailed 6-digit code.
+    // Lock the stage height first so the title above the centered
+    // layout does not move when the content changes.
+    const stage = document.getElementById('auth-stage');
+    // Hard height lock (not min-height): the send button's checkmark
+    // cooldown state is a couple of px taller than its text state, and
+    // any stage growth on the way BACK would shift the title.
+    stage.style.height = stage.offsetHeight + 'px';
+    document.getElementById('auth-code-hint').textContent =
+      'Enter the 6-digit code sent to ' + email + ', or open the link in the email.';
+    document.getElementById('auth-options').style.display = 'none';
+    document.getElementById('auth-code-panel').style.display = '';
+    dbg('[AUTH] code panel shown, stage height locked at ' + stage.style.minHeight);
     btn.classList.add('sent');
     btn.setAttribute('aria-label', 'Link sent');
     btn.innerHTML = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
@@ -681,6 +702,13 @@ async function authEmail() {
     showToast(e.message);
     btn.disabled = false;
   }
+}
+
+function authCodeBack() {
+  dbg('[AUTH] back to sign-in options');
+  document.getElementById('auth-code-panel').style.display = 'none';
+  document.getElementById('auth-options').style.display = '';
+  document.getElementById('code-input').value = '';
 }
 
 async function authEmailCode() {
