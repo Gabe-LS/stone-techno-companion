@@ -32,6 +32,12 @@ cd server && set -a && source .env && set +a && uvicorn api:app --port 64728 --s
 python -m pytest tests/ -v
 ```
 
+## Conventions
+
+- **No emojis** — anywhere: code, logs, comments, commit messages, generated files.
+- **Every action logs via `dbg()`** — this is a hard rule for new frontend code, not just a description of the existing calls. Any user-triggered or automated action must emit a timecoded `dbg()` line so behavior is diagnosable from the console.
+- **Check the port before starting a server** — `lsof -ti :<port>` first, never bind blindly. A dev server may already be running (local dev uses 64728).
+
 ## Local Development
 
 **Always preview via HTTP, never `file://`.** The page uses `fetch()` for lazy-loaded bios and API calls. Browsers block fetch from `file://` origins (CORS).
