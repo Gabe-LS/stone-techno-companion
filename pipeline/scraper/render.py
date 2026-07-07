@@ -2128,6 +2128,9 @@ def render_output_html(
         shareLink.classList.add('copied');
         shareLink.value = 'Copied!';
         setTimeout(() => { shareLink.value = url; shareLink.classList.remove('copied'); }, 1500);
+      }).catch((e) => {
+        dbg('clipboard copy failed', e && e.message);
+        showToast('Copy failed, the link is selected, copy it manually');
       });
     });
     function openShareModal() {
@@ -2346,7 +2349,8 @@ def render_output_html(
         }
         await ensureSession();
         if (!sessionId) return;
-        await fetch(API + '/session/' + sessionId + '/push/subscribe', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(sub.toJSON()) });
+        const subRes = await fetch(API + '/session/' + sessionId + '/push/subscribe', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(sub.toJSON()) });
+        if (!subRes.ok) { dbg('push subscribe POST failed', subRes.status); return; }
         storageSet('stc_push', '1');
         storageSet('stc_push_endpoint', sub.endpoint);
         track('push-enable');
@@ -2730,7 +2734,7 @@ def render_output_html(
 
     parts.append("""
     // Init
-    (async () => {
+    const _initP = (async () => {
       const p = new URLSearchParams(location.search);
       const syncPin = p.get('sync');
       const c = p.get('code');
@@ -2853,7 +2857,15 @@ def render_output_html(
       cancelAnimationFrame(_stickyResizeRaf);
       _stickyResizeRaf = requestAnimationFrame(function() { setStickyTops(); placeFadeSentinels(); });
     });
-    document.body.style.opacity = '1';
+    // Reveal only once init settles (success or failure) so the deep-link
+    // gate (which polls this opacity flag) never fires before sessionId/
+    // shareToken are loaded. A timeout race is the safety net: fetch() has
+    // no built-in timeout, so a hung request could otherwise leave the page
+    // invisible forever.
+    var _initTimeout = new Promise(function(resolve) { setTimeout(resolve, 5000); });
+    Promise.race([_initP.catch(function(e) { dbg('init failed', e && e.message); }), _initTimeout]).then(function() {
+      document.body.style.opacity = '1';
+    });
     """)
     parts.append("  </script>")
     parts.append("  </main>")
