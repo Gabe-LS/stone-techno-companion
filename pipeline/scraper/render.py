@@ -253,6 +253,7 @@ def render_output_html(
         parts.append(
             "  <script>(function(){"
             "var v=location.pathname==='/timetable'?'timetable':"
+            "location.pathname==='/line-up'?'list':"
             "(localStorage.getItem('stc_view')==='timetable'?'timetable':'list');"
             "document.documentElement.className='view-'+v;"
             "if(location.pathname!==(v==='timetable'?'/timetable':'/line-up'))"
@@ -1660,7 +1661,9 @@ def render_output_html(
     let readOnly = false;
     let filterActive = false;
     let scheduleFilterActive = false;
-    let currentView = storageGet('stc_view') || 'list';
+    // Path-aware, matching the head restore: an explicit /line-up or
+    // /timetable always wins over the saved preference
+    let currentView = location.pathname === '/timetable' ? 'timetable' : location.pathname === '/line-up' ? 'list' : (storageGet('stc_view') || 'list');
 
     function saveLocal() {
       storageSet('stc_picks', JSON.stringify([...localPicks]));
