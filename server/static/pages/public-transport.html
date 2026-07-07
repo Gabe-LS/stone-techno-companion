@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#111111">
+<link rel="stylesheet" href="/shared.css">
+<script src="/shared.js"></script>
 <title>107 / NE2 — Zollverein → Hbf</title>
 <style>
   :root {
@@ -382,8 +384,67 @@
     * { transition: none !important; scroll-behavior: auto !important; animation: none !important; }
   }
 </style>
+<style>
+  /* App navigation bar: identical to the lineup/timetable pages */
+  .cmd-bar { position: sticky; top: 0; z-index: var(--z-header); background: var(--gray-900); color: #fff; display: flex; align-items: stretch; justify-content: space-between; height: 28px; font-size: var(--font-xs); padding: 0 var(--space-lg); }
+  .cmd-bar button { background: none; color: #aaa; border: none; padding: 0 var(--space-lg); font-size: var(--font-xs); white-space: nowrap; text-align: center; transition: color var(--transition-fast); letter-spacing: 0.03em; text-transform: uppercase; cursor: pointer; font-family: var(--font-family); }
+  .cmd-bar .hamburger { color: #fff; }
+  .cmd-bar button.active { color: #fff; }
+  .cmd-bar button:focus:not(:focus-visible) { outline: none; }
+  .cmd-bar button:focus-visible { outline: 1px solid #fff; outline-offset: -2px; }
+  @media (hover: hover) { .cmd-bar button:not(.hamburger):hover { color: #fff; } }
+  .view-label { display: none; }
+  .cmd-dropdown { display: none; }
+  .sticky-top { top: 28px; }
+  @media (max-width: 768px) {
+    .cmd-bar { height: var(--header-h); -webkit-tap-highlight-color: transparent; }
+    .cmd-bar .cmd-group { display: none; }
+    .cmd-bar .view-label { color: #fff; font-size: var(--font-base); font-weight: 600; letter-spacing: 0.02em; display: flex; align-items: center; height: 100%; padding-left: 40px; }
+    .nav-icon { display: flex; }
+    .hamburger { display: flex; }
+    .cmd-dropdown { position: fixed; top: var(--header-h); left: 0; right: 0; z-index: var(--z-menu); background: var(--gray-900); flex-direction: column; box-shadow: var(--shadow-modal); }
+    .cmd-dropdown.open { display: flex; }
+    .cmd-dropdown button { background: none; color: #fff; border: none; border-bottom: 1px solid var(--gray-700); padding: 10px var(--space-lg) 10px var(--space-xl); font-size: 13px; font-weight: 600; font-family: var(--font-family); text-align: left; line-height: 1.5; -webkit-tap-highlight-color: transparent; cursor: pointer; }
+    .cmd-dropdown button:active { background: var(--gray-800); }
+    .sticky-top { top: var(--header-h); }
+  }
+</style>
 </head>
 <body>
+
+<nav class="cmd-bar" id="cmd-bar" aria-label="Main navigation">
+  <a href="/chat" class="nav-icon chat-nav-icon" aria-label="Chat"></a>
+  <span class="view-label">Transport</span>
+  <div class="cmd-group">
+    <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] lineup'); location.href='/line-up'">Line-up</button>
+    <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] timetable'); location.href='/timetable'">Timetable</button>
+    <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] chat'); location.href='/chat'">Chat</button>
+    <button type="button" class="active">Transport</button>
+  </div>
+  <button type="button" class="hamburger" onclick="toggleMenu()" aria-label="Menu"></button>
+</nav>
+<div class="cmd-dropdown" id="cmd-dropdown">
+  <button type="button" onclick="dbg('[NAV] lineup (menu)'); location.href='/line-up'">Line-up</button>
+  <button type="button" onclick="dbg('[NAV] timetable (menu)'); location.href='/timetable'">Timetable</button>
+  <button type="button" onclick="dbg('[NAV] chat (menu)'); location.href='/chat'">Chat</button>
+  <button type="button" class="active" onclick="closeMenu()">Transport</button>
+</div>
+<div class="menu-overlay" id="menu-overlay" onclick="closeMenu()"></div>
+<script>
+  setDbgTag('transport');
+  document.querySelector('.hamburger').innerHTML = ICON_HAMBURGER;
+  document.querySelector('.chat-nav-icon').innerHTML = ICON_CHAT;
+  function toggleMenu() {
+    dbg('[NAV] toggleMenu');
+    document.getElementById('cmd-dropdown').classList.toggle('open');
+    document.getElementById('menu-overlay').classList.toggle('open');
+  }
+  function closeMenu() {
+    dbg('[NAV] closeMenu');
+    document.getElementById('cmd-dropdown').classList.remove('open');
+    document.getElementById('menu-overlay').classList.remove('open');
+  }
+</script>
 
 <div class="sticky-top">
   <header>
