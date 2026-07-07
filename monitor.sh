@@ -12,6 +12,13 @@
 #
 # --quiet prints nothing when everything is OK (cron-friendly: the log only
 # grows when something needs attention). --strict exits 1 on WARN too.
+#
+# Alerts: any FAIL (or WARN with --strict) fires a push notification via
+# ntfy.sh to the private topic below, plus a macOS notification when run
+# interactively. To receive pushes: install the ntfy app (iOS/Android) and
+# subscribe to the topic. Test the pipeline with: ./monitor.sh --test-alert
+# NOTE: the monitor only runs while this Mac is awake — pair it with an
+# external uptime service for coverage when the Mac sleeps (see runbook).
 
 set -uo pipefail
 cd "$(dirname "$0")"
@@ -20,6 +27,7 @@ SITE="https://stonetechno.deftlab.dev"
 HOST="stonetechno.deftlab.dev"
 VPS="root@209.38.244.136"
 VPS_DIR="/root/services/stone-techno"
+NTFY_TOPIC="stc26-ops-2c8faa31e3be"   # private: knowing the name = receiving the alerts
 
 QUIET=false
 STRICT=false
@@ -27,8 +35,26 @@ for arg in "$@"; do
     case "$arg" in
         --quiet) QUIET=true ;;
         --strict) STRICT=true ;;
+        --test-alert)
+            curl -s -m 10 -H "Title: Stone Techno monitor test" -H "Priority: high" \
+                -H "Tags: white_check_mark" -d "Test alert — the pipeline works." \
+                "https://ntfy.sh/$NTFY_TOPIC" >/dev/null \
+                && echo "Test alert sent to ntfy.sh/$NTFY_TOPIC" \
+                || echo "ERROR: could not reach ntfy.sh"
+            command -v osascript >/dev/null && osascript -e \
+                'display notification "Test alert — the pipeline works." with title "Stone Techno monitor"' || true
+            exit 0
+            ;;
     esac
 done
+
+send_alert() {
+    # $1 = summary line, $2 = body
+    curl -s -m 10 -H "Title: $1" -H "Priority: high" -H "Tags: rotating_light" \
+        -d "$2" "https://ntfy.sh/$NTFY_TOPIC" >/dev/null || true
+    command -v osascript >/dev/null && osascript -e \
+        "display notification \"$1\" with title \"Stone Techno monitor\"" 2>/dev/null || true
+}
 
 PASS=0; WARN=0; FAIL=0
 LINES=""
@@ -151,6 +177,14 @@ STATUS="OK"
 if [ "$QUIET" = false ] || [ "$STATUS" != "OK" ]; then
     echo "=== Stone Techno monitor — $(date '+%Y-%m-%d %H:%M:%S') — $STATUS ($PASS ok, $WARN warn, $FAIL fail) ==="
     printf "%b" "$LINES"
+fi
+
+ALERT=false
+[ "$FAIL" -gt 0 ] && ALERT=true
+[ "$STRICT" = true ] && [ "$WARN" -gt 0 ] && ALERT=true
+if [ "$ALERT" = true ]; then
+    PROBLEMS=$(printf "%b" "$LINES" | grep -E "FAIL|WARN" | sed 's/^ *//')
+    send_alert "Stone Techno: $STATUS ($FAIL fail, $WARN warn)" "$PROBLEMS"
 fi
 
 [ "$FAIL" -gt 0 ] && exit 1

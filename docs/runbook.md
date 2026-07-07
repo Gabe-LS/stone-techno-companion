@@ -21,6 +21,10 @@ crontab -e
 0 * * * * cd "/Users/gabrielelosurdo/Documents/Developer/Scripts/Personal/Stone Techno Companion" && ./monitor.sh --quiet >> backups/monitor.log 2>&1
 ```
 
+**Alerts**: any FAIL fires a phone push via ntfy.sh (topic `stc26-ops-2c8faa31e3be` — install the ntfy app and subscribe to it; the topic name is the only credential, don't share it) plus a macOS notification. Test with `./monitor.sh --test-alert`.
+
+**Coverage gap**: the monitor runs on the Mac, so it stops when the Mac sleeps — during the festival, back it with an external uptime service. Recommended free setup (UptimeRobot or similar, 5-min interval): one HTTP check on `https://stonetechno.deftlab.dev/line-up` (expect 200) and one KEYWORD check on `https://stonetechno.deftlab.dev/chat/api/config` expecting `msg_char_limit` in the body (a plain 200 check is fooled by the catch-all serving HTML). Point its alerts at your email / the UptimeRobot app.
+
 Manual equivalents when digging into a specific failure:
 
 ```bash
