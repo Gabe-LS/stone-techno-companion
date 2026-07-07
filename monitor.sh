@@ -109,6 +109,15 @@ bios_ok=$(curl -s --max-time 15 "$SITE/bios.json" | python3 -c "import json,sys;
 me_ok=$(curl -s --max-time 15 "$SITE/api/me" | python3 -c "import json,sys; json.load(sys.stdin); print('yes')" 2>/dev/null || echo no)
 [ "$me_ok" = "yes" ] && ok "favorites API /api/me (valid JSON)" || fail "favorites API /api/me (not valid JSON)"
 
+# Public transport: static schedule + realtime EFA proxy
+tt_ok=$(curl -s --max-time 15 "$SITE/timetable-transport.json" | python3 -c "import json,sys; d=json.load(sys.stdin); print('yes' if d.get('days') else 'no')" 2>/dev/null || echo no)
+[ "$tt_ok" = "yes" ] && ok "transport schedule JSON" || fail "transport schedule JSON (missing or invalid)"
+dep_ok=$(curl -s --max-time 20 "$SITE/api/transport/departures?date=$(date +%d.%m.%Y)&time=$(date +%H:%M)" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+print('yes' if isinstance(d.get('departures'), list) else 'no')" 2>/dev/null || echo no)
+[ "$dep_ok" = "yes" ] && ok "transport realtime proxy (EFA reachable)" || fail "transport realtime proxy (EFA unreachable or endpoint broken)"
+
 # Meetup map POIs (MapTiler dataset -> server-side fetch -> JSON list)
 pois_ok=$(curl -s --max-time 15 "$SITE/chat/api/pois" | python3 -c "
 import json, sys

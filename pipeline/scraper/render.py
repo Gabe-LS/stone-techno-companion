@@ -722,6 +722,9 @@ def render_output_html(
     parts.append("    </div>")
     parts.append('    <div class="cmd-group cmd-group-right">')
     parts.append(
+        '      <button type="button" onmousedown="this.blur()" onclick="dbg(\'[NAV] transport (cmd-bar)\'); window.open(\'/public-transport\',\'_self\')">Transport</button>'
+    )
+    parts.append(
         '      <button type="button" onmousedown="this.blur()" onclick="openShareModal()">Share</button>'
     )
     parts.append(
@@ -763,6 +766,9 @@ def render_output_html(
     )
     parts.append(
         '    <button type="button" onclick="toggleNotifications(); closeMenu()" id="dd-bell">Notifications</button>'
+    )
+    parts.append(
+        '    <button type="button" onclick="dbg(\'[NAV] transport (menu)\'); window.open(\'/public-transport\',\'_self\')">Transport</button>'
     )
     parts.append("  </div>")
     parts.append(

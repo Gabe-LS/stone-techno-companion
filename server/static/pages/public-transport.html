@@ -24,6 +24,12 @@
     --color-location-bg: #f0f7ff;
     --color-location-border: #c7d9f0;
     --color-location-btn: #3b82f6;
+    --color-delay: #dc2626;
+    --color-delay-bg: #fef2f2;
+    --color-ontime: #16a34a;
+    --color-canceled-bg: #fef2f2;
+    --color-canceled-text: #991b1b;
+    --color-live-dot: #16a34a;
     --font-sm: 0.6875rem;
     --font-md: 0.8125rem;
     --font-lg: 0.9375rem;
@@ -38,11 +44,7 @@
     --space-6: 1.5rem;
   }
 
-  * {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
 
   html {
     font-size: 16px;
@@ -71,8 +73,14 @@
   header {
     background: var(--color-accent);
     color: #fff;
-    padding: var(--space-4) var(--space-4);
+    padding: var(--space-4);
     margin: 0 calc(-1 * var(--space-4));
+  }
+
+  .header-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
 
   .header-route {
@@ -86,6 +94,45 @@
     opacity: 0.6;
     margin-top: var(--space-1);
     font-weight: 400;
+  }
+
+  .live-indicator {
+    display: none;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: var(--font-sm);
+    font-weight: 600;
+    color: #fff;
+    opacity: 0.9;
+    flex-direction: column;
+    align-items: flex-end;
+  }
+
+  .live-indicator.active { display: flex; }
+
+  .live-label {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .live-updated {
+    font-size: 0.5625rem;
+    font-weight: 400;
+    opacity: 0.55;
+  }
+
+  .live-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--color-live-dot);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
   }
 
   .location-banner {
@@ -114,14 +161,8 @@
     flex-shrink: 0;
   }
 
-  .location-banner button:active {
-    opacity: 0.8;
-  }
-
-  .location-text {
-    flex: 1;
-    min-width: 0;
-  }
+  .location-banner button:active { opacity: 0.8; }
+  .location-text { flex: 1; min-width: 0; }
 
   .day-tab-bar {
     display: flex;
@@ -160,17 +201,10 @@
     margin-top: var(--space-1);
   }
 
-  .day-panel {
-    display: none;
-  }
+  .day-panel { display: none; }
+  .day-panel[aria-hidden="false"] { display: block; }
 
-  .day-panel[aria-hidden="false"] {
-    display: block;
-  }
-
-  .dep-list {
-    list-style: none;
-  }
+  .dep-list { list-style: none; }
 
   .dep-item {
     display: flex;
@@ -181,44 +215,17 @@
     border-bottom: 1px solid var(--color-border);
   }
 
-  .dep-item:first-child {
-    border-radius: var(--radius) var(--radius) 0 0;
-  }
+  .dep-item:first-child { border-radius: var(--radius) var(--radius) 0 0; }
+  .dep-item:last-child { border-bottom: none; border-radius: 0 0 var(--radius) var(--radius); }
+  .dep-item:only-child { border-radius: var(--radius); }
 
-  .dep-item:last-child {
-    border-bottom: none;
-    border-radius: 0 0 var(--radius) var(--radius);
-  }
+  .dep-item.is-past { color: var(--color-text-past); }
+  .dep-item.is-past .dep-time { color: var(--color-text-past); }
+  .dep-item.is-past .line-badge { opacity: 0.35; }
 
-  .dep-item:only-child {
-    border-radius: var(--radius);
-  }
-
-
-  .dep-item.is-past {
-    color: var(--color-text-past);
-  }
-
-  .dep-item.is-past .dep-time {
-    color: var(--color-text-past);
-  }
-
-  .dep-item.is-past .line-badge {
-    opacity: 0.35;
-  }
-
-  .dep-item.is-too-late {
-    color: var(--color-too-late-text);
-  }
-
-  .dep-item.is-too-late .dep-time {
-    color: var(--color-too-late-text);
-    text-decoration: line-through;
-  }
-
-  .dep-item.is-too-late .line-badge {
-    opacity: 0.2;
-  }
+  .dep-item.is-too-late { color: var(--color-too-late-text); }
+  .dep-item.is-too-late .dep-time { color: var(--color-too-late-text); text-decoration: line-through; }
+  .dep-item.is-too-late .line-badge { opacity: 0.2; }
 
   .dep-item.is-next {
     background: var(--color-next-bg);
@@ -226,17 +233,47 @@
     padding-left: calc(var(--space-4) - 3px);
   }
 
-  .dep-item.is-next .dep-time {
-    color: var(--color-next-text);
-    font-weight: 700;
+  .dep-item.is-next .dep-time { color: var(--color-next-text); font-weight: 700; }
+
+  .dep-item.is-canceled {
+    background: var(--color-canceled-bg);
+    color: var(--color-canceled-text);
+  }
+
+  .dep-item.is-canceled .dep-time-scheduled {
+    text-decoration: line-through;
+    color: var(--color-canceled-text);
+    opacity: 0.5;
+  }
+
+  .dep-time-col {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    min-width: 2.8rem;
   }
 
   .dep-time {
     font-size: var(--font-md);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
-    flex-shrink: 0;
     color: var(--color-text);
+  }
+
+  .dep-time-scheduled {
+    font-size: var(--font-sm);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-past);
+    text-decoration: line-through;
+    line-height: 1.2;
+  }
+
+  .dep-time-real {
+    font-size: var(--font-md);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-delay);
+    line-height: 1.2;
   }
 
   .line-badge {
@@ -249,48 +286,81 @@
     border-radius: var(--radius-sm);
     min-width: 2.25rem;
     flex-shrink: 0;
+    position: relative;
   }
 
-  .line-badge.l-107 {
-    background: var(--color-accent);
-    color: #fff;
+  .line-badge.l-107 { background: var(--color-accent); color: #fff; }
+  .line-badge.l-NE2 { background: var(--color-ne2-bg); color: var(--color-ne2-text); }
+
+  .rt-dot {
+    position: absolute;
+    bottom: -3px;
+    right: -3px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: 1.5px solid var(--color-surface);
   }
 
-  .line-badge.l-NE2 {
-    background: var(--color-ne2-bg);
-    color: var(--color-ne2-text);
+  .rt-dot.green { background: var(--color-ontime); }
+  .rt-dot.red { background: var(--color-delay); }
+
+  .dep-middle {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
   }
 
   .dep-dest {
     font-size: var(--font-md);
     color: var(--color-text-secondary);
-    flex: 1;
-    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .dep-item.is-past .dep-dest {
-    color: var(--color-text-past);
+  .dep-item.is-past .dep-dest { color: var(--color-text-past); }
+  .dep-item.is-too-late .dep-dest { color: var(--color-too-late-text); }
+
+  .cancel-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.625rem;
+    font-weight: 700;
+    padding: 1px 0.35rem;
+    border-radius: 3px;
+    white-space: nowrap;
+    width: fit-content;
+    background: var(--color-canceled-text);
+    color: #fff;
   }
 
-  .dep-item.is-too-late .dep-dest {
-    color: var(--color-too-late-text);
+  .dep-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    flex-shrink: 0;
+    gap: 1px;
   }
 
   .dep-walk {
     font-size: var(--font-sm);
     color: var(--color-text-secondary);
-    flex-shrink: 0;
-    text-align: right;
+    white-space: nowrap;
+  }
+
+  .dep-countdown {
+    font-size: var(--font-sm);
+    font-weight: 600;
+    color: var(--color-text-secondary);
     white-space: nowrap;
   }
 
   .dep-item.is-past .dep-walk,
-  .dep-item.is-too-late .dep-walk {
-    color: var(--color-too-late-text);
-  }
+  .dep-item.is-too-late .dep-walk,
+  .dep-item.is-past .dep-countdown { color: var(--color-too-late-text); }
 
   .empty-state {
     text-align: center;
@@ -309,10 +379,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    * {
-      transition: none !important;
-      scroll-behavior: auto !important;
-    }
+    * { transition: none !important; scroll-behavior: auto !important; animation: none !important; }
   }
 </style>
 </head>
@@ -320,8 +387,16 @@
 
 <div class="sticky-top">
   <header>
-    <div class="header-route">Zollverein → Essen Hbf</div>
-    <div class="header-info">Tram 107 &amp; NachtExpress NE2</div>
+    <div class="header-top">
+      <div>
+        <div class="header-route">Zollverein → Essen Hbf</div>
+        <div class="header-info">Tram 107 &amp; NachtExpress NE2</div>
+      </div>
+      <div id="live-indicator" class="live-indicator">
+        <div class="live-label"><span class="live-dot"></span><span>LIVE</span></div>
+        <div id="live-updated" class="live-updated"></div>
+      </div>
+    </div>
   </header>
   <div id="location-banner" class="location-banner">
     <span class="location-text">Walk time unknown</span>
@@ -331,7 +406,9 @@
 </div>
 <div id="day-panels"></div>
 
-<script>var TIMETABLE_DATA = {"route":{"from":"Zollverein","to":"Essen Hbf","fromId":"20009206","toId":"20009289"},"stop":{"lat":51.486095,"lng":7.046062},"days":[{"day":"Friday","date":"10.07.2026","departures":[{"dep":"04:26","arr":"04:40","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"04:46","arr":"05:00","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"05:06","arr":"05:20","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"05:26","arr":"05:40","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"05:39","arr":"05:53","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"05:59","arr":"06:13","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"06:09","arr":"06:23","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"06:19","arr":"06:33","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"06:29","arr":"06:43","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"06:39","arr":"06:53","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"06:49","arr":"07:03","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"06:51","arr":"07:05","line":"107","direction":"Essen Hauptbahnhof","duration":14,"platform":"1"},{"dep":"06:59","arr":"07:13","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"07:01","arr":"07:16","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"07:09","arr":"07:24","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"07:11","arr":"07:26","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"07:19","arr":"07:34","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"07:21","arr":"07:36","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"07:29","arr":"07:44","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"07:31","arr":"07:46","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"07:39","arr":"07:54","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"07:41","arr":"07:56","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"07:49","arr":"08:04","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"07:51","arr":"08:06","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"07:59","arr":"08:14","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"08:01","arr":"08:16","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"08:09","arr":"08:24","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"08:11","arr":"08:26","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"08:19","arr":"08:34","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"08:29","arr":"08:44","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"08:39","arr":"08:54","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"08:49","arr":"09:04","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"08:59","arr":"09:14","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"09:09","arr":"09:24","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"09:19","arr":"09:34","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"09:29","arr":"09:44","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"09:39","arr":"09:54","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"09:49","arr":"10:04","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"09:59","arr":"10:14","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"10:09","arr":"10:24","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"10:19","arr":"10:34","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"10:29","arr":"10:44","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"10:39","arr":"10:54","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"10:49","arr":"11:04","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"10:59","arr":"11:14","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"11:09","arr":"11:24","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"11:19","arr":"11:34","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"11:29","arr":"11:44","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"11:39","arr":"11:54","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"11:49","arr":"12:04","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"11:59","arr":"12:14","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"12:09","arr":"12:24","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"12:19","arr":"12:34","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"12:29","arr":"12:44","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"12:39","arr":"12:54","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"12:49","arr":"13:04","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"12:51","arr":"13:06","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"12:59","arr":"13:14","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"13:01","arr":"13:16","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"13:09","arr":"13:24","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"13:11","arr":"13:26","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"13:19","arr":"13:34","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"13:21","arr":"13:36","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"13:29","arr":"13:44","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"13:31","arr":"13:46","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"13:39","arr":"13:54","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"13:41","arr":"13:56","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"13:49","arr":"14:04","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"13:51","arr":"14:06","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"13:59","arr":"14:14","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"14:01","arr":"14:16","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"14:09","arr":"14:24","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"14:11","arr":"14:26","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"14:19","arr":"14:34","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"14:21","arr":"14:36","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"14:29","arr":"14:44","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"14:31","arr":"14:46","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"14:39","arr":"14:54","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"14:41","arr":"14:56","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"14:49","arr":"15:04","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"14:51","arr":"15:06","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"14:59","arr":"15:14","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"15:01","arr":"15:16","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"15:09","arr":"15:24","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"15:11","arr":"15:26","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"15:19","arr":"15:34","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"15:21","arr":"15:36","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"15:29","arr":"15:44","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"15:31","arr":"15:46","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"15:39","arr":"15:54","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"15:41","arr":"15:56","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"15:49","arr":"16:04","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"15:51","arr":"16:06","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"15:59","arr":"16:14","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"16:01","arr":"16:16","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"16:09","arr":"16:24","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"16:11","arr":"16:26","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"16:19","arr":"16:34","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"16:21","arr":"16:36","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"16:29","arr":"16:44","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"16:31","arr":"16:46","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"16:39","arr":"16:54","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"16:41","arr":"16:56","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"16:49","arr":"17:04","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"16:51","arr":"17:06","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"16:59","arr":"17:14","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"17:01","arr":"17:16","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"17:09","arr":"17:24","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"17:11","arr":"17:26","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"17:19","arr":"17:34","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"17:21","arr":"17:36","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"17:29","arr":"17:44","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"17:31","arr":"17:46","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"17:39","arr":"17:54","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"17:41","arr":"17:56","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"17:49","arr":"18:04","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"17:51","arr":"18:06","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"17:59","arr":"18:14","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"18:09","arr":"18:24","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"18:19","arr":"18:34","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"18:29","arr":"18:44","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"18:39","arr":"18:54","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"18:49","arr":"19:04","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"18:59","arr":"19:14","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"19:09","arr":"19:24","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"19:22","arr":"19:37","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"19:37","arr":"19:52","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"19:52","arr":"20:07","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"20:07","arr":"20:21","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"20:22","arr":"20:36","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"20:37","arr":"20:51","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"20:52","arr":"21:06","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"21:07","arr":"21:21","line":"107","direction":"Essen Hauptbahnhof","duration":14,"platform":"1"},{"dep":"21:16","arr":"21:30","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"21:46","arr":"22:00","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"22:16","arr":"22:30","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"22:46","arr":"23:00","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"23:16","arr":"23:30","line":"107","direction":"Essen Hauptbahnhof","duration":14,"platform":"1"},{"dep":"23:36","arr":"23:50","line":"107","direction":"Essen Hauptbahnhof","duration":14,"platform":"1"},{"dep":"00:09","arr":"00:22","line":"NE2","direction":"Essen Hauptbahnhof","duration":13,"platform":"3"},{"dep":"01:09","arr":"01:22","line":"NE2","direction":"Essen Hauptbahnhof","duration":13,"platform":"3"},{"dep":"02:09","arr":"02:22","line":"NE2","direction":"Essen Hauptbahnhof","duration":13,"platform":"3"},{"dep":"03:09","arr":"03:22","line":"NE2","direction":"Essen Hauptbahnhof","duration":13,"platform":"3"}]},{"day":"Saturday","date":"11.07.2026","departures":[{"dep":"04:09","arr":"04:22","line":"NE2","direction":"Essen Hauptbahnhof","duration":13,"platform":"3"},{"dep":"05:09","arr":"05:22","line":"NE2","direction":"Essen Hauptbahnhof","duration":13,"platform":"3"},{"dep":"06:09","arr":"06:22","line":"NE2","direction":"Essen Hauptbahnhof","duration":13,"platform":"3"},{"dep":"06:39","arr":"06:52","line":"NE2","direction":"Essen Hauptbahnhof","duration":13,"platform":"3"},{"dep":"07:16","arr":"07:31","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"07:52","arr":"08:07","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"08:22","arr":"08:37","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"08:52","arr":"09:07","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"09:07","arr":"09:22","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"09:22","arr":"09:37","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"09:37","arr":"09:52","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"09:52","arr":"10:07","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"10:07","arr":"10:22","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"10:22","arr":"10:37","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"10:37","arr":"10:52","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"10:52","arr":"11:07","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"11:07","arr":"11:22","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"11:15","arr":"11:30","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"11:22","arr":"11:37","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"11:30","arr":"11:45","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"11:37","arr":"11:52","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"11:45","arr":"12:00","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"11:52","arr":"12:07","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"12:00","arr":"12:15","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"12:07","arr":"12:22","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"12:15","arr":"12:30","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"12:22","arr":"12:37","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"12:30","arr":"12:45","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"12:37","arr":"12:52","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"12:45","arr":"13:00","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"12:52","arr":"13:07","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"13:00","arr":"13:15","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"13:07","arr":"13:22","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"13:15","arr":"13:30","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"13:22","arr":"13:37","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"13:30","arr":"13:45","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"13:37","arr":"13:52","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"13:45","arr":"14:00","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"13:52","arr":"14:07","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"14:00","arr":"14:15","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"14:07","arr":"14:22","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"14:15","arr":"14:30","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"14:22","arr":"14:37","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"14:30","arr":"14:45","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"14:37","arr":"14:52","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"14:45","arr":"15:00","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"14:52","arr":"15:07","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"15:00","arr":"15:15","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"15:07","arr":"15:22","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"15:15","arr":"15:30","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"15:22","arr":"15:37","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"15:30","arr":"15:45","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"15:37","arr":"15:52","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"15:45","arr":"16:00","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"15:52","arr":"16:07","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"16:00","arr":"16:15","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"16:07","arr":"16:22","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"16:15","arr":"16:30","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"16:22","arr":"16:37","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"16:30","arr":"16:45","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"16:37","arr":"16:52","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"16:45","arr":"17:00","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"16:52","arr":"17:07","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"17:00","arr":"17:15","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"17:07","arr":"17:22","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"17:15","arr":"17:30","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"17:22","arr":"17:37","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"17:30","arr":"17:45","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"17:37","arr":"17:52","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"17:45","arr":"18:00","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"17:52","arr":"18:07","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"18:00","arr":"18:15","line":"107","direction":"Essen Hauptbahnhof","duration":15,"platform":"1"},{"dep":"18:07","arr":"18:22","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"18:22","arr":"18:37","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"18:37","arr":"18:52","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"18:52","arr":"19:07","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"19:07","arr":"19:22","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"19:22","arr":"19:37","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"19:37","arr":"19:52","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"19:52","arr":"20:07","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"20:07","arr":"20:21","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"20:22","arr":"20:36","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"20:37","arr":"20:51","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"20:52","arr":"21:06","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"21:07","arr":"21:21","line":"107","direction":"Essen Hauptbahnhof","duration":14,"platform":"1"},{"dep":"21:16","arr":"21:30","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"21:46","arr":"22:00","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"22:16","arr":"22:30","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"22:46","arr":"23:00","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"23:16","arr":"23:30","line":"107","direction":"Essen Hauptbahnhof","duration":14,"platform":"1"},{"dep":"23:36","arr":"23:50","line":"107","direction":"Essen Hauptbahnhof","duration":14,"platform":"1"},{"dep":"00:09","arr":"00:22","line":"NE2","direction":"Essen Hauptbahnhof","duration":13,"platform":"3"},{"dep":"01:09","arr":"01:22","line":"NE2","direction":"Essen Hauptbahnhof","duration":13,"platform":"3"},{"dep":"02:09","arr":"02:22","line":"NE2","direction":"Essen Hauptbahnhof","duration":13,"platform":"3"},{"dep":"03:09","arr":"03:22","line":"NE2","direction":"Essen Hauptbahnhof","duration":13,"platform":"3"}]},{"day":"Sunday","date":"12.07.2026","departures":[{"dep":"04:09","arr":"04:22","line":"NE2","direction":"Essen Hauptbahnhof","duration":13,"platform":"3"},{"dep":"05:09","arr":"05:22","line":"NE2","direction":"Essen Hauptbahnhof","duration":13,"platform":"3"},{"dep":"06:09","arr":"06:22","line":"NE2","direction":"Essen Hauptbahnhof","duration":13,"platform":"3"},{"dep":"07:09","arr":"07:22","line":"NE2","direction":"Essen Hauptbahnhof","duration":13,"platform":"3"},{"dep":"08:16","arr":"08:31","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"08:46","arr":"09:01","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"09:23","arr":"09:38","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"09:53","arr":"10:08","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"10:23","arr":"10:38","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"10:38","arr":"10:53","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"10:53","arr":"11:08","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"11:08","arr":"11:23","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"11:23","arr":"11:38","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"11:38","arr":"11:53","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"11:53","arr":"12:08","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"12:08","arr":"12:23","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"12:23","arr":"12:38","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"12:38","arr":"12:53","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"12:53","arr":"13:08","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"13:08","arr":"13:23","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"13:23","arr":"13:38","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"13:38","arr":"13:53","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"13:53","arr":"14:08","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"14:08","arr":"14:23","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"14:23","arr":"14:38","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"14:38","arr":"14:53","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"14:53","arr":"15:08","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"15:08","arr":"15:23","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"15:23","arr":"15:38","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"15:38","arr":"15:53","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"15:53","arr":"16:08","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"16:08","arr":"16:23","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"16:23","arr":"16:38","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"16:38","arr":"16:53","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"16:53","arr":"17:08","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"17:08","arr":"17:23","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"17:23","arr":"17:38","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"17:38","arr":"17:53","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"17:53","arr":"18:08","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"18:08","arr":"18:23","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"18:23","arr":"18:38","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"18:38","arr":"18:53","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"18:53","arr":"19:08","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"19:08","arr":"19:23","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"19:23","arr":"19:38","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"19:38","arr":"19:53","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"19:53","arr":"20:08","line":"107","direction":"Essen Bredeney","duration":15,"platform":"1"},{"dep":"20:08","arr":"20:22","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"20:23","arr":"20:37","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"20:38","arr":"20:52","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"20:53","arr":"21:07","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"21:08","arr":"21:22","line":"107","direction":"Essen Hauptbahnhof","duration":14,"platform":"1"},{"dep":"21:16","arr":"21:30","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"21:46","arr":"22:00","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"22:16","arr":"22:30","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"22:46","arr":"23:00","line":"107","direction":"Essen Bredeney","duration":14,"platform":"1"},{"dep":"23:16","arr":"23:30","line":"107","direction":"Essen Hauptbahnhof","duration":14,"platform":"1"},{"dep":"23:36","arr":"23:50","line":"107","direction":"Essen Hauptbahnhof","duration":14,"platform":"1"},{"dep":"00:09","arr":"00:22","line":"NE2","direction":"Essen Hauptbahnhof","duration":13,"platform":"3"},{"dep":"01:09","arr":"01:22","line":"NE2","direction":"Essen Hauptbahnhof","duration":13,"platform":"3"}]}]};</script>
+<script>
+var TIMETABLE_DATA = null;
+</script>
 <script>
 (function () {
   "use strict";
@@ -339,6 +416,10 @@
   var data = null;
   var walkMinutes = null;
   var activeDay = 0;
+  var realtimeCache = {};
+  var realtimeActive = false;
+  var POLL_INTERVAL = 30000;
+  var API_BASE = "";
 
   var STOP_LAT = 51.486095;
   var STOP_LNG = 7.046062;
@@ -354,9 +435,9 @@
     return parseInt(p[0], 10) * 60 + parseInt(p[1], 10);
   }
 
-  function serviceDayMinutes(dep, isAfterMidnight) {
+  function serviceDayMinutes(dep) {
     var m = depToMinutes(dep);
-    return isAfterMidnight ? m + 1440 : m;
+    return m < 240 ? m + 1440 : m;
   }
 
   function getNow() {
@@ -406,6 +487,62 @@
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
+  function rtKey(line, scheduledTime, scheduledDate) {
+    return line + "|" + scheduledTime + "|" + scheduledDate;
+  }
+
+  function fetchRealtime() {
+    var dayData = data.days[activeDay];
+    if (!dayData) return;
+
+    var now = getNow();
+    var pd = parseDate(dayData.date);
+
+    var isToday = pd.day === now.day && pd.month === now.month && pd.year === now.year;
+    if (now.hours < 4) {
+      var yesterday = new Date(now.year, now.month - 1, now.day - 1);
+      if (pd.day === yesterday.getDate() && pd.month === yesterday.getMonth() + 1 && pd.year === yesterday.getFullYear()) {
+        isToday = true;
+      }
+    }
+    if (!isToday) {
+      realtimeActive = false;
+      document.getElementById("live-indicator").classList.remove("active");
+      return;
+    }
+
+    var timeStr = String(now.hours).padStart(2, "0") + String(now.minutes).padStart(2, "0");
+    var dateStr = String(now.day).padStart(2, "0") + "." + String(now.month).padStart(2, "0") + "." + now.year;
+
+    fetch(API_BASE + "/api/transport/departures?date=" + encodeURIComponent(dateStr) + "&time=" + timeStr + "&limit=30")
+      .then(function (r) { return r.json(); })
+      .then(function (result) {
+        if (!result.departures) return;
+        realtimeActive = true;
+        document.getElementById("live-indicator").classList.add("active");
+
+        var ts = new Date(result.ts);
+        var dd = String(ts.getDate()).padStart(2, "0");
+        var mm = String(ts.getMonth() + 1).padStart(2, "0");
+        var yyyy = ts.getFullYear();
+        var hh = String(ts.getHours()).padStart(2, "0");
+        var mi = String(ts.getMinutes()).padStart(2, "0");
+        document.getElementById("live-updated").textContent =
+          "updated " + dd + "/" + mm + "/" + yyyy + " at " + hh + ":" + mi;
+
+        for (var i = 0; i < result.departures.length; i++) {
+          var rt = result.departures[i];
+          var key = rtKey(rt.line, rt.scheduled, rt.scheduledDate);
+          realtimeCache[key] = rt;
+        }
+        renderPanel();
+      })
+      .catch(function () {
+        realtimeActive = false;
+        document.getElementById("live-indicator").classList.remove("active");
+      });
+  }
+
   function renderTabs() {
     var tabs = document.getElementById("day-tabs");
     tabs.innerHTML = "";
@@ -427,6 +564,7 @@
     activeDay = idx;
     renderTabs();
     renderPanel();
+    fetchRealtime();
   }
 
   function renderPanel() {
@@ -459,15 +597,20 @@
 
     var nextFound = false;
     var scrollTarget = null;
-    var prevMinutes = null;
 
     for (var i = 0; i < dayData.departures.length; i++) {
       var dep = dayData.departures[i];
-      var depMin = depToMinutes(dep.dep);
-      var isAfterMidnight = depMin < 240;
-      var svcMin = serviceDayMinutes(dep.dep, isAfterMidnight);
+      var svcMin = serviceDayMinutes(dep.dep);
 
-      prevMinutes = svcMin;
+      var rt = realtimeCache[rtKey(dep.line, dep.dep, dayData.date)];
+      var isCanceled = rt && rt.status === "CANCELED";
+      var hasDelay = rt && rt.delay > 0 && !isCanceled;
+      var isOnTime = rt && rt.realtime && rt.delay === 0 && !isCanceled;
+
+      var effectiveSvcMin = svcMin;
+      if (rt && rt.real && !isCanceled) {
+        effectiveSvcMin = serviceDayMinutes(rt.real);
+      }
 
       var li = document.createElement("li");
       li.className = "dep-item";
@@ -477,11 +620,13 @@
       var isNext = false;
 
       if (isToday) {
-        if (svcMin < now.nowServiceMinutes) {
+        if (isCanceled) {
+          isPast = true;
+        } else if (effectiveSvcMin < now.nowServiceMinutes) {
           isPast = true;
         } else if (!nextFound) {
           if (walkMinutes !== null) {
-            var leaveBy = svcMin - walkMinutes;
+            var leaveBy = effectiveSvcMin - walkMinutes;
             if (leaveBy < now.nowServiceMinutes) {
               isTooLate = true;
             } else {
@@ -495,6 +640,7 @@
         }
       }
 
+      if (isCanceled) li.classList.add("is-canceled");
       if (isPast) li.classList.add("is-past");
       if (isTooLate) li.classList.add("is-too-late");
       if (isNext) {
@@ -502,32 +648,72 @@
         scrollTarget = li;
       }
 
-      var timeEl = document.createElement("span");
-      timeEl.className = "dep-time";
-      timeEl.textContent = dep.dep;
+      var timeCol = document.createElement("div");
+      timeCol.className = "dep-time-col";
+
+      if (hasDelay && rt.real) {
+        var schedSpan = document.createElement("span");
+        schedSpan.className = "dep-time-scheduled";
+        schedSpan.textContent = dep.dep;
+        var realSpan = document.createElement("span");
+        realSpan.className = "dep-time-real";
+        realSpan.textContent = rt.real;
+        timeCol.appendChild(schedSpan);
+        timeCol.appendChild(realSpan);
+      } else {
+        var timeEl = document.createElement("span");
+        timeEl.className = "dep-time";
+        timeEl.textContent = dep.dep;
+        timeCol.appendChild(timeEl);
+      }
 
       var badge = document.createElement("span");
       badge.className = "line-badge l-" + dep.line;
       badge.textContent = dep.line;
 
+      if (rt && rt.realtime && !isCanceled) {
+        var dot = document.createElement("span");
+        dot.className = "rt-dot " + (hasDelay ? "red" : "green");
+        badge.appendChild(dot);
+      }
+
+      var middle = document.createElement("div");
+      middle.className = "dep-middle";
+
       var dest = document.createElement("span");
       dest.className = "dep-dest";
       dest.textContent = dep.direction.replace("Essen ", "");
+      middle.appendChild(dest);
 
-      li.appendChild(timeEl);
-      li.appendChild(badge);
-      li.appendChild(dest);
-
-      if (walkMinutes !== null && !isPast) {
-        var walkEl = document.createElement("span");
-        walkEl.className = "dep-walk";
-        var minsLeft = svcMin - now.nowServiceMinutes;
-        if (minsLeft > 0 && isToday) {
-          walkEl.textContent = minsLeft + " min";
-        }
-        li.appendChild(walkEl);
+      if (isCanceled) {
+        var cancelBadge = document.createElement("span");
+        cancelBadge.className = "cancel-badge";
+        cancelBadge.textContent = "Canceled";
+        middle.appendChild(cancelBadge);
       }
 
+      var right = document.createElement("div");
+      right.className = "dep-right";
+
+      if (rt && rt.countdown != null && isToday && !isPast && !isCanceled) {
+        var cdEl = document.createElement("span");
+        cdEl.className = "dep-countdown";
+        cdEl.textContent = "arr. in " + rt.countdown + " min";
+        right.appendChild(cdEl);
+      } else if (walkMinutes !== null && !isPast && isToday) {
+        var minsLeft = effectiveSvcMin - now.nowServiceMinutes;
+        if (minsLeft > 0) {
+          var walkEl = document.createElement("span");
+          walkEl.className = "dep-walk";
+          walkEl.textContent = minsLeft + " min";
+          right.appendChild(walkEl);
+        }
+      }
+
+      li.appendChild(timeCol);
+      li.appendChild(badge);
+      li.appendChild(middle);
+      li.appendChild(right);
       list.appendChild(li);
     }
 
@@ -542,14 +728,12 @@
   }
 
   function fetchWalkRoute(lat, lng) {
-    var url = "https://router.project-osrm.org/route/v1/driving/" +
-      lng + "," + lat + ";" + STOP_LNG + "," + STOP_LAT +
-      "?overview=false";
+    var url = API_BASE + "/api/transport/walk?lat=" + lat + "&lng=" + lng;
     return fetch(url)
-      .then(function (r) { return r.json(); })
+      .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
-        if (d.code !== "Ok" || !d.routes || !d.routes.length) return null;
-        return { distanceM: d.routes[0].distance };
+        if (!d || d.distanceM == null) return null;
+        return { distanceM: d.distanceM, durationS: d.durationS };
       })
       .catch(function () { return null; });
   }
@@ -563,13 +747,12 @@
     return fmtNum(parseFloat((meters / 1000).toFixed(1))) + " km";
   }
 
-  function applyWalkData(distanceM) {
-    walkMinutes = Math.ceil((distanceM / 1000) / WALK_SPEED_KMH * 60);
+  function applyWalkData(distanceM, durationS) {
+    walkMinutes = durationS ? Math.ceil(durationS / 60) : Math.ceil((distanceM / 1000) / WALK_SPEED_KMH * 60);
     var banner = document.getElementById("location-banner");
     banner.querySelector(".location-text").textContent =
       fmtDist(distanceM) + " walk — " + fmtNum(walkMinutes) + " min to stop";
-    var btn = document.getElementById("locate-btn");
-    btn.textContent = "Update";
+    document.getElementById("locate-btn").textContent = "Update";
     renderPanel();
   }
 
@@ -579,13 +762,12 @@
 
     fetchWalkRoute(lat, lng).then(function (result) {
       if (result) {
-        applyWalkData(result.distanceM);
+        applyWalkData(result.distanceM, result.durationS);
       } else {
         var dist = haversineKm(lat, lng, STOP_LAT, STOP_LNG);
-        var walkMin = Math.ceil((dist / WALK_SPEED_KMH) * 60);
-        walkMinutes = walkMin;
+        walkMinutes = Math.ceil((dist / WALK_SPEED_KMH) * 60);
         banner.querySelector(".location-text").textContent =
-          "~" + fmtDist(dist * 1000) + " — ~" + fmtNum(walkMin) + " min (estimate)";
+          "~" + fmtDist(dist * 1000) + " — ~" + fmtNum(walkMinutes) + " min (estimate)";
         document.getElementById("locate-btn").textContent = "Update";
         renderPanel();
       }
@@ -625,13 +807,14 @@
     activeDay = findTodayIndex();
     renderTabs();
     renderPanel();
+    fetchRealtime();
   }
 
   function init() {
-    if (typeof TIMETABLE_DATA !== "undefined") {
+    if (typeof TIMETABLE_DATA !== "undefined" && TIMETABLE_DATA) {
       loadData(TIMETABLE_DATA);
     } else {
-      fetch("timetable.json")
+      fetch("/timetable-transport.json")
         .then(function (r) { return r.json(); })
         .then(loadData)
         .catch(function () {
@@ -643,7 +826,13 @@
     document.getElementById("locate-btn").addEventListener("click", onLocateClick);
 
     setInterval(function () {
-      if (data) renderPanel();
+      if (data) {
+        fetchRealtime();
+      }
+    }, POLL_INTERVAL);
+
+    setInterval(function () {
+      if (data && !realtimeActive) renderPanel();
     }, 30000);
   }
 

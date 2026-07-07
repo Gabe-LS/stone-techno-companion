@@ -1019,6 +1019,162 @@ def generate_ics(slot_id: str):
     )
 
 
+# --- Public transport (Tram 107 / NE2 departure board at /public-transport) ---
+# The VRR EFA API has no CORS headers, so the page polls this proxy for
+# realtime data. The stop is pinned server-side (never client-controlled), so
+# this cannot be used as an open proxy to EFA. A short shared cache collapses
+# all concurrent clients into ~1 upstream call per minute bucket: on festival
+# nights hundreds of phones poll every 30s and must not hammer public infra.
+
+_EFA_BASE = "https://efa.vrr.de/vrr/XSLT_DM_REQUEST"
+_TRANSPORT_STOP = "20009206"  # Essen Zollverein
+# Stop coordinates, matching timetable-transport.json (walk-route destination)
+_TRANSPORT_STOP_LAT = 51.486095
+_TRANSPORT_STOP_LNG = 7.046062
+_TRANSPORT_DATE_RE = re.compile(r"^\d{2}\.\d{2}\.\d{4}$")
+_TRANSPORT_TIME_RE = re.compile(r"^\d{1,2}:\d{2}$")
+_transport_cache: dict[tuple[str, str], tuple[float, list]] = {}
+_transport_rate: dict[str, list[float]] = {}
+
+
+def _check_transport_rate(request: Request, limit: int, window: float = 60.0) -> None:
+    ip = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    hits = [t for t in _transport_rate.get(ip, []) if now - t < window]
+    if len(hits) >= limit:
+        raise HTTPException(429, "Too many requests")
+    hits.append(now)
+    _transport_rate[ip] = hits
+    if len(_transport_rate) > 5000:
+        for k in [
+            k for k, v in _transport_rate.items() if all(now - t >= window for t in v)
+        ]:
+            del _transport_rate[k]
+
+
+@app.get("/api/transport/departures")
+async def transport_departures(request: Request, date: str):
+    t = request.query_params.get("time") or ""
+    if not _TRANSPORT_DATE_RE.match(date) or not _TRANSPORT_TIME_RE.match(t):
+        raise HTTPException(400, "date (DD.MM.YYYY) and time (HH:MM) required")
+    _check_transport_rate(request, limit=30)
+
+    key = (date, t)
+    now = time.monotonic()
+    cached = _transport_cache.get(key)
+    if cached and now - cached[0] < 55:
+        return {"departures": cached[1], "ts": datetime.now(timezone.utc).isoformat()}
+
+    import httpx
+
+    params = {
+        "outputFormat": "JSON",
+        "language": "de",
+        "stateless": "1",
+        "type_dm": "stop",
+        "name_dm": _TRANSPORT_STOP,
+        "mode": "direct",
+        "useRealtime": "1",
+        "itdDateDayMonthYear": date,
+        "itdTime": t,
+        "limit": "30",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            r = await client.get(
+                _EFA_BASE, params=params, headers={"User-Agent": "Mozilla/5.0"}
+            )
+            r.raise_for_status()
+            data = r.json()
+    except Exception:
+        # Serve a stale cache entry rather than nothing if upstream hiccups
+        if cached:
+            return {
+                "departures": cached[1],
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "stale": True,
+            }
+        raise HTTPException(502, "Departure service unavailable")
+
+    deps = []
+    for d in data.get("departureList") or []:
+        line = d.get("servingLine", {})
+        num = line.get("number")
+        if num not in ("107", "NE2"):
+            continue
+        direction = line.get("direction") or ""
+        if "Bredeney" not in direction and "Hauptbahnhof" not in direction:
+            continue
+        dt = d.get("dateTime") or {}
+        try:
+            entry = {
+                "line": num,
+                "direction": direction,
+                "platform": d.get("platform"),
+                "scheduled": f"{int(dt['hour']):02d}:{int(dt['minute']):02d}",
+                "scheduledDate": f"{int(dt['day']):02d}.{int(dt['month']):02d}.{dt['year']}",
+                "realtime": line.get("realtime") == "1",
+            }
+        except (KeyError, ValueError, TypeError):
+            continue
+        rt = d.get("realDateTime")
+        if rt:
+            try:
+                entry["real"] = f"{int(rt['hour']):02d}:{int(rt['minute']):02d}"
+            except (KeyError, ValueError, TypeError):
+                pass
+        if line.get("delay") is not None:
+            try:
+                entry["delay"] = int(line["delay"])
+            except (ValueError, TypeError):
+                pass
+        if d.get("realtimeTripStatus"):
+            entry["status"] = d["realtimeTripStatus"]
+        if d.get("countdown") is not None:
+            try:
+                entry["countdown"] = int(d["countdown"])
+            except (ValueError, TypeError):
+                pass
+        deps.append(entry)
+
+    _transport_cache[key] = (now, deps)
+    if len(_transport_cache) > 50:
+        oldest = min(_transport_cache, key=lambda k: _transport_cache[k][0])
+        del _transport_cache[oldest]
+    return {"departures": deps, "ts": datetime.now(timezone.utc).isoformat()}
+
+
+@app.get("/api/transport/walk")
+async def transport_walk(request: Request, lat: float, lng: float):
+    """Foot-routing proxy to OSRM so the client never sends GPS coordinates to
+    a third party directly (OSRM sees only the VPS IP). Coordinates are used
+    transiently and never stored or logged. Bounded to the Essen area so this
+    cannot be abused as a generic routing proxy."""
+    if abs(lat - _TRANSPORT_STOP_LAT) > 0.35 or abs(lng - _TRANSPORT_STOP_LNG) > 0.5:
+        raise HTTPException(400, "Out of service area")
+    _check_transport_rate(request, limit=10)
+
+    import httpx
+
+    url = (
+        f"https://router.project-osrm.org/route/v1/foot/"
+        f"{lng},{lat};{_TRANSPORT_STOP_LNG},{_TRANSPORT_STOP_LAT}?overview=false"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            r = await client.get(url)
+            r.raise_for_status()
+            d = r.json()
+    except Exception:
+        raise HTTPException(502, "Routing service unavailable")
+    if d.get("code") != "Ok" or not d.get("routes"):
+        raise HTTPException(502, "No route found")
+    return {
+        "distanceM": d["routes"][0]["distance"],
+        "durationS": d["routes"][0]["duration"],
+    }
+
+
 @app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def api_not_found(path: str):
     raise HTTPException(404, "Not found")
@@ -1079,6 +1235,21 @@ async def serve_bios():
     file_path = STATIC_DIR / "bios.json"
     if file_path.exists():
         return FileResponse(file_path, media_type="application/json")
+    raise HTTPException(404, "Not found")
+
+
+@app.get("/timetable-transport.json")
+async def serve_timetable_transport():
+    # Tram 107 / NE2 schedule for /public-transport. no-cache so a schedule
+    # regeneration (pipeline/transport/capture-api.mjs + git pull) is picked
+    # up without a container rebuild.
+    file_path = STATIC_DIR / "timetable-transport.json"
+    if file_path.exists():
+        return FileResponse(
+            file_path,
+            media_type="application/json",
+            headers={"Cache-Control": "no-cache"},
+        )
     raise HTTPException(404, "Not found")
 
 

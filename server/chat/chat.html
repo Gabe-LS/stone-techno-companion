@@ -2835,6 +2835,7 @@ function _renderChatMenuHtml() {
       <div class="menu-items" id="menu-online"></div>
       <button class="menu-section" onclick="toggleMenuSection('offline')">Offline <span class="menu-arrow"><svg class="arrow-right" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"/></svg><svg class="arrow-down" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M4.43057 8.51192C4.70014 8.19743 5.17361 8.161 5.48811 8.43057L12 14.0122L18.5119 8.43057C18.8264 8.16101 19.2999 8.19743 19.5695 8.51192C19.839 8.82642 19.8026 9.29989 19.4881 9.56946L12.4881 15.5695C12.2072 15.8102 11.7928 15.8102 11.5119 15.5695L4.51192 9.56946C4.19743 9.29989 4.161 8.82641 4.43057 8.51192Z"/></svg></span></button>
       <div class="menu-items" id="menu-offline"></div>
+      <a class="menu-section" href="/public-transport" onclick="dbg('[NAV] transport (mobile menu)')" style="text-decoration:none">Public transport</a>
       <a class="menu-footer" href="/privacy" onclick="dbg('[NAV] privacy footer (mobile menu)')">Privacy</a>
     </div>
     <div class="menu-overlay" id="menu-overlay" onclick="closeChatMenu()"></div>`;
