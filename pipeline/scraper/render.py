@@ -340,11 +340,11 @@ def render_output_html(
     /* --- Sticky headings --- */
     /* margin-top is explicit (not the em-based UA default) so the timetable
        view's font-size:0 title trick cannot collapse it */
-    h1 { margin-top: 21px; margin-bottom: var(--space-xl); font-size: var(--font-2xl); position: sticky; top: 28px; background: var(--color-bg); z-index: 30; padding: var(--space-md) 0 var(--space-sm); border-bottom: 2px solid #222; }
+    h1 { margin-top: 21px; margin-bottom: var(--space-xl); font-size: var(--font-2xl); position: sticky; top: var(--sticky-top-h1, 28px); background: var(--color-bg); z-index: 30; padding: var(--space-md) 0 var(--space-sm); border-bottom: 2px solid #222; }
     section.date-section { margin-bottom: 48px; }
-    .date-section > h2 { position: sticky; top: 96px; background: var(--color-bg); z-index: 20; padding: 10px 0 var(--space-sm); margin-bottom: var(--space-sm); font-size: var(--font-xl); border-bottom: 1px solid var(--color-line-hour); }
-    h3.period-heading { position: sticky; top: 150px; background: var(--color-bg); z-index: var(--z-sticky); padding: var(--space-sm) 0 6px; margin: var(--space-xl) 0 var(--space-md); font-size: var(--font-lg); color: #333; text-transform: uppercase; letter-spacing: 0.05em; }
-    h4.location-heading { position: sticky; top: 190px; background: var(--color-bg); z-index: var(--z-sticky); font-size: var(--font-base); padding: 6px 0 var(--space-xs); margin: var(--space-lg) 0 var(--space-sm); color: #555; border-bottom: 1px solid var(--color-surface-hover); }
+    .date-section > h2 { position: sticky; top: var(--sticky-top-h2, 96px); background: var(--color-bg); z-index: 20; padding: 10px 0 var(--space-sm); margin-bottom: var(--space-sm); font-size: var(--font-xl); border-bottom: 1px solid var(--color-line-hour); }
+    h3.period-heading { position: sticky; top: var(--sticky-top-h3, 150px); background: var(--color-bg); z-index: var(--z-sticky); padding: var(--space-sm) 0 6px; margin: var(--space-xl) 0 var(--space-md); font-size: var(--font-lg); color: #333; text-transform: uppercase; letter-spacing: 0.05em; }
+    h4.location-heading { position: sticky; top: var(--sticky-top-h4, 190px); background: var(--color-bg); z-index: var(--z-sticky); font-size: var(--font-base); padding: 6px 0 var(--space-xs); margin: var(--space-lg) 0 var(--space-sm); color: #555; border-bottom: 1px solid var(--color-surface-hover); }
     h4.location-heading small { font-weight: normal; color: var(--color-muted); }
 
     /* --- Artist list --- */
@@ -2733,16 +2733,12 @@ def render_output_html(
       var h2H = h2 ? h2.offsetHeight : 0;
       var h3 = document.querySelector('h3.period-heading');
       var h3H = h3 ? h3.offsetHeight : 0;
-      if (h1) h1.style.top = barH + 'px';
-      document.querySelectorAll('.date-section > h2').forEach(function(h2) {
-        h2.style.top = (barH + h1H) + 'px';
-      });
-      document.querySelectorAll('h3.period-heading').forEach(function(h3) {
-        h3.style.top = (barH + h1H + h2H) + 'px';
-      });
-      document.querySelectorAll('h4.location-heading').forEach(function(h4) {
-        h4.style.top = (barH + h1H + h2H + h3H) + 'px';
-      });
+      // Custom properties on :root, not inline styles on every heading
+      var root = document.documentElement.style;
+      root.setProperty('--sticky-top-h1', barH + 'px');
+      root.setProperty('--sticky-top-h2', (barH + h1H) + 'px');
+      root.setProperty('--sticky-top-h3', (barH + h1H + h2H) + 'px');
+      root.setProperty('--sticky-top-h4', (barH + h1H + h2H + h3H) + 'px');
     }
     setStickyTops();
     window.addEventListener('resize', setStickyTops);
