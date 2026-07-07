@@ -485,10 +485,11 @@ def render_output_html(
 
     /* Filter bar */
     /* min-height mirrors the date h2 box (1.5 line-height x its font + same padding/border) so both sticky bars are equal-height */
-    .filter-bar { position: sticky; top: 98px; z-index: 20; background: var(--color-bg); display: flex; align-items: center; justify-content: space-between; padding: 10px 0 var(--space-sm); margin: 0.83em 0 var(--space-sm); gap: var(--space-sm); border-bottom: 1px solid var(--color-line-hour); min-height: calc(1.5 * var(--font-xl) + 19px); }
+    .filter-bar { position: sticky; top: var(--sticky-top-h2, 98px); z-index: 20; background: var(--color-bg); display: flex; align-items: center; justify-content: space-between; padding: 10px 0 var(--space-sm); margin: 0.83em 0 var(--space-sm); gap: var(--space-sm); border-bottom: 1px solid var(--color-line-hour); min-height: calc(1.5 * var(--font-xl) + 19px); }
 
     /* Floor headers */
-    .floor-header-bar { display: grid; position: sticky; top: 148px; z-index: var(--z-sticky); background: var(--color-bg); padding: var(--space-sm) 0 6px; margin: var(--space-xl) 0 var(--space-md); align-items: start; }
+    /* pins exactly below the filter bar: its top + its token-derived height */
+    .floor-header-bar { display: grid; position: sticky; top: calc(var(--sticky-top-h2, 98px) + 1.5 * var(--font-xl) + 19px); z-index: var(--z-sticky); background: var(--color-bg); padding: var(--space-sm) 0 6px; margin: var(--space-xl) 0 var(--space-md); align-items: start; }
     .floor-header-bar::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 36px; background: var(--fade-gradient); pointer-events: none; opacity: 0; transition: opacity var(--transition-fast); }
     .floor-header-bar.stuck::after { opacity: 1; }
     .floor-header { text-align: center; margin: 0 3px; background: none !important; }
@@ -598,7 +599,7 @@ def render_output_html(
 
       .tt-table .tt-block { position: absolute; top: 1.5px; left: 1px; right: 1px; bottom: 2.5px; }
 
-      .filter-bar { padding: 6px 0; margin: 0 0 var(--space-xs); top: 100px; min-height: calc(1.5 * var(--font-lg) + 13px); }
+      .filter-bar { padding: 6px 0; margin: 0 0 var(--space-xs); min-height: calc(1.5 * var(--font-lg) + 13px); }
 
       .tt-popup { width: calc(100vw - var(--space-xl)); max-width: none; left: var(--space-md) !important; }
       .tt-popup .popup-photo, .tt-popup .popup-photo-placeholder { width: 64px; height: 64px; }
