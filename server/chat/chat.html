@@ -540,13 +540,25 @@ async function renderAuth() {
       </div>`
     : '';
   document.getElementById('app').innerHTML = `
+    <div class="header">
+      <a href="/line-up" class="nav-icon" aria-label="Line-up" onclick="event.preventDefault();location.href='/line-up'">${ICON_CALENDAR}</a>
+      <div class="header-info"><span class="title">Chat</span></div>
+      <button class="hamburger" onclick="toggleChatMenu()">${ICON_HAMBURGER}</button>
+    </div>
     <div class="auth-screen">
       <h2>Sign in to chat</h2>
       <p>Choose how to sign in. No passwords needed.</p>
       ${googleSection}
       <input class="auth-input" id="email-input" type="email" placeholder="your@email.com" onkeydown="if(event.key==='Enter')authEmail()">
       <button class="auth-btn" id="email-send-btn" onclick="authEmail()">Send magic link</button>
-    </div>`;
+    </div>
+    <div class="chat-menu" id="chat-menu">
+      <a class="menu-section" href="/line-up" onclick="dbg('[NAV] lineup (login menu)')" style="text-decoration:none">Line-up</a>
+      <a class="menu-section" href="/timetable" onclick="dbg('[NAV] timetable (login menu)')" style="text-decoration:none">Timetable</a>
+      <a class="menu-section" href="/transport" onclick="dbg('[NAV] transport (login menu)')" style="text-decoration:none">Transport</a>
+      <a class="menu-footer" href="/privacy" onclick="dbg('[NAV] privacy (login menu)')">Privacy</a>
+    </div>
+    <div class="menu-overlay" id="menu-overlay" onclick="closeChatMenu()"></div>`;
   if (_googleClientId) _ensureGoogleInit();
   verify('renderAuth', document.querySelector('.auth-screen'), 'auth screen rendered');
   verify('renderAuth', document.getElementById('email-input'), 'email input exists');
