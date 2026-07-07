@@ -738,10 +738,10 @@ def render_output_html(
     )
     parts.append('    <div class="dd-divider"></div>')
     parts.append(
-        '    <button type="button" onclick="openShareModal(); closeMenu()">Share</button>'
+        '    <button type="button" class="dd-option" onclick="openShareModal(); closeMenu()">Share</button>'
     )
     parts.append(
-        '    <button type="button" onclick="openSyncModal(); closeMenu()">Sync</button>'
+        '    <button type="button" class="dd-option" onclick="openSyncModal(); closeMenu()">Sync</button>'
     )
     parts.append(
         '    <button type="button" class="dd-toggle" role="switch" aria-checked="false" onclick="toggleNotifications()" id="dd-bell">Notifications<span class="dd-switch" aria-hidden="true"></span></button>'

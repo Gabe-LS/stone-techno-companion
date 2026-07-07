@@ -214,6 +214,11 @@ body {
 .cmd-dropdown button[aria-checked="true"] .dd-switch { background: var(--color-success); }
 .cmd-dropdown button[aria-checked="true"] .dd-switch::before { transform: translateX(16px); background: #fff; }
 
+/* Option rows (Share, Sync): actions, not navigation, so they share the
+   toggles' lighter layer; gray-700 press feedback like chat's room rows */
+.cmd-dropdown button.dd-option { background: var(--gray-800); }
+.cmd-dropdown button.dd-option:active { background: var(--gray-700); }
+
 /* Group separator (view options / navigation / general actions) */
 .dd-divider { height: 1px; background: var(--gray-700); }
 .dd-divider + button { border-top: none; }
