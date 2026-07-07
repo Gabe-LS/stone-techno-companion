@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -148,7 +149,9 @@ def _load_site_short() -> None:
         logger.warning("site_short lookup failed (lineup.db not reachable): %s", e)
 
 
-def _magic_link_email(site: str, verify_url: str, host: str) -> tuple[str, str, str]:
+def _magic_link_email(
+    site: str, verify_url: str, host: str, code: str
+) -> tuple[str, str, str]:
     """Build (subject, html, plain) for the sign-in email.
 
     Deliverability notes: multipart with a real text/plain body, visible link
@@ -169,7 +172,9 @@ def _magic_link_email(site: str, verify_url: str, host: str) -> tuple[str, str, 
     <p style="margin:28px 0;"><a href="{verify_url}" style="background-color:#111827;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:600;display:inline-block;">Sign in to the chat</a></p>
     <p style="font-size:13px;line-height:1.6;margin:0 0 8px;color:#374151;">Or copy and paste this link into your browser:</p>
     <p style="font-size:13px;line-height:1.6;margin:0 0 24px;"><a href="{verify_url}" style="color:#374151;word-break:break-all;">{verify_url}</a></p>
-    <p style="font-size:13px;line-height:1.6;margin:0 0 8px;color:#374151;">The link expires in 15 minutes and works once. After that, just request a new one.</p>
+    <p style="font-size:13px;line-height:1.6;margin:0 0 8px;color:#374151;">Signing in from the home-screen app? Enter this code there instead:</p>
+    <p style="font-size:28px;font-weight:700;letter-spacing:6px;margin:0 0 24px;color:#111827;">{code}</p>
+    <p style="font-size:13px;line-height:1.6;margin:0 0 8px;color:#374151;">The link and code expire in 15 minutes and work once. After that, just request a new one.</p>
     <p style="font-size:13px;line-height:1.6;margin:0 0 24px;color:#6b7280;">Didn't request this email? You can safely ignore it &mdash; no account will be created and you won't hear from us again.</p>
     <p style="font-size:15px;line-height:1.6;margin:0;">See you on the dancefloor.</p>
   </div>
@@ -180,7 +185,8 @@ def _magic_link_email(site: str, verify_url: str, host: str) -> tuple[str, str, 
     plain = (
         f"Here is the sign-in link you requested for the {site} festival chat:\n\n"
         f"{verify_url}\n\n"
-        f"The link expires in 15 minutes and works once. "
+        f"Signing in from the home-screen app? Enter this code there instead: {code}\n\n"
+        f"The link and code expire in 15 minutes and work once. "
         f"After that, just request a new one.\n\n"
         f"Didn't request this email? You can safely ignore it - "
         f"no account will be created and you won't hear from us again.\n\n"
@@ -854,11 +860,16 @@ async def auth_email_start(request: Request):
             raise HTTPException(403, "This account cannot sign in.")
 
         expires = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
-        # Stored hashed: the raw token exists only inside the emailed link.
+        # A 6-digit code accompanies the link: iOS home-screen web apps have
+        # storage partitioned from Safari, and Mail always opens links in the
+        # browser, so a session created by the link can never reach the PWA.
+        # Typing the code in the PWA creates the session in the right context.
+        code = f"{secrets.randbelow(1000000):06d}"
+        # Stored hashed: the raw token and code exist only inside the email.
         db.execute(
-            "INSERT OR REPLACE INTO email_tokens (token, email, provider_id, fingerprint, expires_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (hash_token(token), email, provider_id, None, expires),
+            "INSERT OR REPLACE INTO email_tokens (token, email, provider_id, fingerprint, expires_at, code) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (hash_token(token), email, provider_id, None, expires, hash_token(code)),
         )
         db.commit()
     finally:
@@ -876,7 +887,7 @@ async def auth_email_start(request: Request):
             verify_url = f"{base_url}/chat/v/{token}"
             from_addr = os.environ.get("CHAT_EMAIL_FROM", "no-reply@deftlab.dev")
             host = base_url.split("://", 1)[-1].split("/")[0].split(":")[0]
-            subject, html, plain = _magic_link_email(_SITE_NAME, verify_url, host)
+            subject, html, plain = _magic_link_email(_SITE_NAME, verify_url, host, code)
             await asyncio.to_thread(
                 client.send_basic_email,
                 {
@@ -924,6 +935,62 @@ async def auth_email_verify(request: Request, token: str = ""):
             db, "email", row["provider_id"], name, row["fingerprint"], redirect
         )
         return redirect
+    finally:
+        db.close()
+
+
+@router.post("/login/code")
+async def auth_email_code(request: Request, response: Response):
+    """Sign in with the 6-digit code from the magic-link email.
+
+    Exists for iOS home-screen web apps: their cookie storage is partitioned
+    from Safari and emailed links always open in the browser, so the link can
+    never authenticate the PWA. The code is entered in the app itself, which
+    puts the session cookie in the requesting context. Brute force is bounded
+    by the per-IP auth rate limit, the 15-minute token TTL, and a 5-attempt
+    cap that burns the pending token.
+    """
+    _check_auth_rate(request)
+    body = await request.json()
+    email = (body.get("email") or "").strip().lower()
+    code = (body.get("code") or "").strip().replace(" ", "")
+    if not email or not code.isdigit() or len(code) != 6:
+        raise HTTPException(400, "Invalid code")
+    try:
+        from email_validator import validate_email
+
+        email = validate_email(email, check_deliverability=False).normalized
+    except Exception:
+        raise HTTPException(400, "Invalid email address")
+    provider_id = hash_email(email)
+    db = _get_db()
+    try:
+        row = db.execute(
+            "SELECT token, fingerprint, expires_at, code, code_attempts "
+            "FROM email_tokens WHERE provider_id = ? ORDER BY expires_at DESC LIMIT 1",
+            (provider_id,),
+        ).fetchone()
+        if not row or not row["code"]:
+            raise HTTPException(400, "Invalid or expired code")
+        if datetime.now(timezone.utc) > datetime.fromisoformat(row["expires_at"]):
+            db.execute("DELETE FROM email_tokens WHERE token = ?", (row["token"],))
+            db.commit()
+            raise HTTPException(400, "Code expired. Request a new one.")
+        if row["code_attempts"] >= 5:
+            db.execute("DELETE FROM email_tokens WHERE token = ?", (row["token"],))
+            db.commit()
+            raise HTTPException(429, "Too many attempts. Request a new code.")
+        if not hmac.compare_digest(row["code"], hash_token(code)):
+            db.execute(
+                "UPDATE email_tokens SET code_attempts = code_attempts + 1 "
+                "WHERE token = ?",
+                (row["token"],),
+            )
+            db.commit()
+            raise HTTPException(400, "Wrong code. Check the email and try again.")
+        db.execute("DELETE FROM email_tokens WHERE token = ?", (row["token"],))
+        db.commit()
+        return _authenticate(db, "email", provider_id, "", row["fingerprint"], response)
     finally:
         db.close()
 

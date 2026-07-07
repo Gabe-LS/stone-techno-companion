@@ -70,7 +70,9 @@ def init_chat_db(db: sqlite3.Connection) -> None:
             email      TEXT NOT NULL,
             provider_id TEXT NOT NULL,
             fingerprint TEXT,
-            expires_at TEXT NOT NULL
+            expires_at TEXT NOT NULL,
+            code       TEXT,
+            code_attempts INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS user_providers (
@@ -316,6 +318,14 @@ def _migrate_chat_db(db: sqlite3.Connection) -> None:
     meetup_cols = {r[1] for r in db.execute("PRAGMA table_info(meetups)").fetchall()}
     if "photo_url" not in meetup_cols:
         db.execute("ALTER TABLE meetups ADD COLUMN photo_url TEXT")
+        db.commit()
+
+    token_cols = {r[1] for r in db.execute("PRAGMA table_info(email_tokens)").fetchall()}
+    if "code" not in token_cols:
+        db.execute("ALTER TABLE email_tokens ADD COLUMN code TEXT")
+        db.execute(
+            "ALTER TABLE email_tokens ADD COLUMN code_attempts INTEGER NOT NULL DEFAULT 0"
+        )
         db.commit()
 
     room_cols = {r[1] for r in db.execute("PRAGMA table_info(rooms)").fetchall()}

@@ -203,6 +203,115 @@ class TestAuth:
         assert r.status_code == 200
 
 
+class TestEmailCodeLogin:
+    """The 6-digit code path: the emailed link opens in the browser, whose
+    storage iOS partitions away from the home-screen app, so PWA users sign
+    in by typing the code from the same email."""
+
+    def _request_code(self, client, monkeypatch, email):
+        sent = {}
+        monkeypatch.setattr("chat_api.DISPOSABLE_DOMAINS", set())
+        monkeypatch.setattr("chat_api._email_rate", {})
+        monkeypatch.setattr("chat_api._email_dest_rate", {})
+        monkeypatch.setattr("chat_api._auth_rate", {})
+        monkeypatch.setenv("MAILEROO_API_KEY", "test-key")
+        monkeypatch.setattr(
+            "maileroo.MailerooClient.send_basic_email",
+            lambda self, payload: sent.update(payload),
+        )
+        r = client.post("/chat/api/login", json={"email": email})
+        assert r.status_code == 200
+        import re
+
+        m = re.search(r"code there instead: (\d{6})", sent["plain"])
+        assert m, sent.get("plain")
+        assert m.group(1) in sent["html"]
+        return m.group(1)
+
+    def test_code_login_success(self, client, monkeypatch):
+        code = self._request_code(client, monkeypatch, "codeuser@gmail.com")
+        r = client.post(
+            "/chat/api/login/code",
+            json={"email": "codeuser@gmail.com", "code": code},
+        )
+        assert r.status_code == 200
+        assert r.json()["provider"] == "email"
+        assert "chat_session" in r.cookies
+
+    def test_code_is_single_use(self, client, monkeypatch):
+        code = self._request_code(client, monkeypatch, "onceuser@gmail.com")
+        r = client.post(
+            "/chat/api/login/code",
+            json={"email": "onceuser@gmail.com", "code": code},
+        )
+        assert r.status_code == 200
+        r = client.post(
+            "/chat/api/login/code",
+            json={"email": "onceuser@gmail.com", "code": code},
+        )
+        assert r.status_code == 400
+
+    def test_code_login_wrong_code(self, client, monkeypatch):
+        code = self._request_code(client, monkeypatch, "wrongcode@gmail.com")
+        wrong = "000000" if code != "000000" else "111111"
+        r = client.post(
+            "/chat/api/login/code",
+            json={"email": "wrongcode@gmail.com", "code": wrong},
+        )
+        assert r.status_code == 400
+
+    def test_code_login_attempt_lockout(self, client, monkeypatch):
+        code = self._request_code(client, monkeypatch, "lockout@gmail.com")
+        wrong = "000000" if code != "000000" else "111111"
+        for _ in range(5):
+            r = client.post(
+                "/chat/api/login/code",
+                json={"email": "lockout@gmail.com", "code": wrong},
+            )
+            assert r.status_code == 400
+        # After 5 failures even the correct code is rejected and the pending
+        # token is burned, so a fresh email is required.
+        r = client.post(
+            "/chat/api/login/code",
+            json={"email": "lockout@gmail.com", "code": code},
+        )
+        assert r.status_code == 429
+        r = client.post(
+            "/chat/api/login/code",
+            json={"email": "lockout@gmail.com", "code": code},
+        )
+        assert r.status_code == 400
+
+    def test_code_login_expired(self, client, monkeypatch):
+        code = self._request_code(client, monkeypatch, "expired@gmail.com")
+        _test_db.execute(
+            "UPDATE email_tokens SET expires_at = ?",
+            ((datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat(),),
+        )
+        _test_db.commit()
+        r = client.post(
+            "/chat/api/login/code",
+            json={"email": "expired@gmail.com", "code": code},
+        )
+        assert r.status_code == 400
+
+    def test_code_login_no_pending_request(self, client, monkeypatch):
+        monkeypatch.setattr("chat_api._auth_rate", {})
+        r = client.post(
+            "/chat/api/login/code",
+            json={"email": "nobody@gmail.com", "code": "123456"},
+        )
+        assert r.status_code == 400
+
+    def test_code_login_malformed_code(self, client, monkeypatch):
+        monkeypatch.setattr("chat_api._auth_rate", {})
+        r = client.post(
+            "/chat/api/login/code",
+            json={"email": "x@gmail.com", "code": "12ab56"},
+        )
+        assert r.status_code == 400
+
+
 # --- Rooms ---
 
 

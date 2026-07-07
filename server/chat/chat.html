@@ -268,6 +268,8 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .auth-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-lg); padding: var(--space-2xl); flex: 1; }
 .auth-screen h2 { margin: 0 0 var(--space-sm); font-size: var(--font-xl); }
 .auth-screen p { margin: 0; color: var(--color-muted); font-size: var(--font-sm); text-align: center; }
+#auth-code-row { display: flex; flex-direction: column; align-items: center; gap: var(--space-lg); border-top: 1px solid var(--color-border); padding-top: var(--space-lg); margin-top: var(--space-sm); }
+.auth-code-hint { max-width: 280px; }
 .auth-btn { display: flex; align-items: center; justify-content: center; gap: var(--space-md); width: 280px; padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg); font-size: var(--font-base); cursor: pointer; font-family: inherit; }
 .auth-btn:active { background: var(--color-surface); }
 .auth-btn.sent { background: var(--color-success); border-color: var(--color-success); color: #fff; pointer-events: none; }
@@ -551,6 +553,11 @@ async function renderAuth() {
       ${googleSection}
       <input class="auth-input" id="email-input" type="email" placeholder="your@email.com" onkeydown="if(event.key==='Enter')authEmail()">
       <button class="auth-btn" id="email-send-btn" onclick="authEmail()">Send magic link</button>
+      <div id="auth-code-row" style="display:none">
+        <p class="auth-code-hint">Click the link in the email, or enter the 6-digit code here:</p>
+        <input class="auth-input" id="code-input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="6-digit code" onkeydown="if(event.key==='Enter')authEmailCode()">
+        <button class="auth-btn" id="code-btn" onclick="authEmailCode()">Sign in with code</button>
+      </div>
     </div>
     <div class="chat-menu" id="chat-menu">
       <a class="menu-section" href="/line-up" onclick="dbg('[NAV] lineup (login menu)')" style="text-decoration:none">Line-up</a>
@@ -654,6 +661,11 @@ async function authEmail() {
     await api('/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
     dbg('[AUTH] magic link sent, showing success state for 10s');
     showToast('Check your email for the sign-in link');
+    // The emailed link opens in the browser, whose storage iOS partitions
+    // away from the home-screen app: PWA users sign in by typing the
+    // emailed 6-digit code instead, so reveal the code input now.
+    const codeRow = document.getElementById('auth-code-row');
+    if (codeRow) { codeRow.style.display = ''; dbg('[AUTH] code input revealed'); }
     btn.classList.add('sent');
     btn.setAttribute('aria-label', 'Link sent');
     btn.innerHTML = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
@@ -666,6 +678,26 @@ async function authEmail() {
     }, 10000);
   } catch (e) {
     dbg('[AUTH] magic link request failed: ' + e.message);
+    showToast(e.message);
+    btn.disabled = false;
+  }
+}
+
+async function authEmailCode() {
+  dbg('[AUTH] authEmailCode');
+  const email = document.getElementById('email-input').value.trim();
+  const code = document.getElementById('code-input').value.replace(/\D/g, '');
+  if (!email) { showToast('Enter your email address above first'); return; }
+  if (code.length !== 6) { showToast('Enter the 6-digit code from the email'); return; }
+  const btn = document.getElementById('code-btn');
+  btn.disabled = true;
+  try {
+    const result = await api('/login/code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, code }) });
+    dbg('[AUTH] code auth success: ' + result.id);
+    currentUser = result;
+    route();
+  } catch (e) {
+    dbg('[AUTH] code auth failed: ' + e.message);
     showToast(e.message);
     btn.disabled = false;
   }
