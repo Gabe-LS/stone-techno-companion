@@ -5182,9 +5182,15 @@ window.addEventListener('resize', () => {
   const wasMobile = isMobile;
   isMobile = window.innerWidth < 768;
   if (wasMobile !== isMobile) {
+    dbg('[LAYOUT] breakpoint crossed, re-rendering for', isMobile ? 'mobile' : 'desktop');
     _routing = false;
     if (currentRoom) {
-      openRoom(currentRoom, currentRoomName, currentRoomType);
+      // Re-render the current view for the new mode directly from in-memory
+      // state. openRoom() cannot be used here: its same-room dedup guard
+      // returns immediately, which left the old layout in place.
+      if (!isMobile && !document.querySelector('.main-panel')) renderRoomList();
+      renderChatView(currentRoomName);
+      if (!isMobile) renderMemberList();
     } else {
       renderRoomList();
     }
