@@ -541,7 +541,7 @@ async function renderAuth() {
     : '';
   document.getElementById('app').innerHTML = `
     <div class="header">
-      <a href="/line-up" class="nav-icon" aria-label="Line-up" onclick="event.preventDefault();location.href='/line-up'">${ICON_CALENDAR}</a>
+      <a href="/line-up" class="nav-icon" aria-label="Lineup section" onclick="event.preventDefault();dbg('[NAV] lineup section (calendar icon)');location.href=storageGet('stc_view')==='timetable'?'/timetable':'/line-up'">${ICON_CALENDAR}</a>
       <div class="header-info"><span class="title">Chat</span></div>
       <button class="hamburger" onclick="toggleChatMenu()">${ICON_HAMBURGER}</button>
     </div>
@@ -2221,7 +2221,7 @@ function renderChatView(roomName) {
     const roomDesc = currentRoomObj?.description || '';
     document.getElementById('app').innerHTML = `
       <div class="header">
-        <a href="/line-up" class="nav-icon" aria-label="Line-up" onclick="event.preventDefault();location.href='/line-up'">${ICON_CALENDAR}</a>
+        <a href="/line-up" class="nav-icon" aria-label="Lineup section" onclick="event.preventDefault();dbg('[NAV] lineup section (calendar icon)');location.href=storageGet('stc_view')==='timetable'?'/timetable':'/line-up'">${ICON_CALENDAR}</a>
         <div class="header-info">
           <span class="title">${esc(roomName)}</span>
           ${roomDesc ? `<span class="online">${esc(roomDesc)}</span>` : ''}

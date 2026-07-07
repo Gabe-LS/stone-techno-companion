@@ -255,6 +255,10 @@ def render_output_html(
             "var v=location.pathname==='/timetable'?'timetable':"
             "location.pathname==='/line-up'?'list':"
             "(localStorage.getItem('stc_view')==='timetable'?'timetable':'list');"
+            # stc_view means "last view SEEN", not "last toggled": an
+            # explicit /line-up or /timetable visit updates it too, so the
+            # chat calendar icon and the neutral / return to this view
+            "try{localStorage.setItem('stc_view',v)}catch(e){}"
             "document.documentElement.className='view-'+v;"
             "if(location.pathname!==(v==='timetable'?'/timetable':'/line-up'))"
             "history.replaceState(null,'',v==='timetable'?'/timetable':'/line-up');"
