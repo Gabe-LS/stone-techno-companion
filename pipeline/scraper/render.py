@@ -718,6 +718,13 @@ def render_output_html(
 
     # Hamburger dropdown menu (fixed-positioned, outside nav)
     parts.append('  <div class="cmd-dropdown" id="cmd-dropdown">')
+    parts.append(
+        '    <button type="button" class="dd-toggle" role="switch" aria-checked="false" onclick="toggleFilter(document.getElementById(\'btn-filter\'))" id="dd-filter">Show My Picks<span class="dd-switch" aria-hidden="true"></span></button>'
+    )
+    if has_timetable:
+        parts.append(
+            '    <button type="button" class="dd-toggle" role="switch" aria-checked="false" onclick="toggleScheduleFilter(document.getElementById(\'btn-schedule\'))" id="dd-schedule" style="display:none">Show My Schedule<span class="dd-switch" aria-hidden="true"></span></button>'
+        )
     if has_timetable:
         parts.append(
             '    <button type="button" onclick="switchView(\'list\', document.getElementById(\'btn-list\')); closeMenu()" id="dd-list">Line-up</button>'
@@ -728,13 +735,6 @@ def render_output_html(
     parts.append(
         '    <button type="button" onclick="dbg(\'[NAV] transport (menu)\'); window.open(\'/public-transport\',\'_self\')">Transport</button>'
     )
-    parts.append(
-        '    <button type="button" class="dd-toggle" role="switch" aria-checked="false" onclick="toggleFilter(document.getElementById(\'btn-filter\'))" id="dd-filter">Show My Picks<span class="dd-switch" aria-hidden="true"></span></button>'
-    )
-    if has_timetable:
-        parts.append(
-            '    <button type="button" class="dd-toggle" role="switch" aria-checked="false" onclick="toggleScheduleFilter(document.getElementById(\'btn-schedule\'))" id="dd-schedule" style="display:none">Show My Schedule<span class="dd-switch" aria-hidden="true"></span></button>'
-        )
     parts.append(
         '    <button type="button" onclick="openShareModal(); closeMenu()">Share</button>'
     )
