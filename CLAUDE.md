@@ -144,6 +144,8 @@ Key design decisions:
 python pipeline/stone_techno_companion.py --render-only --deploy
 ```
 
+**Incidents during the live event**: see `docs/runbook.md` — health checks, push debugging, restart/rollback/DB restore, moderation outage behavior (fails closed), admin lockout break-glass, POI fallback.
+
 `deploy.sh` does: sync prod env vars to the VPS `.env` (back up the previous `.env` first, then an atomic temp-file + byte-count check + `mv` + `chmod 600` on the new file, so a dropped connection can't leave a truncated `.env` and secrets aren't left world-readable); WAL-checkpoint the VPS SQLite DBs; download VPS data (`server/data/` + best-effort `server/chat-uploads/`) to `backups/{timestamp}/` locally; verify each downloaded `.db` with `PRAGMA quick_check` and abort before any change if a backup is corrupt; create a timestamped backup on the VPS; `git pull`; `docker compose up -d --build --force-recreate`; health check (container + chat API), exiting non-zero on failure; prune old VPS backups (keeps 5). Local backups survive VPS disk failure.
 
 ## Generated Artifacts (gitignored)
