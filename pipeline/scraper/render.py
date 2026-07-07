@@ -581,11 +581,16 @@ def render_output_html(
 
       /* The DOCUMENT is the only scroller (both axes): the chrome compacts
          and pins exactly like the list view, and the floor row / time column
-         stick against the page. The wrapper only full-bleeds the table. */
-      .tt-v-scroll { overflow: visible; margin: 0 calc(-1 * var(--space-md)); }
-      .view-timetable body { width: max-content; min-width: 100%; }
-      .view-timetable .cmd-bar { position: sticky; left: 0; width: 100vw; margin-left: calc(-1 * var(--space-md)); margin-right: 0; }
-      .view-timetable #page-title, .view-timetable .filter-bar { position: sticky; left: 0; width: calc(100vw - 2 * var(--space-md)); }
+         stick against the page. Body side padding is zeroed in this view so
+         the sticky containing block spans the full scroll extent: otherwise
+         the pinned chrome runs out of travel room near max scrollX and gets
+         dragged left, and the 12px padding gutters let content show through.
+         The chrome is true full-bleed (100vw) with its padding internal. */
+      .tt-v-scroll { overflow: visible; margin: 0; }
+      .view-timetable body { width: max-content; min-width: 100%; padding-left: 0; padding-right: 0; }
+      .view-timetable .cmd-bar { position: sticky; left: 0; width: 100vw; margin: 0; }
+      .view-timetable #page-title { position: sticky; left: 0; width: 100vw; padding-left: var(--space-md); padding-right: var(--space-md); }
+      .view-timetable .filter-bar { position: sticky; left: 0; width: 100vw; padding-left: var(--space-md); padding-right: var(--space-md); }
 
       .tt-table { border-collapse: separate; border-spacing: 0; table-layout: fixed; width: calc(40px + var(--num-floors) * 40vw); }
       .tt-table thead th { position: sticky; top: calc(var(--sticky-top-h2, 106px) + 1.5 * var(--font-lg) + 13px); z-index: 2; background: var(--color-bg); padding: var(--space-xs) 2px; text-align: center; vertical-align: top; }
