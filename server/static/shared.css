@@ -204,20 +204,20 @@ body {
 .view-label { display: none; }
 .cmd-dropdown { display: none; }
 
-/* Switch rows inside the dropdown: the chat menu's lighter room-row style
-   (gray-800 layer, header-height row, white 14px label) with the admin
-   panel's iOS switch. No :active flash: the switch is the feedback. */
-.cmd-dropdown button.dd-toggle { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); background: var(--gray-800); color: #fff; height: var(--header-h); padding: 0 var(--space-lg); font-size: var(--font-sm); -webkit-tap-highlight-color: transparent; }
+/* Option rows: actions (not navigation) on the chat menu's lighter layer,
+   with gray-700 press feedback like chat's room rows. */
+.cmd-dropdown button.dd-option { background: var(--gray-800); }
+.cmd-dropdown button.dd-option:active { background: var(--gray-700); }
+
+/* Toggle rows are options with an iOS switch (mirrors the admin panel
+   switch): header-height row, 14px label, and no press flash because the
+   switch itself is the feedback. Use class="dd-option dd-toggle". */
+.cmd-dropdown button.dd-toggle { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); height: var(--header-h); padding: 0 var(--space-lg); font-size: var(--font-sm); }
 .cmd-dropdown button.dd-toggle:active { background: var(--gray-800); }
 .dd-switch { position: relative; width: 36px; height: 20px; border-radius: 10px; background: var(--gray-700); transition: background 0.2s; flex-shrink: 0; }
 .dd-switch::before { content: ''; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; background: var(--gray-400); border-radius: 50%; transition: transform 0.2s, background 0.2s; }
 .cmd-dropdown button[aria-checked="true"] .dd-switch { background: var(--color-success); }
 .cmd-dropdown button[aria-checked="true"] .dd-switch::before { transform: translateX(16px); background: #fff; }
-
-/* Option rows (Share, Sync): actions, not navigation, so they share the
-   toggles' lighter layer; gray-700 press feedback like chat's room rows */
-.cmd-dropdown button.dd-option { background: var(--gray-800); }
-.cmd-dropdown button.dd-option:active { background: var(--gray-700); }
 
 /* Group separator (view options / navigation / general actions) */
 .dd-divider { height: 1px; background: var(--gray-700); }

@@ -719,11 +719,11 @@ def render_output_html(
     # Hamburger dropdown menu (fixed-positioned, outside nav)
     parts.append('  <div class="cmd-dropdown" id="cmd-dropdown">')
     parts.append(
-        '    <button type="button" class="dd-toggle" role="switch" aria-checked="false" onclick="toggleFilter(document.getElementById(\'btn-filter\'))" id="dd-filter">Show My Picks<span class="dd-switch" aria-hidden="true"></span></button>'
+        '    <button type="button" class="dd-option dd-toggle" role="switch" aria-checked="false" onclick="toggleFilter(document.getElementById(\'btn-filter\'))" id="dd-filter">Show My Picks<span class="dd-switch" aria-hidden="true"></span></button>'
     )
     if has_timetable:
         parts.append(
-            '    <button type="button" class="dd-toggle" role="switch" aria-checked="false" onclick="toggleScheduleFilter(document.getElementById(\'btn-schedule\'))" id="dd-schedule" style="display:none">Show My Schedule<span class="dd-switch" aria-hidden="true"></span></button>'
+            '    <button type="button" class="dd-option dd-toggle" role="switch" aria-checked="false" onclick="toggleScheduleFilter(document.getElementById(\'btn-schedule\'))" id="dd-schedule" style="display:none">Show My Schedule<span class="dd-switch" aria-hidden="true"></span></button>'
         )
     parts.append('    <div class="dd-divider"></div>')
     if has_timetable:
@@ -744,7 +744,7 @@ def render_output_html(
         '    <button type="button" class="dd-option" onclick="openSyncModal(); closeMenu()">Sync</button>'
     )
     parts.append(
-        '    <button type="button" class="dd-toggle" role="switch" aria-checked="false" onclick="toggleNotifications()" id="dd-bell">Notifications<span class="dd-switch" aria-hidden="true"></span></button>'
+        '    <button type="button" class="dd-option dd-toggle" role="switch" aria-checked="false" onclick="toggleNotifications()" id="dd-bell">Notifications<span class="dd-switch" aria-hidden="true"></span></button>'
     )
     parts.append("  </div>")
     parts.append(
