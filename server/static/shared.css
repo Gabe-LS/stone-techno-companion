@@ -208,14 +208,14 @@ body {
 .cmd-dropdown button.active { background: var(--gray-700); }
 
 /* Option rows: actions (not navigation) on the chat menu's lighter layer,
-   with gray-700 press feedback like chat's room rows. */
-.cmd-dropdown button.dd-option { background: var(--gray-800); }
+   with the chat member-row height (40px) and gray-700 press feedback. */
+.cmd-dropdown button.dd-option { background: var(--gray-800); display: flex; align-items: center; height: 40px; padding-top: 0; padding-bottom: 0; }
 .cmd-dropdown button.dd-option:active { background: var(--gray-700); }
 
 /* Toggle rows are options with an iOS switch (mirrors the admin panel
-   switch): header-height row, 14px label, and no press flash because the
-   switch itself is the feedback. Use class="dd-option dd-toggle". */
-.cmd-dropdown button.dd-toggle { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); height: var(--header-h); padding: 0 var(--space-lg); font-size: var(--font-sm); }
+   switch): 14px label, no press flash because the switch is the feedback.
+   Use class="dd-option dd-toggle". */
+.cmd-dropdown button.dd-toggle { justify-content: space-between; gap: var(--space-md); font-size: var(--font-sm); }
 .cmd-dropdown button.dd-toggle:active { background: var(--gray-800); }
 .dd-switch { position: relative; width: 36px; height: 20px; border-radius: 10px; background: var(--gray-700); transition: background 0.2s; flex-shrink: 0; }
 .dd-switch::before { content: ''; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; background: var(--gray-400); border-radius: 50%; transition: transform 0.2s, background 0.2s; }
