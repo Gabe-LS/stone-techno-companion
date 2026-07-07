@@ -374,10 +374,11 @@
   <button type="button" class="hamburger" onclick="toggleMenu()" aria-label="Menu"></button>
 </nav>
 <div class="cmd-dropdown" id="cmd-dropdown">
+  <button type="button" class="active" onclick="closeMenu()">Transport</button>
+  <div class="dd-divider"></div>
   <button type="button" onclick="dbg('[NAV] lineup (menu)'); location.href='/line-up'">Line-up</button>
   <button type="button" onclick="dbg('[NAV] timetable (menu)'); location.href='/timetable'">Timetable</button>
   <button type="button" onclick="dbg('[NAV] chat (menu)'); location.href='/chat'">Chat</button>
-  <button type="button" class="active" onclick="closeMenu()">Transport</button>
 </div>
 <div class="menu-overlay" id="menu-overlay" onclick="closeMenu()"></div>
 <script>
