@@ -1156,8 +1156,11 @@ async def transport_walk(request: Request, lat: float, lng: float):
 
     import httpx
 
+    # FOSSGIS OSRM with a REAL foot profile. The project-osrm.org demo server
+    # only hosts the car dataset and silently routes "foot" as driving
+    # (5.5 km / 9 min for a 50-minute walk), so never use it here.
     url = (
-        f"https://router.project-osrm.org/route/v1/foot/"
+        f"https://routing.openstreetmap.de/routed-foot/route/v1/foot/"
         f"{lng},{lat};{_TRANSPORT_STOP_LNG},{_TRANSPORT_STOP_LAT}?overview=false"
     )
     try:
