@@ -103,6 +103,16 @@ POIs live ONLY in the MapTiler dataset (edit pins there; live within 120 s). If 
 
 `chat-uploads/` is the only unbounded growth vector (user media, TTL-purged automatically — expired files are unlinked). Container logs are capped (10 MB x 5). Check with `df -h` on the VPS.
 
+## Client-side debugging in the field
+
+The frontend's `dbg()` console logging is off by default in production. To diagnose a user-visible issue on any device: open the browser console, run `localStorage.setItem('stc_debug', '1')`, reload — full timecoded action logs appear. `localStorage.removeItem('stc_debug')` to turn off. `verify()` failures print regardless of the flag.
+
+## Logs
+
+- **Live**: `docker logs stone-techno` on the VPS (json-file driver, capped 10 MB x 5 — rotates under traffic).
+- **Archived**: every `deploy.sh` run saves the outgoing container's complete log to `backups/{timestamp}/docker.log` locally before `--force-recreate` destroys it.
+- **Monitor history**: `backups/monitor.log` (hourly cron output; only writes when something is non-OK).
+
 ## Live settings (no deploy)
 
 Admin panel → Settings (super-admin only): message char limit, DM/room/meetup TTLs. Room properties (moderation, read-only, media, TTL) per-room in the Rooms tab.

@@ -1,7 +1,13 @@
 /* ===== SHARED UTILITIES ===== */
 
 /* --- Debug --- */
-var DEBUG = true;
+/* Debug console output is opt-in in production: run
+   localStorage.setItem('stc_debug', '1') and reload to enable,
+   localStorage.removeItem('stc_debug') to disable. Failures from verify()
+   always reach the console regardless of the flag. */
+var DEBUG = (function () {
+  try { return localStorage.getItem('stc_debug') === '1'; } catch (e) { return false; }
+})();
 var _t0 = performance.now();
 var _dbgTag = '[app]';
 function _ts() { return '+' + ((performance.now() - _t0) | 0) + 'ms'; }
@@ -11,7 +17,7 @@ function dbg() {
 }
 function verify(label, condition, detail) {
   if (condition) {
-    console.log(_ts(), _dbgTag + ' OK: ' + label, detail || '');
+    if (DEBUG) console.log(_ts(), _dbgTag + ' OK: ' + label, detail || '');
   } else {
     console.error(_ts(), _dbgTag + ' FAIL: ' + label, detail || '');
   }
