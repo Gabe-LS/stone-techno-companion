@@ -48,11 +48,11 @@ server/.env
 *.pem
 
 # Stress test artifacts
-stress_test/media/
-stress_test/report_*.txt
-stress_test/throughput_*.txt
-stress_test/throughput_*.log
-stress_test/debug_*.log
+tests/stress_test/media/
+tests/stress_test/report_*.txt
+tests/stress_test/throughput_*.txt
+tests/stress_test/throughput_*.log
+tests/stress_test/debug_*.log
 
 # NRW aerial tile cache (runtime)
 server/static/vendor/dop-cache/

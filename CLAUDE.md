@@ -129,7 +129,7 @@ Key design decisions:
 | `tests/test_notifications.py` | 54 tests — push debounce, payload, badge, clearing. Requires Playwright infra. |
 | `tests/e2ee_browser_check.py` | Standalone Playwright verification (not part of the pytest suite) — 21 checks across 5 browser contexts, see "End-to-End Encryption (DMs)" below |
 | `server/verify_push_both.py` | Standalone push check — after enabling notifications on both lineup and chat in one Chromium profile, fires a real WebPush at each stored subscription and asserts both surfaces share one LIVE endpoint (see push "Hard-won invariants") |
-| `stress_test/run.py` | Chat stress test — 200 concurrent WS users, multi-room + DMs, burst testing, media uploads, latency/throughput/resource metrics, moderation cost estimation |
+| `tests/stress_test/run.py` | Chat stress test — 200 concurrent WS users, multi-room + DMs, burst testing, media uploads, latency/throughput/resource metrics, moderation cost estimation |
 
 ### Deploy
 
@@ -157,9 +157,9 @@ python stone_techno_companion.py --render-only --deploy
 - `server/chat/uploads/` — uploaded images/videos (WebP, MP4) in local/bare-uvicorn dev
 - `server/chat-uploads/` — the PRODUCTION uploads dir: `docker-compose.yml` bind-mounts `./chat-uploads:/app/chat/uploads`, so live user media lives here on the VPS (inside the deploy git worktree). Gitignored and backed up by `deploy.sh`
 - `server/chat/tmp/` — intermediate processing files (auto-cleaned on startup)
-- `stress_test/media/` — auto-generated test images (WebP 1500px Q=80) + videos (H.264 MP4) + user-provided files
-- `stress_test/report_*.txt` — stress test reports
-- `stress_test/debug_*.log` — stress test debug logs
+- `tests/stress_test/media/` — auto-generated test images (WebP 1500px Q=80) + videos (H.264 MP4) + user-provided files
+- `tests/stress_test/report_*.txt` — stress test reports
+- `tests/stress_test/debug_*.log` — stress test debug logs
 
 These are regenerable. Source of truth is the live website + `overrides.toml` + DB enrichment data.
 
@@ -549,17 +549,17 @@ Run: `python tests/notif_e2e/run.py [--sw | --browser | --all | --list]`. **`--b
 
 ```bash
 # Quick smoke test (20 users, 2 min, no OpenAI cost)
-python stress_test/run.py --users 20 --duration 120 --insecure --no-moderation
+python tests/stress_test/run.py --users 20 --duration 120 --insecure --no-moderation
 
 # Full production-like test (200 users, 30 min, moderation on)
-python stress_test/run.py --insecure
+python tests/stress_test/run.py --insecure
 
 # On VPS
-python stress_test/run.py --url https://stonetechno.deftlab.dev \
+python tests/stress_test/run.py --url https://stonetechno.deftlab.dev \
     --db /root/services/stone-techno/server/data/chat.db
 
 # Clean up interrupted run
-python stress_test/run.py --cleanup-only
+python tests/stress_test/run.py --cleanup-only
 ```
 
 Dependencies: `pip install websockets httpx psutil`

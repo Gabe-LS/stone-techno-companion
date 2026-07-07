@@ -8,20 +8,20 @@ resources, and estimated moderation costs.
 
 Usage:
     # Local (start the server first)
-    python stress_test/run.py --insecure
+    python tests/stress_test/run.py --insecure
 
     # Quick smoke test
-    python stress_test/run.py --users 20 --duration 120 --insecure
+    python tests/stress_test/run.py --users 20 --duration 120 --insecure
 
     # Full 200-user, 30-minute run against production
-    python stress_test/run.py --url https://stonetechno.deftlab.dev \
+    python tests/stress_test/run.py --url https://stonetechno.deftlab.dev \
         --db /root/services/stone-techno/server/data/chat.db
 
     # Without moderation (isolate chat infra from OpenAI)
-    python stress_test/run.py --insecure --no-moderation
+    python tests/stress_test/run.py --insecure --no-moderation
 
     # Clean up leftover data from an interrupted run
-    python stress_test/run.py --cleanup-only
+    python tests/stress_test/run.py --cleanup-only
 
 Requirements:
     pip install websockets httpx psutil
@@ -43,6 +43,10 @@ import time
 import uuid
 from array import array
 from pathlib import Path
+
+# Logs, reports, and generated test media live next to this script,
+# regardless of the caller's working directory.
+SCRIPT_DIR = Path(__file__).resolve().parent
 
 try:
     import httpx
@@ -1743,7 +1747,7 @@ async def run(args):
         print("Done.")
         return
 
-    log_path = str(Path("stress_test") / f"debug_{int(time.time())}.log")
+    log_path = str(SCRIPT_DIR / f"debug_{int(time.time())}.log")
     setup_logging(log_path)
     args.moderated = not args.no_moderation
 
@@ -1917,7 +1921,7 @@ async def run(args):
         report = generate_report(metrics, BurstControl(), args, pw_result)
         print(report)
 
-        report_dir = Path("stress_test")
+        report_dir = SCRIPT_DIR
         report_dir.mkdir(exist_ok=True)
         report_path = report_dir / f"report_{int(time.time())}.txt"
         report_path.write_text(report)
@@ -2076,7 +2080,7 @@ async def _throughput_worker(
 
 
 async def run_throughput(args):
-    log_path = str(Path("stress_test") / f"throughput_{int(time.time())}.log")
+    log_path = str(SCRIPT_DIR / f"throughput_{int(time.time())}.log")
     setup_logging(log_path)
     args.moderated = not args.no_moderation
 
@@ -2230,7 +2234,7 @@ async def run_throughput(args):
         print(f"  Overall: {'ALL PASS' if all_pass else 'SOME FAILED'}")
         print("=" * 68)
 
-        report_path = Path("stress_test") / f"throughput_{int(time.time())}.txt"
+        report_path = SCRIPT_DIR / f"throughput_{int(time.time())}.txt"
         lines = ["THROUGHPUT BENCHMARK", ""]
         for r in results:
             lines.append(
@@ -2417,7 +2421,7 @@ def main():
     )
     p.add_argument(
         "--media-dir",
-        default="stress_test/media",
+        default=str(SCRIPT_DIR / "media"),
         help="Directory with test photos/videos",
     )
     p.add_argument(
