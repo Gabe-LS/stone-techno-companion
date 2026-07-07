@@ -1726,9 +1726,11 @@ def render_output_html(
       if (!run) return;
       // Wait for init to finish (it reveals the body and loads session state
       // like shareToken) so the action sees the same state as a manual click.
+      // The giveup cap must exceed the 5s init reveal timeout, or the action
+      // could fire against a still-hidden body with unloaded session state.
       let tries = 0;
       const t = setInterval(() => {
-        if (document.body.style.opacity === '1' || ++tries > 30) {
+        if (document.body.style.opacity === '1' || ++tries > 60) {
           clearInterval(t);
           setTimeout(run, 100);
         }
