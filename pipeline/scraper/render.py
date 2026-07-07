@@ -2619,6 +2619,7 @@ def render_output_html(
       const keepPeriod = currentPeriod && periods.includes(currentPeriod) ? currentPeriod : periods[0];
       periods.forEach((p) => {
         const btn = document.createElement('button');
+        btn.type = 'button';
         btn.className = 'period-tab' + (p === keepPeriod ? ' active' : '');
         btn.textContent = p === 'day' ? 'Day' : 'Night';
         btn.onclick = function() {
