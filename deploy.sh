@@ -308,14 +308,27 @@ else
     fi
 fi
 
-# --- Cleanup old VPS backups (keep last 5) ---
-to_prune=$(ssh "$VPS" "ls -dt $VPS_DIR/server/data.bak.* 2>/dev/null | tail -n +6" || true)
+# --- Cleanup old backups ---
+# VPS: keep last 5 data backups + last 5 .env backups.
+to_prune=$(ssh "$VPS" "ls -dt $VPS_DIR/server/data.bak.* 2>/dev/null | tail -n +6; ls -dt $VPS_DIR/server/.env.bak.* 2>/dev/null | tail -n +6" || true)
 if [ -n "$to_prune" ]; then
     if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY RUN] Would prune:"
+        echo "  [DRY RUN] Would prune on VPS:"
         echo "$to_prune"
     else
         echo "$to_prune" | ssh "$VPS" "xargs rm -rf"
+    fi
+fi
+# Local: keep the newest 15 backup dirs (each can be large during the festival
+# — chat.db + docker.log + a full chat-uploads copy).
+local_prune=$(ls -dt "$LOCAL_BACKUPS"/2*/ 2>/dev/null | tail -n +16 || true)
+if [ -n "$local_prune" ]; then
+    if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY RUN] Would prune locally:"
+        echo "$local_prune"
+    else
+        echo "$local_prune" | xargs rm -rf
+        echo "  Pruned old local backups (kept newest 15)"
     fi
 fi
 

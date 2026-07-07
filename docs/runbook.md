@@ -111,7 +111,17 @@ The frontend's `dbg()` console logging is off by default in production. To diagn
 
 - **Live**: `docker logs stone-techno` on the VPS (json-file driver, capped 10 MB x 5 — rotates under traffic).
 - **Archived**: every `deploy.sh` run saves the outgoing container's complete log to `backups/{timestamp}/docker.log` locally before `--force-recreate` destroys it.
-- **Monitor history**: `backups/monitor.log` (hourly cron output; only writes when something is non-OK).
+- **Monitor history**: `backups/monitor.log` (hourly cron output; only writes when something is non-OK; self-rotates at 512 KB keeping the newest 256 KB).
+- **Retention**: VPS keeps the 5 newest `data.bak.*` and `.env.bak.*`; local `backups/` keeps the 15 newest deploy dirs (pruned automatically by `deploy.sh`).
+
+**Cutting through access-log noise** (uvicorn request lines are the bulk of the log; they are the only request-level trace — Caddy does not log — so they stay on):
+
+```bash
+docker logs stone-techno 2>&1 | grep -vE 'GET / HTTP|GET /(shared|sw\.js|manifest|favicon|photos/|thumbs/)'   # app events only
+docker logs stone-techno 2>&1 | grep -E 'ERROR|CRITICAL|Traceback'    # problems only
+docker logs stone-techno 2>&1 | grep '\[MOD\]'                        # moderation decisions
+docker logs stone-techno 2>&1 | grep -E '\[SWLOG\]|\[PUSH'            # push pipeline
+```
 
 ## Live settings (no deploy)
 

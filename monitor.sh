@@ -23,6 +23,12 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 
+# Self-rotate the cron log: keep the newest ~256 KB once it passes 512 KB.
+MONITOR_LOG="backups/monitor.log"
+if [ -f "$MONITOR_LOG" ] && [ "$(wc -c < "$MONITOR_LOG" | tr -d ' ')" -gt 524288 ]; then
+    tail -c 262144 "$MONITOR_LOG" > "$MONITOR_LOG.tmp" && mv "$MONITOR_LOG.tmp" "$MONITOR_LOG"
+fi
+
 SITE="https://stonetechno.deftlab.dev"
 HOST="stonetechno.deftlab.dev"
 VPS="root@209.38.244.136"
