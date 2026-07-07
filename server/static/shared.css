@@ -235,8 +235,9 @@ body {
   .hamburger { display: flex; }
   .cmd-dropdown { position: fixed; top: var(--header-h); left: 0; right: 0; z-index: var(--z-menu); background: var(--gray-900); flex-direction: column; box-shadow: var(--shadow-modal); }
   .cmd-dropdown.open { display: flex; }
-  /* Rows match the chat menu's .menu-section exactly */
-  .cmd-dropdown button { background: none; color: #ccc; border: none; border-top: 1px solid var(--gray-700); padding: 14px var(--space-lg); font-size: 15px; font-weight: 600; font-family: var(--font-family); text-align: left; line-height: 1.5; -webkit-tap-highlight-color: transparent; cursor: pointer; }
+  /* Rows match the chat menu's .menu-section box, but white text: these are
+     all direct actions, not dulled group headers like chat's Rooms/DMs */
+  .cmd-dropdown button { background: none; color: #fff; border: none; border-top: 1px solid var(--gray-700); padding: 14px var(--space-lg); font-size: 15px; font-weight: 600; font-family: var(--font-family); text-align: left; line-height: 1.5; -webkit-tap-highlight-color: transparent; cursor: pointer; }
   .cmd-dropdown button:active { background: var(--gray-800); }
   .day-tab { padding: 6px 10px; font-size: var(--font-xs); }
 }
