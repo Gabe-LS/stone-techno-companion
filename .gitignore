@@ -36,6 +36,9 @@ server/static/timetable.json
 # Deploy backups (downloaded from VPS)
 backups/
 
+# Operational logs (monitor history, archived container logs)
+logs/
+
 # Generated output
 pipeline/output/
 

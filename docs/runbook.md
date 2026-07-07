@@ -109,18 +109,20 @@ The frontend's `dbg()` console logging is off by default in production. To diagn
 
 ## Logs
 
-- **Live**: `docker logs stone-techno` on the VPS (json-file driver, capped 10 MB x 5 — rotates under traffic).
-- **Archived**: every `deploy.sh` run saves the outgoing container's complete log to `backups/{timestamp}/docker.log` locally before `--force-recreate` destroys it.
-- **Monitor history**: `backups/monitor.log` (hourly cron output; only writes when something is non-OK; self-rotates at 512 KB keeping the newest 256 KB).
-- **Retention**: VPS keeps the 5 newest `data.bak.*` and `.env.bak.*`; local `backups/` keeps the 15 newest deploy dirs (pruned automatically by `deploy.sh`).
+**Sensitive-data policy: request paths are NEVER logged.** Magic-link tokens travel in `GET /chat/v/{token}` and session tokens in the WebSocket path `/ws/chat/{token}`, so the uvicorn access log and uvicorn INFO lines are disabled in the Dockerfile CMD (`--no-access-log --log-level warning`). The container log contains only app-level events — moderation scores/categories (never message text), push delivery diagnostics (endpoint prefix truncated to 60 chars), VAPID verification, warnings and errors. Do not add request-path logging back; if request tracing is ever needed, configure it in Caddy with explicit token redaction.
 
-**Cutting through access-log noise** (uvicorn request lines are the bulk of the log; they are the only request-level trace — Caddy does not log — so they stay on):
+- **Live**: `docker logs stone-techno` on the VPS (json-file driver, capped 10 MB x 5).
+- **Archived**: every `deploy.sh` run saves the outgoing container's log to local `logs/docker-{timestamp}.log` before `--force-recreate` destroys it (newest 15 kept).
+- **Monitor history**: `logs/monitor.log` (hourly cron; only writes when something is non-OK; self-rotates at 512 KB keeping the newest 256 KB).
+- **Backup retention** (backups are separate from logs, in `backups/`): VPS keeps the 5 newest `data.bak.*` and `.env.bak.*`; local `backups/` keeps the 15 newest deploy dirs. All pruned automatically by `deploy.sh`.
+
+Useful filters:
 
 ```bash
-docker logs stone-techno 2>&1 | grep -vE 'GET / HTTP|GET /(shared|sw\.js|manifest|favicon|photos/|thumbs/)'   # app events only
 docker logs stone-techno 2>&1 | grep -E 'ERROR|CRITICAL|Traceback'    # problems only
 docker logs stone-techno 2>&1 | grep '\[MOD\]'                        # moderation decisions
 docker logs stone-techno 2>&1 | grep -E '\[SWLOG\]|\[PUSH'            # push pipeline
+docker logs stone-techno 2>&1 | grep -i vapid                        # push key verification
 ```
 
 ## Live settings (no deploy)

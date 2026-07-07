@@ -8,7 +8,7 @@
 #
 # Run hourly from this Mac (needs ssh access to the VPS):
 #   crontab -e
-#   0 * * * * cd "/Users/gabrielelosurdo/Documents/Developer/Scripts/Personal/Stone Techno Companion" && ./monitor.sh --quiet >> backups/monitor.log 2>&1
+#   0 * * * * cd "/Users/gabrielelosurdo/Documents/Developer/Scripts/Personal/Stone Techno Companion" && ./monitor.sh --quiet >> logs/monitor.log 2>&1
 #
 # --quiet prints nothing when everything is OK (cron-friendly: the log only
 # grows when something needs attention). --strict exits 1 on WARN too.
@@ -24,7 +24,8 @@ set -uo pipefail
 cd "$(dirname "$0")"
 
 # Self-rotate the cron log: keep the newest ~256 KB once it passes 512 KB.
-MONITOR_LOG="backups/monitor.log"
+mkdir -p logs
+MONITOR_LOG="logs/monitor.log"
 if [ -f "$MONITOR_LOG" ] && [ "$(wc -c < "$MONITOR_LOG" | tr -d ' ')" -gt 524288 ]; then
     tail -c 262144 "$MONITOR_LOG" > "$MONITOR_LOG.tmp" && mv "$MONITOR_LOG.tmp" "$MONITOR_LOG"
 fi

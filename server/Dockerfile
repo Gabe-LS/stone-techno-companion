@@ -13,5 +13,9 @@ RUN useradd -r -u 1001 -s /sbin/nologin appuser && \
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 ENTRYPOINT ["/app/entrypoint.sh"]
-# Caddy (on the same Docker network) is the only ingress; it strips and re-sets forwarded headers
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers", "--forwarded-allow-ips", "*"]
+# Caddy (on the same Docker network) is the only ingress; it strips and re-sets forwarded headers.
+# Access log and uvicorn INFO are OFF: request paths contain secrets (magic-link
+# tokens in /chat/v/{token}, session tokens in /ws/chat/{token}) and must never
+# be logged. App-level logging (basicConfig INFO: [MOD], push, VAPID) is separate
+# and unaffected.
+CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers", "--forwarded-allow-ips", "*", "--no-access-log", "--log-level", "warning"]

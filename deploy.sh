@@ -276,11 +276,14 @@ echo "[6/7] Rebuilding container..."
 # --force-recreate destroys the old container and its logs — archive them
 # first (best-effort: the container may not exist on a fresh server).
 if [ "$DRY_RUN" = true ]; then
-    echo "  [DRY RUN] Would archive previous container log to $LOCAL_BACKUPS/$TIMESTAMP/docker.log"
+    echo "  [DRY RUN] Would archive previous container log to logs/docker-$TIMESTAMP.log"
 else
-    ssh "$VPS" "docker logs stone-techno 2>&1" > "$LOCAL_BACKUPS/$TIMESTAMP/docker.log" 2>/dev/null \
-        && echo "  Archived previous container log ($(wc -l < "$LOCAL_BACKUPS/$TIMESTAMP/docker.log" | tr -d ' ') lines)" \
+    mkdir -p logs
+    ssh "$VPS" "docker logs stone-techno 2>&1" > "logs/docker-$TIMESTAMP.log" 2>/dev/null \
+        && echo "  Archived previous container log ($(wc -l < "logs/docker-$TIMESTAMP.log" | tr -d ' ') lines)" \
         || echo "  (no previous container log to archive)"
+    # Keep the newest 15 archived container logs
+    ls -dt logs/docker-*.log 2>/dev/null | tail -n +16 | xargs rm -f 2>/dev/null || true
 fi
 run ssh "$VPS" "cd $VPS_DIR/server && docker compose up -d --build --force-recreate"
 
@@ -333,7 +336,7 @@ if [ -n "$local_prune" ]; then
 fi
 
 # --- Ensure the hourly health monitor is installed in this Mac's crontab ---
-CRON_LINE="0 * * * * cd \"$(pwd)\" && ./monitor.sh --quiet >> backups/monitor.log 2>&1"
+CRON_LINE="0 * * * * cd \"$(pwd)\" && ./monitor.sh --quiet >> logs/monitor.log 2>&1"
 if crontab -l 2>/dev/null | grep -qF "monitor.sh"; then
     echo ""
     echo "Hourly monitor cron: already installed"
