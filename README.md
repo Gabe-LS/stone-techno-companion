@@ -20,8 +20,6 @@ A multi-event festival companion tool: scraper, enrichment pipeline, static site
 stone-techno-companion/
 ├── stone_techno_companion.py    # CLI entry point — orchestrates the full pipeline
 ├── fetch_videos.py              # YouTube set discovery via yt-dlp → artist_sets table
-├── seed_timetable.py            # Seeds fake timetable data for development
-├── migrate_db.py                # One-time DB migration (old schema → current)
 ├── scraper/
 │   ├── scrape.py                # Lineup parser + SC/IG/Spotify/RA scrapers
 │   ├── db.py                    # SQLite schema, upserts, queries — all event-scoped

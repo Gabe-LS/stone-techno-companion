@@ -24,9 +24,6 @@ cd output && python3 -m http.server 8321
 # Run for a specific event
 python stone_techno_companion.py --event-id stone-techno-2026 --event-name "Stone Techno" --event-edition "2026"
 
-# Migrate old DB to new schema (one-time, creates backup)
-python migrate_db.py
-
 # Run full server locally (lineup + chat)
 cd server && set -a && source .env && set +a && uvicorn api:app --port 64728 --ssl-keyfile localhost+1-key.pem --ssl-certfile localhost+1.pem
 # Open https://localhost:64728/line-up and https://localhost:64728/chat
@@ -107,8 +104,6 @@ Key design decisions:
 | `scraper/render.py` | HTML generation — line-up list + timetable grid, CSS, JS, modals, hearts, schedule, push notifications. Markdown bio rendering. Dynamic floor color CSS. SVG icons via `<symbol>`/`<use>` sprite |
 | `scraper/timetable_json.py` | Generates `timetable.json` — slot UUID → set time mapping for push scheduler and ICS endpoint. Reads timezone from events table. Owns `slot_uuid()` (also imported by `render.py`) — the single source of truth for a slot's id, collision-aware: an artist playing two sets on the same floor within one date+period no longer collapses to one id, and existing ids are preserved (the earliest slot keeps the historical id, only the extra one is disambiguated) so no saved schedule is ever reset. |
 | `fetch_videos.py` | YouTube set discovery via yt-dlp. Writes to `artist_sets` table with `platform='youtube'`. |
-| `seed_timetable.py` | Seeds fake timetable data (floors + time slots) for development |
-| `migrate_db.py` | One-time migration from any old schema version to current. Creates backup, migrates artists + links + sets + locations + notes. |
 | `server/api.py` | FastAPI app — favorites + schedule API + WebSocket sync + push scheduler + ICS export + static file routes. Mounts chat module at startup. |
 | `server/chat_db.py` | Chat SQLite schema (chat.db) — users, sessions, bans, rooms, messages, meetups, reactions, blocks, reports, strikes, E2EE device key store |
 | `server/chat_moderation.py` | Three-layer moderation: word filter + OpenAI omni-moderation + GPT-5.4-nano drug detection. All via raw httpx. |
@@ -146,7 +141,6 @@ python stone_techno_companion.py --render-only --deploy
 ## Generated Artifacts (gitignored)
 
 - `lineup.db` — SQLite database (all tables)
-- `lineup.db.bak` — backup created by migrate_db.py
 - `output/lineup.html` — generated page (~650 KB)
 - `output/bios.json` — artist bios + sets, lazy-loaded on first artist tap (~200 KB)
 - `output/photos/*.avif` — processed artist photos
