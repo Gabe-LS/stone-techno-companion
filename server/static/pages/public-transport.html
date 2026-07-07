@@ -393,6 +393,12 @@
     document.getElementById('cmd-dropdown').classList.remove('open');
     document.getElementById('menu-overlay').classList.remove('open');
   }
+  // Same as the lineup: on mobile the whole header bar toggles the menu
+  if (window.matchMedia('(max-width:768px)').matches) {
+    document.getElementById('cmd-bar').addEventListener('click', function (e) {
+      if (!e.target.closest('.hamburger') && !e.target.closest('.nav-icon')) toggleMenu();
+    });
+  }
   window.addEventListener('DOMContentLoaded', function () {
     var el = document.querySelector('.sticky-top');
     var top = parseFloat(getComputedStyle(el).top) || 0;
