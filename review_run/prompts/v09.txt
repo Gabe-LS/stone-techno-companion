@@ -1,8 +1,0 @@
-You are an adversarial verification agent for the Stone Techno Companion project (FastAPI chat server + static site). Read CLAUDE.md for architecture context. Be skeptical and try to REFUTE the claim. For the claim: (1) read the cited code plus surrounding context, (2) check for guards that prevent it, (3) check CLAUDE.md (note: CLAUDE.md's push section documents an invariant that "both the TTL purge and manual delete read that column to unlink the served file"), (4) verify the precondition is reachable. Do NOT modify files — read-only.
-
-=== CLAIM (HIGH): E2EE media files never cleaned up by TTL purge or ban/mute mass-delete ===
-In server/chat_db.py, purge_expired_messages (~886-920) and delete_user_messages (~1256-1287) SELECT only the message `content` and derive the file path via json.loads(content).get("url"). For E2EE image/video messages the plaintext URL lives EXCLUSIVELY in the media_url column (content is an opaque {e2ee:true,...} envelope with no "url" key), so content.get("url") is always absent and no unlink() ever runs. Only the WS delete_message handler (chat_ws.py ~1683-1692) actually reads the media_url column. This contradicts the CLAUDE.md invariant that TTL purge and manual delete both read media_url. Claim: every E2EE image/video DM that expires via TTL, or whose sender is muted/banned, permanently orphans its file(s) on disk (unbounded disk growth). Verify whether purge_expired_messages and delete_user_messages read the media_url column or only parse content for a url key.
-
-=== OUTPUT ===
-Verdict: [CONFIRMED / REFUTED / DOWNGRADED to <severity>]
-Reasoning: <explanation with specific file:line references. State whether each of the two functions reads media_url.>

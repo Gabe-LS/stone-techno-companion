@@ -1,6 +1,0 @@
-{"server_ts":"2026-07-04T17:44:21.414499+00:00","client_ts":"2026-07-04T17:44:21.427Z","src":"page","ev":"page-load","detail":"{\"platform\":\"ios-pwa\",\"session\":\"nd-c0c7o0-mr6njagj\",\"url\":\"https://10.0.0.100:9444/\"}","platform":"ios-pwa","test_id":""}
-{"server_ts":"2026-07-04T17:44:21.420169+00:00","client_ts":"2026-07-04T17:44:21.434Z","src":"page","ev":"sw-registered","detail":"scope=https://10.0.0.100:9444/","platform":"ios-pwa","test_id":""}
-{"server_ts":"2026-07-04T17:44:22.437539+00:00","client_ts":"2026-07-04T17:44:22.443Z","src":"page","ev":"sw-updatefound","detail":"","platform":"ios-pwa","test_id":""}
-{"server_ts":"2026-07-04T17:44:29.924490+00:00","client_ts":"2026-07-04T17:44:29.902Z","src":"page","ev":"test-start","detail":"show via SW (no push) + close from SW","platform":"ios-pwa","test_id":"close-clean-1783187069902"}
-{"server_ts":"2026-07-04T17:45:28.209379+00:00","client_ts":"2026-07-04T17:45:28.183Z","src":"page","ev":"test-start","detail":"close ALL from SW","platform":"ios-pwa","test_id":"close-all-1783187128183"}
-{"server_ts":"2026-07-04T17:45:28.222481+00:00","client_ts":"2026-07-04T17:45:28.210Z","src":"page","ev":"test-result","detail":"{\"type\":\"closeAll-result\",\"test_id\":\"close-all-1783187128183\",\"closed\":1}","platform":"ios-pwa","test_id":"close-all-1783187128183"}

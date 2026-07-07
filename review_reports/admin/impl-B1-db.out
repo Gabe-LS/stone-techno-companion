@@ -1,7 +1,0 @@
-Both changes applied to `server/chat_db.py`:
-
-1. **Schema** (was in `init_chat_db`, not `init_db` — the actual function name in this file; spec's "init_db" reference was inexact but this is the only `executescript` block): added `admins` and `admin_actions` tables + `idx_admin_actions_created` index, inserted immediately before the `chat_settings` `CREATE TABLE`, at `server/chat_db.py:231-246`. INSERT OR IGNORE seed rows for `chat_settings` remain last in the block.
-
-2. **Helper functions**: added at `server/chat_db.py:1770-1848`, right after `get_room_stats` (ends line 1767) and before the `# --- Purge all ---` section (now starts at line 1850). Implemented exactly as specified: `VALID_ADMIN_ROLES`, `get_admin`, `list_admins`, `add_admin` (upsert via `ON CONFLICT`), `remove_admin`, `count_super_admins`, `log_admin_action`, `get_admin_actions` (with `users` LEFT JOIN for `target_name`).
-
-Deviations: none in code content — only the naming note above (function is `init_chat_db`). I did not touch `_migrate_chat_db` (still starts right after `hash_email`/`set_setting` as before) or any existing table definition. I have not run tests or verified the DB loads; per instructions I'm not claiming test results.

@@ -1,6 +1,0 @@
-{"server_ts":"2026-07-04T17:51:11.646611+00:00","client_ts":"2026-07-04T17:51:11.660Z","src":"page","ev":"page-load","detail":"{\"platform\":\"ios-pwa\",\"session\":\"nd-txrw56-mr6ns2zw\",\"url\":\"https://10.0.0.100:9444/\"}","platform":"ios-pwa","test_id":""}
-{"server_ts":"2026-07-04T17:51:11.666301+00:00","client_ts":"2026-07-04T17:51:11.668Z","src":"page","ev":"sw-registered","detail":"scope=https://10.0.0.100:9444/","platform":"ios-pwa","test_id":""}
-{"server_ts":"2026-07-04T17:51:12.707171+00:00","client_ts":"2026-07-04T17:51:12.713Z","src":"page","ev":"sw-updatefound","detail":"","platform":"ios-pwa","test_id":""}
-{"server_ts":"2026-07-04T17:51:14.466717+00:00","client_ts":"2026-07-04T17:51:14.464Z","src":"page","ev":"test-start","detail":"create \u2192 wait 35s \u2192 close","platform":"ios-pwa","test_id":"close-35s-1783187474464"}
-{"server_ts":"2026-07-04T17:51:17.962277+00:00","client_ts":"2026-07-04T17:51:17.965Z","src":"page","ev":"push-sent","detail":"{\"push_index\":151}","platform":"ios-pwa","test_id":"close-35s-1783187474464"}
-{"server_ts":"2026-07-04T17:51:53.127571+00:00","client_ts":"2026-07-04T17:51:53.114Z","src":"page","ev":"test-result","detail":"{\"type\":\"closeAll-result\",\"test_id\":\"close-35s-1783187474464\",\"closed\":2}","platform":"ios-pwa","test_id":"close-35s-1783187474464"}

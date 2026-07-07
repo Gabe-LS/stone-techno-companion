@@ -5,8 +5,9 @@
 __pycache__/
 *.pyc
 
-# Ruff
+# Ruff / pytest
 .ruff_cache/
+.pytest_cache/
 
 # Claude Code
 .claude/
@@ -31,6 +32,7 @@ server/static/thumbs
 server/static/timetable.json
 lineup.db.bak
 lineup.db.bak-shm
+lineup.db.bak-wal
 
 # Deploy backups (downloaded from VPS)
 backups/
