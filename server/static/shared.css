@@ -214,6 +214,10 @@ body {
 .cmd-dropdown button[aria-checked="true"] .dd-switch { background: var(--color-success); }
 .cmd-dropdown button[aria-checked="true"] .dd-switch::before { transform: translateX(16px); background: #fff; }
 
+/* Thick group separator (view options / navigation / general actions) */
+.dd-divider { height: 4px; background: var(--gray-700); }
+.dd-divider + button { border-top: none; }
+
 .fade-after::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 36px; background: var(--fade-gradient); pointer-events: none; opacity: 0; transition: opacity var(--transition-fast); }
 .fade-after.stuck::after { opacity: 1; }
 
