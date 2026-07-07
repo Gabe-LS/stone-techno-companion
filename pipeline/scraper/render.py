@@ -340,10 +340,7 @@ def render_output_html(
 
     /* --- Sticky headings --- */
     /* margin-top is explicit (not the em-based UA default) so the timetable
-       view's font-size:0 title trick cannot collapse it. The ::before strip
-       keeps that margin band opaque while the h1 travels to its pin, so
-       scrolling content never shows through the header area. */
-    h1::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: 21px; background: var(--color-bg); }
+       view's font-size:0 title trick cannot collapse it */
     h1 { margin-top: 21px; margin-bottom: var(--space-xl); font-size: var(--font-2xl); position: sticky; top: var(--sticky-top-h1, 28px); background: var(--color-bg); z-index: 30; padding: var(--space-md) 0 var(--space-sm); border-bottom: 2px solid #222; }
     section.date-section { margin-bottom: 48px; }
     .date-section > h2 { position: sticky; top: var(--sticky-top-h2, 96px); background: var(--color-bg); z-index: 20; padding: 10px 0 var(--space-sm); margin-bottom: var(--space-sm); font-size: var(--font-xl); border-bottom: 1px solid var(--color-line-hour); }
@@ -463,7 +460,6 @@ def render_output_html(
     @media (max-width: 480px) {
       body { padding: 0 var(--space-md); }
       h1 { margin-top: var(--space-lg); font-size: var(--font-xl); padding: var(--space-sm) 0 6px; }
-      h1::before { height: var(--space-lg); }
       .date-section > h2 { font-size: var(--font-lg); padding: 6px 0; }
       h3.period-heading { font-size: var(--font-base); padding: 6px 0 var(--space-xs); margin: var(--space-lg) 0 var(--space-sm); }
       li.artist-item { gap: 10px; padding: 10px; align-items: flex-start; flex-wrap: wrap; }
@@ -489,7 +485,6 @@ def render_output_html(
     /* --- Timetable view --- */
 
     /* Filter bar */
-    .filter-bar::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: var(--space-sm); background: var(--color-bg); }
     /* min-height mirrors the date h2 box (1.5 line-height x its font + same padding/border) so both sticky bars are equal-height */
     .filter-bar { position: sticky; top: var(--sticky-top-h2, 98px); z-index: 20; background: var(--color-bg); display: flex; align-items: center; justify-content: space-between; padding: 10px 0 var(--space-sm); margin: 0.83em 0 var(--space-sm); gap: var(--space-sm); border-bottom: 1px solid var(--color-line-hour); min-height: calc(1.5 * var(--font-xl) + 19px); }
 
@@ -560,7 +555,7 @@ def render_output_html(
 
     /* Tablet (768px) */
     @media (max-width: 768px) {
-      html, body { overscroll-behavior: none; }
+      html, body { overscroll-behavior-y: none; }
       .floor-header > span:first-child { font-size: var(--font-xs); padding: 6px 2px; }
       .tt-block { font-size: var(--font-xs); padding: 6px 7px; margin: 2px; gap: 5px; }
     }
@@ -579,24 +574,11 @@ def render_output_html(
       .timetable { display: none !important; }
       .tt-table-wrap { display: block !important; min-height: 300px; }
 
-      /* The DOCUMENT is the only scroller (both axes): the chrome compacts
-         and pins exactly like the list view, and the floor row / time column
-         stick against the page. Body side padding is zeroed in this view so
-         the sticky containing block spans the full scroll extent: otherwise
-         the pinned chrome runs out of travel room near max scrollX and gets
-         dragged left, and the 12px padding gutters let content show through.
-         The chrome is true full-bleed (100vw) with its padding internal. */
-      .tt-v-scroll { overflow: visible; margin: 0; }
-      .view-timetable body { width: max-content; min-width: 100%; padding-left: 0; padding-right: 0; }
-      .view-timetable .cmd-bar { position: sticky; left: 0; width: 100vw; margin: 0; }
-      /* Full-bleed boxes for opacity, but the bottom rules stay inset like
-         the list view: transparent border keeps the box height, an inset
-         background line draws the visible rule. */
-      .view-timetable #page-title { position: sticky; left: 0; width: 100vw; padding-left: var(--space-md); padding-right: var(--space-md); border-bottom-color: transparent; background-image: linear-gradient(var(--color-text), var(--color-text)); background-repeat: no-repeat; background-origin: border-box; background-clip: border-box; background-size: calc(100% - 2 * var(--space-md)) 2px; background-position: var(--space-md) 100%; }
-      .view-timetable .filter-bar { position: sticky; left: 0; width: 100vw; padding-left: var(--space-md); padding-right: var(--space-md); border-bottom-color: transparent; background-image: linear-gradient(var(--color-line-hour), var(--color-line-hour)); background-repeat: no-repeat; background-origin: border-box; background-clip: border-box; background-size: calc(100% - 2 * var(--space-md)) 1px; background-position: var(--space-md) 100%; }
+      .tt-v-scroll { overflow: auto; scrollbar-width: none; -ms-overflow-style: none; overscroll-behavior: none; }
+      .tt-v-scroll::-webkit-scrollbar { display: none; }
 
       .tt-table { border-collapse: separate; border-spacing: 0; table-layout: fixed; width: calc(40px + var(--num-floors) * 40vw); }
-      .tt-table thead th { position: sticky; top: calc(var(--sticky-top-h2, 106px) + 1.5 * var(--font-lg) + 13px); z-index: 2; background: var(--color-bg); padding: var(--space-xs) 2px; text-align: center; vertical-align: top; }
+      .tt-table thead th { position: sticky; top: 0; z-index: 2; background: var(--color-bg); padding: var(--space-xs) 2px; text-align: center; vertical-align: top; }
       .tt-table thead th:first-child { left: 0; z-index: 3; background: var(--color-bg); width: 40px; min-width: 40px; }
       .tt-floor-th > span:first-child { display: block; padding: 6px 10px; border-radius: var(--radius-pill); font-size: var(--font-xs); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0 3px; }
       .tt-floor-th .floor-curator { display: block; font-size: var(--font-xs); padding: 1px 0 2px; margin: 0; }
@@ -620,7 +602,6 @@ def render_output_html(
       .tt-table .tt-block { position: absolute; top: 1.5px; left: 1px; right: 1px; bottom: 2.5px; }
 
       .filter-bar { padding: 6px 0; margin: 0 0 var(--space-xs); min-height: calc(1.5 * var(--font-lg) + 13px); }
-      .filter-bar::after { height: var(--space-xs); }
 
       .tt-popup { width: calc(100vw - var(--space-xl)); max-width: none; left: var(--space-md) !important; }
       .tt-popup .popup-photo, .tt-popup .popup-photo-placeholder { width: 64px; height: 64px; }
@@ -2392,6 +2373,7 @@ def render_output_html(
         h1.textContent = h1.textContent.replace('Line-up', 'Timetable');
         requestAnimationFrame(truncateNames);
         updateNowLine();
+        requestAnimationFrame(() => { sizeMobileTable(); });
       } else {
         listView.style.display = '';
         ttView.style.display = 'none';
@@ -2428,19 +2410,21 @@ def render_output_html(
     let _carryScroll = null;
     function showPanel(date, period) {
       const prevPanel = document.querySelector('.timetable-panel.active');
-      const mobileTT = window.matchMedia('(max-width: 768px)').matches;
-      if (prevPanel && mobileTT) {
-        _savedScrollTop[prevPanel.dataset.period] = { top: window.scrollY, left: window.scrollX };
+      if (prevPanel) {
+        const prevVScroll = prevPanel.querySelector('.tt-v-scroll');
+        if (prevVScroll) _savedScrollTop[prevPanel.dataset.period] = prevVScroll.scrollTop;
       }
       document.querySelectorAll('.timetable-panel').forEach(p => p.classList.remove('active'));
       const id = 'panel-' + date + '-' + period;
       const panel = document.getElementById(id);
       if (panel) panel.classList.add('active');
-      const saved = _carryScroll || _savedScrollTop[period] || { top: 0, left: 0 };
+      const scrollY = _carryScroll ? _carryScroll.top : (_savedScrollTop[period] || 0);
+      const scrollX = _carryScroll ? _carryScroll.left : 0;
       _carryScroll = null;
       requestAnimationFrame(() => {
-        truncateNames();
-        if (mobileTT) window.scrollTo(saved.left, saved.top);
+        truncateNames(); sizeMobileTable();
+        const next = panel ? panel.querySelector('.tt-v-scroll') : null;
+        if (next) { next.scrollTop = scrollY; next.scrollLeft = scrollX; }
       });
       updateNowLine();
     }
@@ -2487,7 +2471,8 @@ def render_output_html(
     function switchDay(date, btn) {
       track('day-switch', {day: btn.textContent.trim()});
       const sameDay = date === currentDate;
-      _carryScroll = sameDay ? {top: 0, left: 0} : {top: window.scrollY, left: window.scrollX};
+      const prevVScroll = document.querySelector('.timetable-panel.active .tt-v-scroll');
+      _carryScroll = sameDay ? {top: 0, left: 0} : (prevVScroll ? {top: prevVScroll.scrollTop, left: prevVScroll.scrollLeft} : null);
       currentDate = date;
       document.querySelectorAll('.day-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
@@ -2614,7 +2599,7 @@ def render_output_html(
       if (popup.classList.contains('open') && !e.target.closest('.tt-popup')) closePopup();
     });
     document.addEventListener('scroll', () => closePopup(), {passive: true});
-    window.addEventListener('scroll', () => closePopup(), {passive: true});
+    document.querySelectorAll('.tt-v-scroll').forEach(w => w.addEventListener('scroll', () => closePopup(), {passive: true}));
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape' && !document.querySelector('.modal-overlay.open')) closePopup();
     });
@@ -2655,6 +2640,14 @@ def render_output_html(
 
 
 
+    function sizeMobileTable() {
+      document.querySelectorAll('.tt-v-scroll').forEach(vscroll => {
+        if (vscroll.offsetHeight === 0) return;
+        const top = vscroll.getBoundingClientRect().top;
+        vscroll.style.height = (window.innerHeight - top) + 'px';
+      });
+    }
+    window.addEventListener('resize', sizeMobileTable);
 
 
     """)
