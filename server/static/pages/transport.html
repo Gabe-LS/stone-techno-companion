@@ -773,7 +773,7 @@ var TIMETABLE_DATA = null;
     walkMinutes = durationS ? Math.ceil(durationS / 60) : Math.ceil((distanceM / 1000) / WALK_SPEED_KMH * 60);
     var banner = document.getElementById("location-banner");
     banner.querySelector(".location-text").textContent =
-      fmtDist(distanceM) + " walk — " + fmtNum(walkMinutes) + " min to stop";
+      fmtDist(distanceM) + " / " + fmtNum(walkMinutes) + " min to stop";
     document.getElementById("locate-btn").textContent = "Update";
     renderPanel();
   }
@@ -789,7 +789,7 @@ var TIMETABLE_DATA = null;
         var dist = haversineKm(lat, lng, STOP_LAT, STOP_LNG);
         walkMinutes = Math.ceil((dist / WALK_SPEED_KMH) * 60);
         banner.querySelector(".location-text").textContent =
-          "~" + fmtDist(dist * 1000) + " — ~" + fmtNum(walkMinutes) + " min";
+          "~" + fmtDist(dist * 1000) + " / ~" + fmtNum(walkMinutes) + " min";
         document.getElementById("locate-btn").textContent = "Update";
         renderPanel();
       }
