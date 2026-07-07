@@ -555,6 +555,7 @@ def render_output_html(
 
     /* Tablet (768px) */
     @media (max-width: 768px) {
+      html, body { overscroll-behavior-y: none; }
       .floor-header > span:first-child { font-size: var(--font-xs); padding: 6px 2px; }
       .tt-block { font-size: var(--font-xs); padding: 6px 7px; margin: 2px; gap: 5px; }
     }
