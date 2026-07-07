@@ -57,8 +57,7 @@ stone-techno-companion/
 │   ├── e2ee_browser_check.py    # E2EE browser verification
 │   └── stress_test/             # 200-user chat load test
 ├── docs/                        # Living design specs (E2EE, admin roles, notif testing)
-├── deploy.sh                    # Server deploy: backup + pull + rebuild + health check
-└── test_mobile.sh               # iPhone-over-LAN testing (server + mitmproxy)
+└── deploy.sh                    # Server deploy: backup + pull + rebuild + health check
 ```
 
 ## Database Schema
