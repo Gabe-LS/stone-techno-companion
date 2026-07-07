@@ -25,7 +25,7 @@ cd pipeline/output && python3 -m http.server 8321
 python pipeline/stone_techno_companion.py --event-id stone-techno-2026 --event-name "Stone Techno" --event-edition "2026"
 
 # Run full server locally (lineup + chat)
-cd server && set -a && source .env && set +a && uvicorn api:app --port 64728 --ssl-keyfile localhost+1-key.pem --ssl-certfile localhost+1.pem
+cd server && set -a && source .env && set +a && uvicorn api:app --port 64728 --ssl-keyfile certs/localhost+1-key.pem --ssl-certfile certs/localhost+1.pem
 # Open https://localhost:64728/line-up and https://localhost:64728/chat
 
 # Run tests
@@ -38,7 +38,7 @@ python -m pytest tests/ -v
 
 **For lineup only**: `cd pipeline/output && python3 -m http.server 8321` — expected 404s for `/manifest.json`, `/sw.js`, `/api/me`.
 
-**For lineup + chat**: run the full FastAPI server: `cd server && set -a && source .env && set +a && uvicorn api:app --port 64728 --ssl-keyfile localhost+1-key.pem --ssl-certfile localhost+1.pem`. Symlinks in `server/static/` point to `pipeline/output/` files so lineup reflects latest build.
+**For lineup + chat**: run the full FastAPI server: `cd server && set -a && source .env && set +a && uvicorn api:app --port 64728 --ssl-keyfile certs/localhost+1-key.pem --ssl-certfile certs/localhost+1.pem`. Symlinks in `server/static/` point to `pipeline/output/` files so lineup reflects latest build.
 
 **Chat requires auth**: sign in via email magic link at `/chat`. For local dev, set `CHAT_BASE_URL=https://localhost:64728` in `.env` so the magic link points to localhost.
 

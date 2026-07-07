@@ -1081,10 +1081,10 @@ def _server_proc():
     env.setdefault("GOOGLE_CLIENT_ID", "fake")
     env.setdefault("GOOGLE_CLIENT_SECRET", "fake")
 
-    cert_file = server_dir / "localhost+1.pem"
-    key_file = server_dir / "localhost+1-key.pem"
+    cert_file = server_dir / "certs" / "localhost+1.pem"
+    key_file = server_dir / "certs" / "localhost+1-key.pem"
     if not cert_file.exists() or not key_file.exists():
-        pytest.skip("Local TLS certs not found (localhost+1.pem / localhost+1-key.pem)")
+        pytest.skip("Local TLS certs not found (server/certs/localhost+1.pem / -key.pem)")
 
     proc = subprocess.Popen(
         [

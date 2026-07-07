@@ -32,11 +32,12 @@ echo ""
 
 # --- Step 1: Generate cert covering LAN IP ---
 echo "[1/4] Checking TLS cert..."
-CERT_COVERS=$(openssl x509 -in server/localhost+1.pem -noout -text 2>/dev/null | grep -c "$LAN_IP" || true)
+CERT_COVERS=$(openssl x509 -in server/certs/localhost+1.pem -noout -text 2>/dev/null | grep -c "$LAN_IP" || true)
 if [ "$CERT_COVERS" -eq 0 ]; then
     echo "  Regenerating cert for localhost + $LAN_IP..."
+    mkdir -p server/certs
     cd server
-    mkcert -cert-file localhost+1.pem -key-file localhost+1-key.pem localhost 127.0.0.1 "$LAN_IP"
+    mkcert -cert-file certs/localhost+1.pem -key-file certs/localhost+1-key.pem localhost 127.0.0.1 "$LAN_IP"
     cd ..
 else
     echo "  Cert already covers $LAN_IP"
@@ -59,7 +60,7 @@ kill $(lsof -ti :$PORT 2>/dev/null) 2>/dev/null || true
 sleep 1
 cd server && set -a && source .env && set +a
 nohup uvicorn api:app --host 0.0.0.0 --port $PORT \
-    --ssl-keyfile localhost+1-key.pem --ssl-certfile localhost+1.pem \
+    --ssl-keyfile certs/localhost+1-key.pem --ssl-certfile certs/localhost+1.pem \
     > /dev/null 2>&1 &
 cd ..
 sleep 2

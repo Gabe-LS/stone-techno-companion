@@ -4,6 +4,7 @@ data/
 *.env
 .env
 *.pem
+certs/
 __pycache__/
 *.pyc
 .DS_Store
