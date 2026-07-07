@@ -3,64 +3,43 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#111111">
+<meta name="theme-color" content="#111">
 <link rel="stylesheet" href="/shared.css">
 <script src="/shared.js"></script>
 <title>107 / NE2 — Zollverein → Hbf</title>
 <style>
   :root {
-    --color-bg: #f8f8f8;
-    --color-surface: #ffffff;
-    --color-text: #111111;
-    --color-text-secondary: #4a4a4a;
-    --color-text-past: #757575;
-    --color-border: #ebebeb;
-    --color-accent: #111111;
-    --color-accent-soft: #333333;
+    /* Transport-specific tokens only. Colors, fonts, spacing, and radii come
+       from shared.css and must never be shadowed here. The blue next-departure
+       highlight is a deliberate semantic exception (status: upcoming), like
+       the NE2 brand yellow. */
+    --badge-107-bg: var(--gray-900);
     --color-ne2-bg: #2d2d2d;
     --color-ne2-text: #f5c518;
-    --color-next-bg: #f0f7ff;
-    --color-next-border: #3b82f6;
-    --color-next-text: #1d4ed8;
-    --color-too-late-text: #757575;
-    --color-location-bg: #f0f7ff;
-    --color-location-border: #c7d9f0;
-    --color-location-btn: #3b82f6;
-    --color-delay: #dc2626;
-    --color-delay-bg: #fef2f2;
-    --color-ontime: #16a34a;
+    --transport-next-bg: #f0f7ff;
+    --transport-next-border: #3b82f6;
+    --transport-next-text: #1d4ed8;
+    --color-delay: var(--color-accent);
+    --color-ontime: var(--color-success);
+    --color-live-dot: var(--color-success);
     --color-canceled-bg: #fef2f2;
-    --color-canceled-text: #991b1b;
-    --color-live-dot: #16a34a;
-    --font-sm: 0.6875rem;
-    --font-md: 0.8125rem;
-    --font-lg: 0.9375rem;
-    --font-header: 1.0625rem;
-    --radius: 0.75rem;
-    --radius-sm: 0.375rem;
-    --space-1: 0.25rem;
-    --space-2: 0.5rem;
-    --space-3: 0.75rem;
-    --space-4: 1rem;
-    --space-5: 1.25rem;
-    --space-6: 1.5rem;
+    --fade-gradient: linear-gradient(to bottom, rgba(255,255,255,1) 0%, rgba(255,255,255,0.9) 20%, rgba(255,255,255,0.75) 35%, rgba(255,255,255,0.5) 55%, rgba(255,255,255,0.15) 78%, rgba(255,255,255,0) 100%);
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
   html {
-    font-size: 16px;
     -webkit-text-size-adjust: 100%;
+    scrollbar-width: none;
   }
+  html::-webkit-scrollbar { display: none; }
 
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: var(--font-family);
     background: var(--color-bg);
     color: var(--color-text);
-    line-height: 1.4;
-    padding: 0 var(--space-4) var(--space-5);
+    padding: 0 var(--space-lg) var(--space-xl);
     min-height: 100dvh;
-    -webkit-font-smoothing: antialiased;
   }
 
   .sticky-top {
@@ -68,8 +47,8 @@
     top: 0;
     z-index: 10;
     background: var(--color-bg);
-    margin: 0 calc(-1 * var(--space-4));
-    padding: 0 var(--space-4) var(--space-3);
+    margin: 0 calc(-1 * var(--space-lg));
+    padding: 0 var(--space-lg) var(--space-md);
   }
 
 
@@ -80,7 +59,7 @@
     display: none;
     align-items: center;
     gap: 0.35rem;
-    font-size: var(--font-sm);
+    font-size: var(--font-xs);
     font-weight: 600;
     color: #fff;
     opacity: 0.9;
@@ -97,9 +76,9 @@
   }
 
   .live-updated {
-    font-size: 0.5625rem;
+    font-size: var(--font-xs);
     font-weight: 400;
-    opacity: 0.55;
+    opacity: 0.75;
   }
 
   .live-dot {
@@ -116,113 +95,128 @@
   }
 
   .location-banner {
-    background: var(--color-location-bg);
-    border: 1px solid var(--color-location-border);
-    border-radius: var(--radius);
-    padding: var(--space-2) var(--space-4);
-    margin-top: var(--space-3);
-    font-size: var(--font-sm);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-sm) var(--space-lg);
+    margin-top: var(--space-md);
+    font-size: var(--font-xs);
     color: var(--color-text);
     display: flex;
     align-items: center;
-    gap: var(--space-2);
+    gap: var(--space-sm);
   }
 
   .location-banner button {
-    background: var(--color-location-btn);
+    background: var(--gray-900);
     color: #fff;
     border: none;
     border-radius: var(--radius-sm);
-    padding: var(--space-1) var(--space-3);
+    padding: 7px 16px;
     font-size: var(--font-sm);
     font-weight: 600;
     cursor: pointer;
     white-space: nowrap;
     flex-shrink: 0;
+    -webkit-tap-highlight-color: transparent;
   }
 
   .location-banner button:active { opacity: 0.8; }
+  .location-banner button:focus:not(:focus-visible) { outline: none; }
+  .location-banner button:focus-visible { outline: 2px solid var(--gray-900); outline-offset: 2px; }
+  @media (hover: hover) { .location-banner button:hover { background: var(--gray-800); } }
   .location-text { flex: 1; min-width: 0; }
 
   .day-tab-bar {
     display: flex;
-    gap: var(--space-1);
-    margin-top: var(--space-3);
+    gap: 2px;
+    margin-top: var(--space-md);
     overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
   }
+  .day-tab-bar::-webkit-scrollbar { display: none; }
 
   .day-tab {
     flex: 1;
     min-width: 0;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    padding: var(--space-2) var(--space-1);
     text-align: center;
+    padding: 7px 14px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background: var(--color-surface);
+    color: var(--color-text);
     font-size: var(--font-sm);
     font-weight: 600;
-    color: var(--color-text-secondary);
+    transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
     cursor: pointer;
-    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    -webkit-tap-highlight-color: transparent;
   }
+  .day-tab:focus:not(:focus-visible) { outline: none; }
+  .day-tab:focus-visible { outline: 2px solid var(--color-text); outline-offset: 2px; }
+  @media (hover: hover) { .day-tab:hover:not(.active) { background: var(--color-surface-hover); } }
 
-  .day-tab[aria-selected="true"] {
-    background: var(--color-accent);
-    color: #fff;
-    border-color: var(--color-accent);
+  .day-tab.active {
+    background: var(--color-text);
+    color: var(--color-bg);
+    border-color: var(--color-text);
   }
 
   .day-tab-count {
     display: block;
     font-weight: 400;
-    font-size: var(--font-sm);
-    opacity: 0.6;
-    margin-top: var(--space-1);
+    font-size: var(--font-xs);
+    color: var(--gray-500);
+    margin-top: 2px;
   }
+  .day-tab.active .day-tab-count { color: var(--gray-400); }
 
   .day-panel { display: none; }
   .day-panel[aria-hidden="false"] { display: block; }
 
-  .dep-list { list-style: none; }
+  .dep-list {
+    list-style: none;
+    border: 1px solid var(--color-surface-hover);
+    border-radius: var(--radius-md);
+    overflow: clip;
+  }
 
   .dep-item {
     display: flex;
     align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-3) var(--space-4);
-    background: var(--color-surface);
+    gap: var(--space-md);
+    padding: var(--space-md) var(--space-lg);
+    background: var(--gray-50);
     border-bottom: 1px solid var(--color-border);
   }
 
-  .dep-item:first-child { border-radius: var(--radius) var(--radius) 0 0; }
-  .dep-item:last-child { border-bottom: none; border-radius: 0 0 var(--radius) var(--radius); }
-  .dep-item:only-child { border-radius: var(--radius); }
+  .dep-item:first-child { border-radius: var(--radius-md) var(--radius-md) 0 0; }
+  .dep-item:last-child { border-bottom: none; border-radius: 0 0 var(--radius-md) var(--radius-md); }
+  .dep-item:only-child { border-radius: var(--radius-md); }
 
-  .dep-item.is-past { color: var(--color-text-past); }
-  .dep-item.is-past .dep-time { color: var(--color-text-past); }
+  .dep-item.is-past { color: var(--gray-500); }
+  .dep-item.is-past .dep-time { color: var(--gray-500); }
   .dep-item.is-past .line-badge { opacity: 0.35; }
 
-  .dep-item.is-too-late { color: var(--color-too-late-text); }
-  .dep-item.is-too-late .dep-time { color: var(--color-too-late-text); text-decoration: line-through; }
+  .dep-item.is-too-late { color: var(--gray-500); }
+  .dep-item.is-too-late .dep-time { color: var(--gray-500); text-decoration: line-through; }
   .dep-item.is-too-late .line-badge { opacity: 0.2; }
 
   .dep-item.is-next {
-    background: var(--color-next-bg);
-    border-left: 3px solid var(--color-next-border);
-    padding-left: calc(var(--space-4) - 3px);
+    background: var(--transport-next-bg);
+    border-left: 3px solid var(--transport-next-border);
+    padding-left: calc(var(--space-lg) - 3px);
   }
 
-  .dep-item.is-next .dep-time { color: var(--color-next-text); font-weight: 700; }
+  .dep-item.is-next .dep-time { color: var(--transport-next-text); font-weight: 700; }
 
   .dep-item.is-canceled {
     background: var(--color-canceled-bg);
-    color: var(--color-canceled-text);
+    color: var(--color-accent);
   }
 
   .dep-item.is-canceled .dep-time-scheduled {
     text-decoration: line-through;
-    color: var(--color-canceled-text);
+    color: var(--color-accent);
     opacity: 0.5;
   }
 
@@ -234,22 +228,22 @@
   }
 
   .dep-time {
-    font-size: var(--font-md);
+    font-size: var(--font-sm);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     color: var(--color-text);
   }
 
   .dep-time-scheduled {
-    font-size: var(--font-sm);
+    font-size: var(--font-xs);
     font-variant-numeric: tabular-nums;
-    color: var(--color-text-past);
+    color: var(--gray-500);
     text-decoration: line-through;
     line-height: 1.2;
   }
 
   .dep-time-real {
-    font-size: var(--font-md);
+    font-size: var(--font-sm);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     color: var(--color-delay);
@@ -260,16 +254,16 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: var(--font-sm);
+    font-size: var(--font-xs);
     font-weight: 700;
-    padding: var(--space-1) var(--space-2);
+    padding: var(--space-xs) var(--space-sm);
     border-radius: var(--radius-sm);
     min-width: 2.25rem;
     flex-shrink: 0;
     position: relative;
   }
 
-  .line-badge.l-107 { background: var(--color-accent); color: #fff; }
+  .line-badge.l-107 { background: var(--badge-107-bg); color: #fff; }
   .line-badge.l-NE2 { background: var(--color-ne2-bg); color: var(--color-ne2-text); }
 
   .rt-dot {
@@ -279,7 +273,7 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    border: 1.5px solid var(--color-surface);
+    border: 1.5px solid var(--gray-50);
   }
 
   .rt-dot.green { background: var(--color-ontime); }
@@ -294,26 +288,26 @@
   }
 
   .dep-dest {
-    font-size: var(--font-md);
+    font-size: var(--font-sm);
     color: var(--color-text-secondary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .dep-item.is-past .dep-dest { color: var(--color-text-past); }
-  .dep-item.is-too-late .dep-dest { color: var(--color-too-late-text); }
+  .dep-item.is-past .dep-dest { color: var(--gray-500); }
+  .dep-item.is-too-late .dep-dest { color: var(--gray-500); }
 
   .cancel-badge {
     display: inline-flex;
     align-items: center;
-    font-size: 0.625rem;
+    font-size: var(--font-xs);
     font-weight: 700;
     padding: 1px 0.35rem;
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     white-space: nowrap;
     width: fit-content;
-    background: var(--color-canceled-text);
+    background: var(--color-accent);
     color: #fff;
   }
 
@@ -326,13 +320,13 @@
   }
 
   .dep-walk {
-    font-size: var(--font-sm);
+    font-size: var(--font-xs);
     color: var(--color-text-secondary);
     white-space: nowrap;
   }
 
   .dep-countdown {
-    font-size: var(--font-sm);
+    font-size: var(--font-xs);
     font-weight: 600;
     color: var(--color-text-secondary);
     white-space: nowrap;
@@ -340,22 +334,13 @@
 
   .dep-item.is-past .dep-walk,
   .dep-item.is-too-late .dep-walk,
-  .dep-item.is-past .dep-countdown { color: var(--color-too-late-text); }
+  .dep-item.is-past .dep-countdown { color: var(--gray-500); }
 
   .empty-state {
     text-align: center;
-    padding: var(--space-6) var(--space-4);
+    padding: var(--space-xl) var(--space-lg);
     color: var(--color-text-secondary);
-    font-size: var(--font-md);
-  }
-
-  @media (min-width: 420px) {
-    :root {
-      --font-sm: 0.75rem;
-      --font-md: 0.875rem;
-      --font-lg: 1rem;
-      --font-header: 1.125rem;
-    }
+    font-size: var(--font-sm);
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -364,7 +349,7 @@
 </style>
 <style>
   /* App navigation bar: identical to the lineup/timetable pages */
-  .cmd-bar { position: sticky; top: 0; z-index: var(--z-header); background: var(--gray-900); color: #fff; display: flex; align-items: stretch; justify-content: space-between; height: 28px; font-size: var(--font-xs); padding: 0 var(--space-lg); margin: 0 calc(-1 * var(--space-4)); }
+  .cmd-bar { position: sticky; top: 0; z-index: var(--z-header); background: var(--gray-900); color: #fff; display: flex; align-items: stretch; justify-content: space-between; height: 28px; font-size: var(--font-xs); padding: 0 var(--space-lg); margin: 0 calc(-1 * var(--space-lg)); }
   .cmd-bar button { background: none; color: #aaa; border: none; padding: 0 var(--space-lg); font-size: var(--font-xs); white-space: nowrap; text-align: center; transition: color var(--transition-fast); letter-spacing: 0.03em; text-transform: uppercase; cursor: pointer; font-family: var(--font-family); }
   .cmd-bar .hamburger { color: #fff; }
   .cmd-bar button.active { color: #fff; }
@@ -377,9 +362,9 @@
   /* Sticky block: route title + walk banner + day tabs pin together below the
      nav bar, with the lineup-style fade gradient underneath when stuck */
   .sticky-top { top: 28px; z-index: 30; }
-  .sticky-top::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 36px; background: linear-gradient(to bottom, rgba(248,248,248,1) 0%, rgba(248,248,248,0.9) 20%, rgba(248,248,248,0.75) 35%, rgba(248,248,248,0.5) 55%, rgba(248,248,248,0.15) 78%, rgba(248,248,248,0) 100%); pointer-events: none; opacity: 0; transition: opacity 0.15s; }
+  .sticky-top::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 36px; background: var(--fade-gradient); pointer-events: none; opacity: 0; transition: opacity var(--transition-fast); }
   .sticky-top.stuck::after { opacity: 1; }
-  .route-title { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; padding: 12px 0 8px; border-bottom: 2px solid #222; }
+  .route-title { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; padding: var(--space-md) 0 var(--space-sm); border-bottom: 2px solid var(--color-text); }
   .live-indicator { color: var(--color-text); }
 
   @media (max-width: 768px) {
@@ -395,7 +380,7 @@
 
     /* The header is the menu: the route is its second, dark line */
     .sticky-top { top: var(--header-h); }
-    .route-title { background: var(--gray-900); color: #fff; margin: 0 calc(-1 * var(--space-4)); padding: 2px var(--space-4) 12px; font-size: var(--font-lg); font-weight: 600; letter-spacing: 0; border-bottom: none; }
+    .route-title { background: var(--gray-900); color: #fff; margin: 0 calc(-1 * var(--space-lg)); padding: 2px var(--space-lg) 12px; font-size: var(--font-lg); font-weight: 600; letter-spacing: 0; border-bottom: none; }
     .live-indicator { color: #fff; }
   }
 </style>
@@ -458,7 +443,7 @@
     <span class="location-text">Walk time unknown</span>
     <button id="locate-btn" type="button">Locate me</button>
   </div>
-  <div id="day-tabs" class="day-tab-bar" role="tablist"></div>
+  <div id="day-tabs" class="day-tab-bar"></div>
 </div>
 <div id="day-panels"></div>
 
@@ -605,9 +590,8 @@ var TIMETABLE_DATA = null;
     for (var i = 0; i < data.days.length; i++) {
       var d = data.days[i];
       var btn = document.createElement("button");
-      btn.className = "day-tab";
-      btn.setAttribute("role", "tab");
-      btn.setAttribute("aria-selected", i === activeDay ? "true" : "false");
+      btn.type = "button";
+      btn.className = "day-tab" + (i === activeDay ? " active" : "");
       btn.dataset.index = i;
       btn.innerHTML = '<span>' + d.day + '</span><span class="day-tab-count">' + d.date + '</span>';
       btn.addEventListener("click", onTabClick);
