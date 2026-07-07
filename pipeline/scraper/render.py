@@ -500,7 +500,7 @@ def render_output_html(
     .floor-header-bar.stuck::after { opacity: 1; }
     .floor-header { text-align: center; margin: 0 3px; background: none !important; }
     .floor-header > span:first-child { display: block; font-weight: 700; font-size: var(--font-sm); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-pill); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .floor-curator { font-style: italic; font-size: var(--font-xs); color: var(--color-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .floor-curator { font-style: italic; font-weight: normal; font-size: var(--font-xs); color: var(--color-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
     /* Timetable grid */
     .timetable-panel { display: none; }
