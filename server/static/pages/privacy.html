@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111111">
+<meta name="robots" content="noindex, nofollow">
+<title>Privacy — Stone Techno Companion</title>
+<style>
+  :root {
+    --color-bg: #f8f8f8;
+    --color-surface: #ffffff;
+    --color-text: #111111;
+    --color-text-secondary: #4a4a4a;
+    --color-border: #ebebeb;
+    --radius: 0.75rem;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 1.25rem;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--color-bg); color: var(--color-text);
+    line-height: 1.55; max-width: 640px; margin-inline: auto;
+    font-size: 0.9375rem;
+  }
+  h1 { font-size: 1.375rem; margin: 0.5rem 0 0.25rem; }
+  .updated { color: var(--color-text-secondary); font-size: 0.8125rem; margin-bottom: 1.25rem; }
+  h2 { font-size: 1.0625rem; margin: 1.5rem 0 0.5rem; }
+  section {
+    background: var(--color-surface); border: 1px solid var(--color-border);
+    border-radius: var(--radius); padding: 0.25rem 1rem 0.75rem; margin-bottom: 0.75rem;
+  }
+  ul { padding-left: 1.25rem; margin: 0.5rem 0; }
+  li { margin: 0.35rem 0; }
+  p { margin: 0.5rem 0; }
+  strong { font-weight: 600; }
+  a { color: inherit; }
+</style>
+</head>
+<body>
+<h1>Privacy</h1>
+<div class="updated">Stone Techno Companion — July 2026</div>
+
+<p>This app is built to know as little about you as possible and to forget what it knows quickly. In plain words:</p>
+
+<section>
+<h2>What we never have</h2>
+<ul>
+  <li><strong>No passwords.</strong> Sign-in is a magic link or Google — there is no password to store or leak.</li>
+  <li><strong>No stored email address.</strong> We keep only a one-way cryptographic hash of it, enough to recognize you next time. The address itself is used to send your sign-in link and then discarded (within 15 minutes).</li>
+  <li><strong>No IP logs, no request logs, no third-party trackers or ads.</strong> Usage statistics are self-hosted and anonymous.</li>
+  <li><strong>No readable login tokens.</strong> Session and sign-in tokens are stored only as one-way hashes.</li>
+</ul>
+</section>
+
+<section>
+<h2>Direct messages</h2>
+<p><strong>DMs are end-to-end encrypted.</strong> They are encrypted on your device and can only be decrypted on your and your recipient's devices — the server stores ciphertext it cannot read, notifications show no content, and DMs are never scanned. Photos and videos inside DMs are stored on the server (not end-to-end encrypted) and auto-delete with the conversation.</p>
+</section>
+
+<section>
+<h2>Group chat</h2>
+<ul>
+  <li>Messages <strong>auto-delete within 24 hours</strong> and are erased from disk, not just marked deleted.</li>
+  <li>To keep the chat safe, every group message (including photos/videos) is <strong>checked by an automated moderation service (OpenAI)</strong> before delivery. OpenAI processes it under its API terms (not used for training) — this is the one third party that sees message content, and only in group rooms.</li>
+  <li>If a message is reported, a snapshot of it is kept for the moderators even after the original expires.</li>
+</ul>
+</section>
+
+<section>
+<h2>Meetups &amp; location</h2>
+<ul>
+  <li>Sharing your location is always an explicit action — nothing tracks you in the background.</li>
+  <li>Meetup coordinates are rounded (~11 m) and <strong>visible only to people who joined</strong> that meetup. Everything about a meetup auto-deletes about an hour after it happens.</li>
+</ul>
+</section>
+
+<section>
+<h2>What we do keep</h2>
+<ul>
+  <li>Your profile: username, optional display name, country, avatar — visible to other festival-goers by design.</li>
+  <li>Your favorites and personal schedule on the line-up page (tied to an anonymous session, not your identity).</li>
+  <li>Push notification subscriptions, if you enable them — notification content is encrypted in transit so the push services (Apple/Google/Mozilla) cannot read it.</li>
+  <li>Short-lived operational backups of the above, retained briefly for disaster recovery.</li>
+</ul>
+</section>
+
+<section>
+<h2>Deletion</h2>
+<p>Almost everything deletes itself. For full account deletion, ask any admin in the chat — the account, profile, avatar, messages, and push subscriptions are removed immediately; bans, if any, are retained in anonymized form.</p>
+</section>
+
+</body>
+</html>

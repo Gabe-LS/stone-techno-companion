@@ -61,6 +61,7 @@ from chat_db import (
     get_all_meetups,
     delete_meetup,
     hash_email,
+    hash_token,
     save_push_subscription,
     delete_push_subscription,
     get_push_subscription_count,
@@ -853,10 +854,11 @@ async def auth_email_start(request: Request):
             raise HTTPException(403, "This account cannot sign in.")
 
         expires = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
+        # Stored hashed: the raw token exists only inside the emailed link.
         db.execute(
             "INSERT OR REPLACE INTO email_tokens (token, email, provider_id, fingerprint, expires_at) "
             "VALUES (?, ?, ?, ?, ?)",
-            (token, email, provider_id, None, expires),
+            (hash_token(token), email, provider_id, None, expires),
         )
         db.commit()
     finally:
@@ -902,11 +904,11 @@ async def auth_email_verify(request: Request, token: str = ""):
     try:
         row = db.execute(
             "SELECT email, provider_id, fingerprint, expires_at FROM email_tokens WHERE token = ?",
-            (token,),
+            (hash_token(token),),
         ).fetchone()
         if not row:
             raise HTTPException(400, "Invalid or expired link")
-        db.execute("DELETE FROM email_tokens WHERE token = ?", (token,))
+        db.execute("DELETE FROM email_tokens WHERE token = ?", (hash_token(token),))
         db.commit()
         if datetime.now(timezone.utc) > datetime.fromisoformat(row["expires_at"]):
             raise HTTPException(400, "Link expired")
@@ -933,7 +935,7 @@ async def auth_logout(request: Request, response: Response):
         db = _get_db()
         try:
             user = get_user_by_token(db, token)
-            db.execute("DELETE FROM sessions WHERE token = ?", (token,))
+            db.execute("DELETE FROM sessions WHERE token = ?", (hash_token(token),))
             db.commit()
         finally:
             db.close()

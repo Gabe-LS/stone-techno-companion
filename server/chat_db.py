@@ -580,16 +580,17 @@ def create_session(db: sqlite3.Connection, user_id: str) -> dict:
     expires = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
     db.execute(
         "INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)",
-        (sid, user_id, token, expires),
+        (sid, user_id, hash_token(token), expires),
     )
     db.commit()
+    # The raw token goes to the client and is never stored.
     return {"id": sid, "token": token, "expires_at": expires}
 
 
 def get_user_by_token(db: sqlite3.Connection, token: str) -> sqlite3.Row | None:
     row = db.execute(
         "SELECT s.user_id FROM sessions s WHERE s.token = ? AND s.expires_at > ?",
-        (token, _now()),
+        (hash_token(token), _now()),
     ).fetchone()
     if not row:
         return None
@@ -2069,6 +2070,13 @@ def wipe_all_chat_data(db: sqlite3.Connection) -> None:
 
 def hash_email(email: str) -> str:
     return hashlib.sha256(email.strip().lower().encode()).hexdigest()
+
+
+def hash_token(token: str) -> str:
+    """Bearer credentials (session tokens, magic-link tokens) are stored only
+    as SHA-256 hashes — a leaked database must not allow account takeover.
+    The raw token lives exclusively in the client's cookie / email link."""
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 # --- Push subscriptions ---
