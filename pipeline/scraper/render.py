@@ -725,20 +725,21 @@ def render_output_html(
         parts.append(
             '    <button type="button" onclick="switchView(\'timetable\', document.getElementById(\'btn-timetable\')); closeMenu()" id="dd-timetable">Timetable</button>'
         )
+    parts.append('    <div id="dd-view-options">')
+    parts.append(
+        '      <button type="button" class="dd-option dd-toggle" role="switch" aria-checked="false" onclick="toggleFilter(document.getElementById(\'btn-filter\'))" id="dd-filter">Show My Picks<span class="dd-switch" aria-hidden="true"></span></button>'
+    )
+    if has_timetable:
+        parts.append(
+            '      <button type="button" class="dd-option dd-toggle" role="switch" aria-checked="false" onclick="toggleScheduleFilter(document.getElementById(\'btn-schedule\'))" id="dd-schedule" style="display:none">Show My Schedule<span class="dd-switch" aria-hidden="true"></span></button>'
+        )
+    parts.append("    </div>")
     parts.append(
         '    <button type="button" onclick="dbg(\'[NAV] chat (menu)\'); window.open(\'/chat\',\'_self\')">Chat</button>'
     )
     parts.append(
         '    <button type="button" onclick="dbg(\'[NAV] transport (menu)\'); window.open(\'/public-transport\',\'_self\')">Transport</button>'
     )
-    parts.append('    <div class="dd-divider"></div>')
-    parts.append(
-        '    <button type="button" class="dd-option dd-toggle" role="switch" aria-checked="false" onclick="toggleFilter(document.getElementById(\'btn-filter\'))" id="dd-filter">Show My Picks<span class="dd-switch" aria-hidden="true"></span></button>'
-    )
-    if has_timetable:
-        parts.append(
-            '    <button type="button" class="dd-option dd-toggle" role="switch" aria-checked="false" onclick="toggleScheduleFilter(document.getElementById(\'btn-schedule\'))" id="dd-schedule" style="display:none">Show My Schedule<span class="dd-switch" aria-hidden="true"></span></button>'
-        )
     parts.append('    <div class="dd-divider"></div>')
     parts.append(
         '    <button type="button" class="dd-option" onclick="openShareModal(); closeMenu()">Share</button>'
@@ -1596,6 +1597,8 @@ def render_output_html(
         var ddt = document.getElementById('dd-timetable');
         if (ddl) ddl.classList.remove('active');
         if (ddt) ddt.classList.add('active');
+        var ddo = document.getElementById('dd-view-options');
+        if (ddo && ddt) ddt.after(ddo);
       }
     })();
     """)
@@ -2316,6 +2319,10 @@ def render_output_html(
       if (ddTT && btnTT) {
         ddTT.classList.toggle('active', btnTT.classList.contains('active'));
       }
+      // The view options dock directly under the current view's row
+      const ddOpts = document.getElementById('dd-view-options');
+      const ddCur = (ddTT && btnTT && btnTT.classList.contains('active')) ? ddTT : ddList;
+      if (ddOpts && ddCur && ddCur.nextElementSibling !== ddOpts) ddCur.after(ddOpts);
       if (ddFilter && btnFilter) {
         ddFilter.setAttribute('aria-checked', btnFilter.classList.contains('active') ? 'true' : 'false');
       }
