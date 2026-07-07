@@ -678,6 +678,7 @@ class ConnectionManager:
         self._recent_msgs: dict[str, list] = {}
         self._last_active_ts: dict[str, float] = {}
         self._last_ws_activity: dict[str, float] = {}
+        self.conn_token: dict[str, str] = {}
 
     def should_update_last_active(self, user_id: str, interval: float = 60.0) -> bool:
         now = time.monotonic()
@@ -698,14 +699,36 @@ class ConnectionManager:
             rooms |= self.conn_rooms.get(c, set())
         return rooms
 
-    async def connect(self, ws: WebSocket, user_id: str, conn_id: str) -> None:
+    async def connect(
+        self, ws: WebSocket, user_id: str, conn_id: str, token: str | None = None
+    ) -> None:
         self.user_conns.setdefault(user_id, {})[conn_id] = ws
         self.conn_user[conn_id] = user_id
         self.conn_rooms[conn_id] = set()
+        if token:
+            self.conn_token[conn_id] = token
         self._last_ws_activity[user_id] = time.monotonic()
+
+    async def close_session(
+        self, user_id: str, token: str, code: int = 4001, reason: str = "Logged out"
+    ) -> int:
+        """Close only the WebSocket connection(s) that authenticated with this
+        specific session token — i.e. the single device that logged out. Other
+        devices (which have their own distinct session tokens) stay connected.
+        Returns the number of sockets closed."""
+        closed = 0
+        for conn_id, ws in list(self.user_conns.get(user_id, {}).items()):
+            if self.conn_token.get(conn_id) == token:
+                try:
+                    await ws.close(code=code, reason=reason)
+                    closed += 1
+                except Exception:
+                    pass
+        return closed
 
     def disconnect(self, conn_id: str) -> tuple[str | None, set[str]]:
         user_id = self.conn_user.pop(conn_id, None)
+        self.conn_token.pop(conn_id, None)
         if not user_id:
             return None, set()
         conns = self.user_conns.get(user_id, {})
@@ -1297,7 +1320,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
     avatar_url = user["avatar_url"] if "avatar_url" in ukeys else ""
     country = user["country"] if "country" in ukeys else ""
 
-    await manager.connect(ws, user_id, conn_id)
+    await manager.connect(ws, user_id, conn_id, token)
     update_last_seen(db, user_id)
 
     memberships = get_user_memberships(db, user_id)

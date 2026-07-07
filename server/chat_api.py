@@ -940,11 +940,12 @@ async def auth_logout(request: Request, response: Response):
         if user:
             from chat_ws import manager
 
-            for conn_id, ws in list(manager.user_conns.get(user["id"], {}).items()):
-                try:
-                    await ws.close(code=4001, reason="Logged out")
-                except Exception:
-                    pass
+            # Close only THIS device's socket(s) — the connection(s) that
+            # authenticated with this exact session token. Other devices keep
+            # their own sessions and stay connected.
+            await manager.close_session(
+                user["id"], token, code=4001, reason="Logged out"
+            )
     response.delete_cookie("chat_session")
     return {"ok": True}
 
