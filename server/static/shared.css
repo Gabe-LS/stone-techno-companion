@@ -204,8 +204,10 @@ body {
 .view-label { display: none; }
 .cmd-dropdown { display: none; }
 
-/* iOS-style switch rows inside the dropdown (mirrors the admin panel switch) */
-.cmd-dropdown button.dd-toggle { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); }
+/* iOS-style switch rows inside the dropdown (mirrors the admin panel switch).
+   No :active row flash: the switch itself is the feedback. */
+.cmd-dropdown button.dd-toggle { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); -webkit-tap-highlight-color: transparent; }
+.cmd-dropdown button.dd-toggle:active { background: none; }
 .dd-switch { position: relative; width: 36px; height: 20px; border-radius: 10px; background: var(--gray-700); transition: background 0.2s; flex-shrink: 0; }
 .dd-switch::before { content: ''; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; background: var(--gray-400); border-radius: 50%; transition: transform 0.2s, background 0.2s; }
 .cmd-dropdown button[aria-checked="true"] .dd-switch { background: var(--color-success); }
