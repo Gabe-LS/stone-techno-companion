@@ -272,7 +272,10 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .app.auth-mode { flex-direction: column; }
 .auth-cmd-bar { display: none; }
 @media (min-width: 768px) {
-  .auth-cmd-bar { display: flex; }
+  /* Other pages center the whole body at max-width 960px with space-xl
+     side padding, so their cmd-bar renders as a 912px centered strip,
+     not full-bleed. Mirror that exact geometry here. */
+  .auth-cmd-bar { display: flex; width: calc(100% - 2 * var(--space-xl)); max-width: calc(960px - 2 * var(--space-xl)); margin: 0 auto; }
   .auth-mode .header { display: none; }
 }
 .auth-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-lg); padding: var(--space-2xl); flex: 1; }
