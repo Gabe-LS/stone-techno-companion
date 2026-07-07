@@ -13,9 +13,9 @@ __pycache__/
 .claude/
 
 # Database (regenerable cache)
-lineup.db
-lineup.db-shm
-lineup.db-wal
+pipeline/lineup.db
+pipeline/lineup.db-shm
+pipeline/lineup.db-wal
 
 # Server runtime data (databases, VAPID keys)
 server/data/
@@ -32,17 +32,13 @@ server/static/index.html
 server/static/photos/
 server/static/thumbs
 server/static/timetable.json
-lineup.db.bak
-lineup.db.bak-shm
-lineup.db.bak-wal
 
 # Deploy backups (downloaded from VPS)
 backups/
 
 # Generated output
-output/
+pipeline/output/
 
-reviews/
 .env
 server/.env
 

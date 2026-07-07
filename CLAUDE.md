@@ -6,23 +6,23 @@ Multi-event festival companion tool: scraper + enrichment pipeline + static site
 
 ```bash
 # Full pipeline (scrape + enrich + photos + generate HTML)
-python stone_techno_companion.py
+python pipeline/stone_techno_companion.py
 
 # Regenerate HTML only (fast — no network, no scraping)
-python stone_techno_companion.py --render-only --no-photos
+python pipeline/stone_techno_companion.py --render-only --no-photos
 
 # Fetch YouTube sets for all artists (separate step, ~50 min)
-python fetch_videos.py
+python pipeline/fetch_videos.py
 
 # Deploy content to production (rsync, no container restart needed)
-python stone_techno_companion.py --render-only --deploy
+python pipeline/stone_techno_companion.py --render-only --deploy
 
 # Preview locally (required — file:// won't work)
-cd output && python3 -m http.server 8321
+cd pipeline/output && python3 -m http.server 8321
 # Then open http://localhost:8321/lineup.html
 
 # Run for a specific event
-python stone_techno_companion.py --event-id stone-techno-2026 --event-name "Stone Techno" --event-edition "2026"
+python pipeline/stone_techno_companion.py --event-id stone-techno-2026 --event-name "Stone Techno" --event-edition "2026"
 
 # Run full server locally (lineup + chat)
 cd server && set -a && source .env && set +a && uvicorn api:app --port 64728 --ssl-keyfile localhost+1-key.pem --ssl-certfile localhost+1.pem
@@ -36,9 +36,9 @@ python -m pytest tests/ -v
 
 **Always preview via HTTP, never `file://`.** The page uses `fetch()` for lazy-loaded bios and API calls. Browsers block fetch from `file://` origins (CORS).
 
-**For lineup only**: `cd output && python3 -m http.server 8321` — expected 404s for `/manifest.json`, `/sw.js`, `/api/me`.
+**For lineup only**: `cd pipeline/output && python3 -m http.server 8321` — expected 404s for `/manifest.json`, `/sw.js`, `/api/me`.
 
-**For lineup + chat**: run the full FastAPI server: `cd server && set -a && source .env && set +a && uvicorn api:app --port 64728 --ssl-keyfile localhost+1-key.pem --ssl-certfile localhost+1.pem`. Symlinks in `server/static/` point to `output/` files so lineup reflects latest build.
+**For lineup + chat**: run the full FastAPI server: `cd server && set -a && source .env && set +a && uvicorn api:app --port 64728 --ssl-keyfile localhost+1-key.pem --ssl-certfile localhost+1.pem`. Symlinks in `server/static/` point to `pipeline/output/` files so lineup reflects latest build.
 
 **Chat requires auth**: sign in via email magic link at `/chat`. For local dev, set `CHAT_BASE_URL=https://localhost:64728` in `.env` so the magic link points to localhost.
 
@@ -58,10 +58,10 @@ System: `ffmpeg` + `ffprobe` must be in PATH for video upload (frame extraction 
 
 ### Data flow
 
-1. `stone_techno_companion.py` orchestrates: scrape → enrich → process photos → render HTML + timetable.json + bios.json
-2. `lineup.db` (SQLite, WAL mode, FK enforcement) is the single source of truth — artists, links, sets, schedule, locations, events
-3. `scraper/overrides.toml` provides manual corrections (artist links), editorial data (floor curators), and YouTube video overrides — applied as patches to the DB
-4. `fetch_videos.py` discovers YouTube sets via yt-dlp and writes to the `artist_sets` table
+1. `pipeline/stone_techno_companion.py` orchestrates: scrape → enrich → process photos → render HTML + timetable.json + bios.json
+2. `pipeline/lineup.db` (SQLite, WAL mode, FK enforcement) is the single source of truth — artists, links, sets, schedule, locations, events
+3. `pipeline/scraper/overrides.toml` provides manual corrections (artist links), editorial data (floor curators), and YouTube video overrides — applied as patches to the DB
+4. `pipeline/fetch_videos.py` discovers YouTube sets via yt-dlp and writes to the `artist_sets` table
 5. Output: `lineup.html` (~650 KB) + `bios.json` (~200 KB, lazy-loaded) + `timetable.json` + `photos/*.avif` + `thumbs/*.avif`
 
 ### Database schema
@@ -98,12 +98,12 @@ Key design decisions:
 
 | File | Role |
 |---|---|
-| `scraper/scrape.py` | Lineup parser + SoundCloud/Instagram/Spotify/Resident Advisor scrapers. Each event needs its own scraper module. |
-| `scraper/db.py` | SQLite schema, upserts, overrides, queries — all event-scoped |
-| `scraper/images.py` | Photo resize (pyvips lanczos3) + AVIF encode (ssimulacra2 target 78) |
-| `scraper/render.py` | HTML generation — line-up list + timetable grid, CSS, JS, modals, hearts, schedule, push notifications. Markdown bio rendering. Dynamic floor color CSS. SVG icons via `<symbol>`/`<use>` sprite |
-| `scraper/timetable_json.py` | Generates `timetable.json` — slot UUID → set time mapping for push scheduler and ICS endpoint. Reads timezone from events table. Owns `slot_uuid()` (also imported by `render.py`) — the single source of truth for a slot's id, collision-aware: an artist playing two sets on the same floor within one date+period no longer collapses to one id, and existing ids are preserved (the earliest slot keeps the historical id, only the extra one is disambiguated) so no saved schedule is ever reset. |
-| `fetch_videos.py` | YouTube set discovery via yt-dlp. Writes to `artist_sets` table with `platform='youtube'`. |
+| `pipeline/scraper/scrape.py` | Lineup parser + SoundCloud/Instagram/Spotify/Resident Advisor scrapers. Each event needs its own scraper module. |
+| `pipeline/scraper/db.py` | SQLite schema, upserts, overrides, queries — all event-scoped |
+| `pipeline/scraper/images.py` | Photo resize (pyvips lanczos3) + AVIF encode (ssimulacra2 target 78) |
+| `pipeline/scraper/render.py` | HTML generation — line-up list + timetable grid, CSS, JS, modals, hearts, schedule, push notifications. Markdown bio rendering. Dynamic floor color CSS. SVG icons via `<symbol>`/`<use>` sprite |
+| `pipeline/scraper/timetable_json.py` | Generates `timetable.json` — slot UUID → set time mapping for push scheduler and ICS endpoint. Reads timezone from events table. Owns `slot_uuid()` (also imported by `render.py`) — the single source of truth for a slot's id, collision-aware: an artist playing two sets on the same floor within one date+period no longer collapses to one id, and existing ids are preserved (the earliest slot keeps the historical id, only the extra one is disambiguated) so no saved schedule is ever reset. |
+| `pipeline/fetch_videos.py` | YouTube set discovery via yt-dlp. Writes to `artist_sets` table with `platform='youtube'`. |
 | `server/api.py` | FastAPI app — favorites + schedule API + WebSocket sync + push scheduler + ICS export + static file routes. Mounts chat module at startup. |
 | `server/chat_db.py` | Chat SQLite schema (chat.db) — users, sessions, bans, rooms, messages, meetups, reactions, blocks, reports, strikes, E2EE device key store |
 | `server/chat_moderation.py` | Three-layer moderation: word filter + OpenAI omni-moderation + GPT-5.4-nano drug detection. All via raw httpx. |
@@ -133,19 +133,19 @@ Key design decisions:
 ./deploy.sh
 
 # Content deploy (lineup HTML + photos — no server restart needed)
-python stone_techno_companion.py --render-only --deploy
+python pipeline/stone_techno_companion.py --render-only --deploy
 ```
 
 `deploy.sh` does: sync prod env vars to the VPS `.env` (back up the previous `.env` first, then an atomic temp-file + byte-count check + `mv` + `chmod 600` on the new file, so a dropped connection can't leave a truncated `.env` and secrets aren't left world-readable); WAL-checkpoint the VPS SQLite DBs; download VPS data (`server/data/` + best-effort `server/chat-uploads/`) to `backups/{timestamp}/` locally; verify each downloaded `.db` with `PRAGMA quick_check` and abort before any change if a backup is corrupt; create a timestamped backup on the VPS; `git pull`; `docker compose up -d --build --force-recreate`; health check (container + chat API), exiting non-zero on failure; prune old VPS backups (keeps 5). Local backups survive VPS disk failure.
 
 ## Generated Artifacts (gitignored)
 
-- `lineup.db` — SQLite database (all tables)
-- `output/lineup.html` — generated page (~650 KB)
-- `output/bios.json` — artist bios + sets, lazy-loaded on first artist tap (~200 KB)
-- `output/photos/*.avif` — processed artist photos
-- `output/timetable.json` — slot UUID → set time mapping for push notifications
-- `output/thumbs/*.avif` — YouTube video thumbnails (240px max, AVIF)
+- `pipeline/lineup.db` — SQLite database (all tables)
+- `pipeline/output/lineup.html` — generated page (~650 KB)
+- `pipeline/output/bios.json` — artist bios + sets, lazy-loaded on first artist tap (~200 KB)
+- `pipeline/output/photos/*.avif` — processed artist photos
+- `pipeline/output/timetable.json` — slot UUID → set time mapping for push notifications
+- `pipeline/output/thumbs/*.avif` — YouTube video thumbnails (240px max, AVIF)
 
 - `server/data/` — runtime databases (hearts.db, chat.db), VAPID keys (gitignored)
 - `server/chat/uploads/` — uploaded images/videos (WebP, MP4) in local/bare-uvicorn dev
@@ -159,7 +159,7 @@ These are regenerable. Source of truth is the live website + `overrides.toml` + 
 
 ## Overrides
 
-`scraper/overrides.toml` provides manual corrections. Applied after scraping, before follower fetching.
+`pipeline/scraper/overrides.toml` provides manual corrections. Applied after scraping, before follower fetching.
 
 ```toml
 # Artist link overrides — field names match platform names in artist_links
@@ -239,11 +239,11 @@ The lineup/timetable page has an additional mechanism: a `<script>` in `<head>` 
 
 ## Working on the HTML/CSS/JS
 
-All frontend code lives in `scraper/render.py` as Python string concatenation. Shared CSS lives in `server/static/shared.css`. Shared JS utilities live in `server/static/shared.js`.
+All frontend code lives in `pipeline/scraper/render.py` as Python string concatenation. Shared CSS lives in `server/static/shared.css`. Shared JS utilities live in `server/static/shared.js`.
 
 ```bash
-python stone_techno_companion.py --render-only --no-photos
-cd output && python3 -m http.server 8321
+python pipeline/stone_techno_companion.py --render-only --no-photos
+cd pipeline/output && python3 -m http.server 8321
 # Open http://localhost:8321/lineup.html
 ```
 

@@ -128,7 +128,7 @@ _SITE_NAME = "Stone Techno"
 
 def _load_site_short() -> None:
     global _SITE_SHORT, _SITE_NAME
-    lineup_db = Path(__file__).resolve().parent.parent / "lineup.db"
+    lineup_db = Path(__file__).resolve().parent.parent / "pipeline" / "lineup.db"
     if not lineup_db.exists():
         return
     try:

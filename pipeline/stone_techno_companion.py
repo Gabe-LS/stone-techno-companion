@@ -65,7 +65,7 @@ def deploy_to_vps(output_dir: Path, output_path: Path) -> None:
             json_src = output_dir / json_name
             if json_src.exists():
                 shutil.copy2(json_src, staging_path / json_name)
-        server_static = Path(__file__).resolve().parent / "server" / "static"
+        server_static = Path(__file__).resolve().parent.parent / "server" / "static"
         for fname in ("manifest.json", "sw.js", "shared.css", "shared.js"):
             src = server_static / fname
             if src.exists():
