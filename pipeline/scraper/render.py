@@ -420,7 +420,7 @@ def render_output_html(
     .modal-box canvas { display: block; margin: 10px auto; border-radius: 6px; }
     .modal-box .or-line { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
     .modal-box .or-line hr { flex: 1; border: none; border-top: 1px solid var(--color-border); }
-    .modal-box .or-line span { color: #bbb; font-size: var(--font-xs); }
+    .modal-box .or-line span { color: var(--color-muted); font-size: var(--font-xs); }
     .modal-box .tabs { display: flex; gap: 3px; margin-bottom: 14px; border-radius: var(--radius-card); border: 1px solid var(--color-border); padding: 3px; background: var(--color-surface); }
     .modal-box .tabs button { flex: 1; background: transparent; border: none; padding: 7px var(--space-xs); font-size: var(--font-xs); color: var(--color-muted-icon); border-radius: 5px; transition: color var(--transition-fast), background var(--transition-fast); cursor: pointer; }
     .modal-box .tabs button:focus:not(:focus-visible) { outline: none; }
@@ -495,11 +495,11 @@ def render_output_html(
     /* Filter bar */
     .filter-bar::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: var(--space-sm); background: var(--color-bg); }
     /* min-height mirrors the date h2 box (1.5 line-height x its font + same padding/border) so both sticky bars are equal-height */
-    .filter-bar { position: sticky; top: var(--sticky-top-h2, 98px); z-index: 20; background: var(--color-bg); display: flex; align-items: center; justify-content: space-between; padding: 10px 0 var(--space-sm); margin: 0.83em 0 var(--space-sm); gap: var(--space-sm); border-bottom: 1px solid var(--color-line-hour); min-height: calc(1.5 * var(--font-xl) + 19px); }
+    .filter-bar { position: sticky; top: var(--sticky-top-h2, 96px); z-index: 20; background: var(--color-bg); display: flex; align-items: center; justify-content: space-between; padding: 10px 0 var(--space-sm); margin: 0.83em 0 var(--space-sm); gap: var(--space-sm); border-bottom: 1px solid var(--color-line-hour); min-height: calc(1.5 * var(--font-xl) + 19px); }
 
     /* Floor headers */
     /* pins exactly below the filter bar: its top + its token-derived height */
-    .floor-header-bar { display: grid; position: sticky; top: calc(var(--sticky-top-h2, 98px) + 1.5 * var(--font-xl) + 19px); z-index: var(--z-sticky); background: var(--color-bg); padding: var(--space-sm) 0 6px; margin: var(--space-xl) 0 var(--space-md); align-items: start; }
+    .floor-header-bar { display: grid; position: sticky; top: calc(var(--sticky-top-h2, 96px) + 1.5 * var(--font-xl) + 19px); z-index: var(--z-sticky); background: var(--color-bg); padding: var(--space-sm) 0 6px; margin: var(--space-xl) 0 var(--space-md); align-items: start; }
     .floor-header-bar::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 36px; background: var(--fade-gradient); pointer-events: none; opacity: 0; transition: opacity var(--transition-fast); }
     .floor-header-bar.stuck::after { opacity: 1; }
     .floor-header { text-align: center; margin: 0 3px; background: none !important; }
@@ -1063,7 +1063,7 @@ def render_output_html(
             parts.append(f'        <span class="artist-also">{esc(sched_also)}</span>')
         parts.append("        </div>")
         parts.append(
-            '        <button class="heart-btn" aria-label="Add to favorites" aria-pressed="false"><svg viewBox="0 0 24 24"><use href="#i-heart"/></svg></button>'
+            '        <button type="button" class="heart-btn" aria-label="Add to favorites" aria-pressed="false"><svg viewBox="0 0 24 24"><use href="#i-heart"/></svg></button>'
         )
         parts.append("      </li>")
 
@@ -1260,7 +1260,7 @@ def render_output_html(
         for i, date_str in enumerate(dates_seen):
             active = " active" if i == 0 else ""
             parts.append(
-                f'      <button class="day-tab{active}" onclick="switchDay(\'{esc(date_str)}\', this)">'
+                f'      <button type="button" class="day-tab{active}" onclick="switchDay(\'{esc(date_str)}\', this)">'
                 f"{esc(_format_date_tab(date_str))}</button>"
             )
         parts.append("    </div>")
@@ -1389,7 +1389,7 @@ def render_output_html(
                     is_b2b = len(group) > 1
 
                     cal_btn = (
-                        f'<button class="tt-cal" '
+                        f'<button type="button" class="tt-cal" '
                         f'aria-label="Add to schedule" aria-pressed="false">{cal_svg}</button>'
                     )
                     parts.append(
@@ -1450,12 +1450,12 @@ def render_output_html(
                 curator_text = (stage_curators or {}).get(curator_key, "")
                 if curator_text:
                     parts.append(
-                        f'<th class="tt-floor-th floor-{esc(fid)}"><span>{esc(loc_name)}</span>'
+                        f'<th class="tt-floor-th floor-{esc(fid)}" scope="col"><span>{esc(loc_name)}</span>'
                         f'<span class="floor-curator">{esc(curator_text)}</span></th>'
                     )
                 else:
                     parts.append(
-                        f'<th class="tt-floor-th floor-{esc(fid)}"><span>{esc(loc_name)}</span></th>'
+                        f'<th class="tt-floor-th floor-{esc(fid)}" scope="col"><span>{esc(loc_name)}</span></th>'
                     )
             parts.append("</tr></thead>")
 
@@ -1516,7 +1516,7 @@ def render_output_html(
 
                     cal_svg = '<svg viewBox="0 0 24 24"><use href="#i-cal"/></svg>'
                     cal_btn = (
-                        f'<button class="tt-cal" '
+                        f'<button type="button" class="tt-cal" '
                         f'aria-label="Add to schedule" aria-pressed="false">{cal_svg}</button>'
                     )
 
@@ -2278,7 +2278,7 @@ def render_output_html(
           html += '<div class="bio-video-title">' + esc(v.title) + '</div>';
           var dateStr = '';
           if (v.date) { var ds = String(v.date); dateStr = ' \\u00b7 ' + ds.slice(0,4) + '-' + ds.slice(4,6) + '-' + ds.slice(6); }
-          html += '<div class="bio-video-meta">' + _formatViews(v.views) + ' views \\u00b7 ' + v.duration + ' min' + dateStr + '</div>';
+          html += '<div class="bio-video-meta">' + _formatViews(v.views) + ' views \\u00b7 ' + esc(v.duration) + ' min' + dateStr + '</div>';
           html += '</div></a>';
         });
         videosEl.innerHTML = html;
