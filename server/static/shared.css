@@ -208,8 +208,10 @@ body {
 .cmd-dropdown button.active { background: var(--gray-700); }
 
 /* Option rows: actions (not navigation) on the chat menu's lighter layer,
-   with the chat member-row height (40px) and gray-700 press feedback. */
-.cmd-dropdown button.dd-option { background: var(--gray-800); display: flex; align-items: center; height: 40px; padding-top: 0; padding-bottom: 0; }
+   with the chat member-row height (40px) and gray-700 press feedback.
+   width 100%: rows inside a docked container (dd-view-options) are not
+   stretched flex children of the dropdown. */
+.cmd-dropdown button.dd-option { background: var(--gray-800); display: flex; align-items: center; width: 100%; height: 40px; padding-top: 0; padding-bottom: 0; }
 .cmd-dropdown button.dd-option:active { background: var(--gray-700); }
 
 /* Toggle rows are options with an iOS switch (mirrors the admin panel
