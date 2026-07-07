@@ -42,6 +42,8 @@ python -m pytest tests/ -v
 
 **Chat requires auth**: sign in via email magic link at `/chat`. For local dev, set `CHAT_BASE_URL=https://localhost:64728` in `.env` so the magic link points to localhost.
 
+**Testing on iPhone (LAN, no proxy)**: the mkcert root CA is installed and trusted on the phone, so it connects directly. Start uvicorn with `--host 0.0.0.0` added to the command above and open `https://<Mac-LAN-IP>:64728/chat` on the phone. The cert (`server/certs/localhost+1.pem`) must have a SAN for the current LAN IP — on a new network, regenerate keeping the same filenames: `cd server && mkcert -cert-file certs/localhost+1.pem -key-file certs/localhost+1-key.pem localhost 127.0.0.1 <lan-ip>`. If magic-link emails must open on the phone, point `CHAT_BASE_URL` at the LAN IP (restore to localhost afterwards).
+
 ## System Dependencies
 
 Not pip-installable, must be present on the system:
@@ -472,7 +474,7 @@ Real-world meetups: a user creates one (title, date/time, location (required —
 - **Locate-me button:** top-right corner of the map (`meetup-locate-btn`), crosshair GPS icon. Taps `geolocation.getCurrentPosition` with `enableHighAccuracy`, drops the pin and recenters if inside the venue bounds, shows toast if outside. Loading state via `.loading` class.
 - **Location input:** the creation form has a text input + an icon-only GPS button (pin icon, no label) that opens the map picker. Location is mandatory — either GPS coords from the map or a text label must be provided.
 
-**Meeting-point photo** (`meetups.photo_url`, migration-added): uploaded via a clickable 21:9 drop zone (`meetup-photo-upload`) with a landscape icon placeholder — clicking opens the file picker, the photo fills the zone (`object-fit: contain`), clicking again replaces it. Client-side `resizeImage` (bicubic via `createImageBitmap` `resizeQuality: 'high'`) + server-side Lanczos3 (pyvips) to 1500px max. OpenAI-moderated in the create handler (`validate_meetup_photo` in `chat_ws.py`, WS + REST), URL validated against the upload allowlist, attendee-gated in `_shape_meetup`, unlinked on delete/expiry. Stored GPS rounded to ~11 m. (`server/static/vendor/leaflet/` is dead since the MapLibre migration and can be removed.)
+**Meeting-point photo** (`meetups.photo_url`, migration-added): uploaded via a clickable 21:9 drop zone (`meetup-photo-upload`) with a landscape icon placeholder — clicking opens the file picker, the photo fills the zone (`object-fit: contain`), clicking again replaces it. Client-side `resizeImage` (bicubic via `createImageBitmap` `resizeQuality: 'high'`) + server-side Lanczos3 (pyvips) to 1500px max. OpenAI-moderated in the create handler (`validate_meetup_photo` in `chat_ws.py`, WS + REST), URL validated against the upload allowlist, attendee-gated in `_shape_meetup`, unlinked on delete/expiry. Stored GPS rounded to ~11 m.
 
 **Deferred (NOT done — conscious decisions, do not re-report as findings):** rooms↔meetups FK + `stage_id`→`origin_room_id` rename; meetup edit; bell "Get notified" RSVP-relabel/decouple; full meetup push wiring (attendees are in `meetup_attendees` but NOT `room_memberships`, so `get_unread_counts` has no meetup branch → meetup-room messages don't generate push yet); pre-meetup reminders; attendee-list UI; dedicated meetup rate limit; keyboard-activatable list rows.
 
