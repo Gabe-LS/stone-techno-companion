@@ -787,9 +787,17 @@ var TIMETABLE_DATA = null;
         applyWalkData(result.distanceM, result.durationS);
       } else {
         var dist = haversineKm(lat, lng, STOP_LAT, STOP_LNG);
-        walkMinutes = Math.ceil((dist / WALK_SPEED_KMH) * 60);
-        banner.querySelector(".location-text").textContent =
-          "~" + fmtDist(dist * 1000) + " / ~" + fmtNum(walkMinutes) + " min";
+        if (dist > 20) {
+          // A "walk to the stop" is meaningless from this far away; a
+          // straight-line figure (e.g. 687 km from Milan) only confuses.
+          walkMinutes = null;
+          banner.querySelector(".location-text").textContent =
+            "Too far from the stop for walking directions";
+        } else {
+          walkMinutes = Math.ceil((dist / WALK_SPEED_KMH) * 60);
+          banner.querySelector(".location-text").textContent =
+            "~" + fmtDist(dist * 1000) + " / ~" + fmtNum(walkMinutes) + " min";
+        }
         document.getElementById("locate-btn").textContent = "Update";
         renderPanel();
       }
