@@ -742,7 +742,7 @@ def render_output_html(
         '    <button type="button" onclick="openSyncModal(); closeMenu()">Sync</button>'
     )
     parts.append(
-        '    <button type="button" onclick="toggleNotifications(); closeMenu()" id="dd-bell">Notifications</button>'
+        '    <button type="button" class="dd-toggle" role="switch" aria-checked="false" onclick="toggleNotifications()" id="dd-bell">Notifications<span class="dd-switch" aria-hidden="true"></span></button>'
     )
     parts.append("  </div>")
     parts.append(
@@ -2234,7 +2234,7 @@ def render_output_html(
       const dd = document.getElementById('dd-bell');
       const on = storageGet('stc_push') === '1';
       if (btn) { btn.style.display = _supportsPush ? '' : 'none'; btn.classList.toggle('active', on); }
-      if (dd) { dd.style.display = (_supportsPush || _isIOS) ? '' : 'none'; dd.textContent = on ? 'Disable notifications' : 'Enable notifications'; }
+      if (dd) { dd.style.display = (_supportsPush || _isIOS) ? '' : 'none'; dd.setAttribute('aria-checked', on ? 'true' : 'false'); }
     }
 
     async function enableNotifications() {
