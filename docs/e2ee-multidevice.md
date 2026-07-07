@@ -2,7 +2,7 @@
 
 ## Context
 
-The v1 E2EE design (docs/e2ee-dev.md, fully implemented and verified) assumes one key pair per user: the server stores a single public key, and the client derives one static ECDH shared key per DM pair. In reality the app allows concurrent sessions on multiple devices (Mac browser + iOS PWA), and v1 degenerates to last-device-wins: the most recent device to upload a key is the only one that can read the conversation; every other device of the same user renders `[Encrypted message]`, and messages SENT from a stale device are unreadable by the counterpart.
+The v1 E2EE design (docs/e2ee-v1.md, fully implemented and verified) assumes one key pair per user: the server stores a single public key, and the client derives one static ECDH shared key per DM pair. In reality the app allows concurrent sessions on multiple devices (Mac browser + iOS PWA), and v1 degenerates to last-device-wins: the most recent device to upload a key is the only one that can read the conversation; every other device of the same user renders `[Encrypted message]`, and messages SENT from a stale device are unreadable by the counterpart.
 
 v2 makes every device a first-class crypto endpoint, WhatsApp-style, minus the parts an ephemeral 60-minute-TTL chat does not need.
 
