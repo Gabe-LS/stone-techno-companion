@@ -1,4 +1,4 @@
-// Regenerates the Tram 107 / NE2 schedule for /public-transport.
+// Regenerates the Tram 107 / NE2 schedule for /transport.
 // Run when event dates change (edit the dates array below), then deploy the
 // JSON via git pull (no rebuild). Requires Node 18+. Output goes to
 // server/static/timetable-transport.json.

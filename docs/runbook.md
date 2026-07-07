@@ -18,7 +18,7 @@ Run it hourly via cron (`--quiet` prints only when something needs attention):
 
 ```bash
 crontab -e
-0 * * * * cd "/Users/gabrielelosurdo/Documents/Developer/Scripts/Personal/Stone Techno Companion" && ./monitor.sh --quiet >> backups/monitor.log 2>&1
+0 * * * * cd "/Users/gabrielelosurdo/Documents/Developer/Scripts/Personal/Stone Techno Companion" && ./monitor.sh --quiet >> logs/monitor.log 2>&1
 ```
 
 **Alerts**: any FAIL fires a phone push via ntfy.sh (topic `stc26-ops-2c8faa31e3be` — install the ntfy app and subscribe to it; the topic name is the only credential, don't share it) plus a macOS notification. Test with `./monitor.sh --test-alert`.
@@ -93,7 +93,7 @@ Note: a failed chat module import crashes the server at startup **by design** (f
 python pipeline/stone_techno_companion.py --render-only --deploy   # rsync only, no container restart
 ```
 
-Static pages (e.g. `/public-transport`) deploy via `git pull` on the VPS (bind-mounted `static/`), no rebuild.
+Static pages (e.g. `/transport`) deploy via `git pull` on the VPS (bind-mounted `static/`), no rebuild.
 
 ## Map / POIs
 

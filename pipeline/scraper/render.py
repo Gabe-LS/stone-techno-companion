@@ -685,7 +685,7 @@ def render_output_html(
         '      <button type="button" onmousedown="this.blur()" onclick="window.open(\'/chat\',\'_self\')">Chat</button>'
     )
     parts.append(
-        '      <button type="button" onmousedown="this.blur()" onclick="dbg(\'[NAV] transport (cmd-bar)\'); window.open(\'/public-transport\',\'_self\')">Transport</button>'
+        '      <button type="button" onmousedown="this.blur()" onclick="dbg(\'[NAV] transport (cmd-bar)\'); window.open(\'/transport\',\'_self\')">Transport</button>'
     )
     if has_timetable:
         parts.append('      <span class="cmd-sep"></span>')
@@ -738,7 +738,7 @@ def render_output_html(
         '    <button type="button" onclick="dbg(\'[NAV] chat (menu)\'); window.open(\'/chat\',\'_self\')">Chat</button>'
     )
     parts.append(
-        '    <button type="button" onclick="dbg(\'[NAV] transport (menu)\'); window.open(\'/public-transport\',\'_self\')">Transport</button>'
+        '    <button type="button" onclick="dbg(\'[NAV] transport (menu)\'); window.open(\'/transport\',\'_self\')">Transport</button>'
     )
     parts.append('    <div class="dd-divider"></div>')
     parts.append(

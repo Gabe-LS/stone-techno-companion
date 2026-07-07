@@ -24,7 +24,7 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 DB_PATH = Path(__file__).resolve().parent / "data" / "hearts.db"
@@ -1019,7 +1019,7 @@ def generate_ics(slot_id: str):
     )
 
 
-# --- Public transport (Tram 107 / NE2 departure board at /public-transport) ---
+# --- Public transport (Tram 107 / NE2 departure board at /transport) ---
 # The VRR EFA API has no CORS headers, so the page polls this proxy for
 # realtime data. The stop is pinned server-side (never client-controlled), so
 # this cannot be used as an open proxy to EFA. A short shared cache collapses
@@ -1175,6 +1175,12 @@ async def transport_walk(request: Request, lat: float, lng: float):
     }
 
 
+@app.get("/public-transport")
+async def public_transport_redirect():
+    # Old URL of the transport page; permanent redirect keeps old links alive
+    return RedirectResponse("/transport", status_code=301)
+
+
 @app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def api_not_found(path: str):
     raise HTTPException(404, "Not found")
@@ -1240,7 +1246,7 @@ async def serve_bios():
 
 @app.get("/timetable-transport.json")
 async def serve_timetable_transport():
-    # Tram 107 / NE2 schedule for /public-transport. no-cache so a schedule
+    # Tram 107 / NE2 schedule for /transport. no-cache so a schedule
     # regeneration (pipeline/transport/capture-api.mjs + git pull) is picked
     # up without a container rebuild.
     file_path = STATIC_DIR / "timetable-transport.json"
@@ -1340,7 +1346,7 @@ _chat_purge_coro = mount_chat(app)
 async def serve_index(path: str = ""):
     if path.startswith("chat"):
         raise HTTPException(404, "Not found")
-    # Clean-URL static pages: /public-transport -> static/pages/public-transport.html.
+    # Clean-URL static pages: /transport -> static/pages/transport.html.
     # The slug regex forbids slashes and dots, so the lookup is traversal-safe;
     # anything without a matching page file falls through to the SPA below.
     if path and re.fullmatch(r"[a-z0-9][a-z0-9-]*", path):
