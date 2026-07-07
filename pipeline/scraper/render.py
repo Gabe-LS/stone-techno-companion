@@ -489,7 +489,7 @@ def render_output_html(
     /* --- Timetable view --- */
 
     /* Filter bar */
-    .filter-bar::after { content: ''; position: absolute; left: 0; right: 0; top: calc(100% + 1px); height: var(--space-sm); background: var(--color-bg); }
+    .filter-bar::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: var(--space-sm); background: var(--color-bg); }
     /* min-height mirrors the date h2 box (1.5 line-height x its font + same padding/border) so both sticky bars are equal-height */
     .filter-bar { position: sticky; top: var(--sticky-top-h2, 98px); z-index: 20; background: var(--color-bg); display: flex; align-items: center; justify-content: space-between; padding: 10px 0 var(--space-sm); margin: 0.83em 0 var(--space-sm); gap: var(--space-sm); border-bottom: 1px solid var(--color-line-hour); min-height: calc(1.5 * var(--font-xl) + 19px); }
 
@@ -586,17 +586,7 @@ def render_output_html(
          the pinned chrome runs out of travel room near max scrollX and gets
          dragged left, and the 12px padding gutters let content show through.
          The chrome is true full-bleed (100vw) with its padding internal. */
-      /* The table is inset 12px each side, and the inset persists while
-         panning: with the document as the scroller there is no container
-         edge to clip at, so fixed gutter overlays do the clipping (the only
-         viewport-anchored paint available). Above scrolling cells and floor
-         pills, below the pinned time column, tabs, title, and bar. */
-      .tt-v-scroll { overflow: visible; margin: 0; padding: 0 var(--space-md); }
-      /* 100lvh, not bottom:0: on iOS the layout viewport ends where the
-         collapsing Safari toolbar begins, leaving the strips short */
-      .view-timetable .tt-v-scroll::before, .view-timetable .tt-v-scroll::after { content: ''; position: fixed; top: 0; height: 100vh; height: 100lvh; width: var(--space-md); background: var(--color-bg); z-index: 4; }
-      .view-timetable .tt-v-scroll::before { left: 0; }
-      .view-timetable .tt-v-scroll::after { right: 0; }
+      .tt-v-scroll { overflow: visible; margin: 0; }
       .view-timetable body { width: max-content; min-width: 100%; padding-left: 0; padding-right: 0; }
       .view-timetable .cmd-bar { position: sticky; left: 0; width: 100vw; margin: 0; }
       /* Full-bleed boxes for opacity, but the bottom rules stay inset like
@@ -607,11 +597,11 @@ def render_output_html(
 
       .tt-table { border-collapse: separate; border-spacing: 0; table-layout: fixed; width: calc(40px + var(--num-floors) * 40vw); }
       .tt-table thead th { position: sticky; top: calc(var(--sticky-top-h2, 106px) + 1.5 * var(--font-lg) + 13px); z-index: 2; background: var(--color-bg); padding: var(--space-xs) 2px; text-align: center; vertical-align: top; }
-      .tt-table thead th:first-child { left: var(--space-md); z-index: 3; background: var(--color-bg); width: 40px; min-width: 40px; }
+      .tt-table thead th:first-child { left: 0; z-index: 3; background: var(--color-bg); width: 40px; min-width: 40px; }
       .tt-floor-th > span:first-child { display: block; padding: 6px 10px; border-radius: var(--radius-pill); font-size: var(--font-xs); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0 3px; }
       .tt-floor-th .floor-curator { display: block; font-size: var(--font-xs); padding: 1px 0 2px; margin: 0; }
       /* Floor colors for mobile table — generated dynamically */
-      .tt-table tbody td.tt-time-td { position: sticky; left: var(--space-md); z-index: 1; background: var(--color-bg); font-size: var(--font-xs); color: var(--color-muted-icon); text-align: right; padding: 0 6px 0 0; vertical-align: top; width: 40px; min-width: 40px; line-height: var(--row-h); overflow: hidden; }
+      .tt-table tbody td.tt-time-td { position: sticky; left: 0; z-index: 1; background: var(--color-bg); font-size: var(--font-xs); color: var(--color-muted-icon); text-align: right; padding: 0 6px 0 0; vertical-align: top; width: 40px; min-width: 40px; line-height: var(--row-h); overflow: hidden; }
       .tt-table tbody td.tt-line-hour, .tt-table tbody td.tt-line-half { vertical-align: middle; }
       .tt-table tbody td { vertical-align: top; padding: 0; }
       .tt-table tbody td:not(.tt-time-td) { width: 40vw; min-width: 40vw; position: relative; }
