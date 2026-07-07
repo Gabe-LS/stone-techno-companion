@@ -1069,11 +1069,9 @@ async function submitProfile() {
     await connectWS();
     await loadBlockedUsers();
     await loadRooms();
-    if (rooms.length === 1) {
-      openRoom(rooms[0].id, rooms[0].name, rooms[0].type);
-    } else {
-      renderRoomList();
-    }
+    const main = rooms.find(r => r.is_main) || rooms[0];
+    if (main) openRoom(main.id, main.name, main.type);
+    else renderRoomList();
   } catch (e) { showToast(e.message); }
 }
 
