@@ -395,18 +395,23 @@
     document.getElementById('cmd-dropdown').classList.remove('open');
     document.getElementById('menu-overlay').classList.remove('open');
   }
-  // Same as the lineup: on mobile the whole header bar toggles the menu
-  if (window.matchMedia('(max-width:768px)').matches) {
-    document.getElementById('cmd-bar').addEventListener('click', function (e) {
-      if (!e.target.closest('.hamburger') && !e.target.closest('.nav-icon')) toggleMenu();
-    });
-  }
+  // Same as the lineup: on mobile the whole header bar toggles the menu;
+  // the breakpoint is evaluated per click, and crossing it resets the menu
+  document.getElementById('cmd-bar').addEventListener('click', function (e) {
+    if (!window.matchMedia('(max-width:768px)').matches) return;
+    if (!e.target.closest('.hamburger') && !e.target.closest('.nav-icon')) toggleMenu();
+  });
+  window.matchMedia('(max-width:768px)').addEventListener('change', closeMenu);
   window.addEventListener('DOMContentLoaded', function () {
     var el = document.querySelector('.sticky-top');
-    var top = parseFloat(getComputedStyle(el).top) || 0;
     var sentinel = document.createElement('div');
-    sentinel.style.cssText = 'height:0;width:0;pointer-events:none;visibility:hidden;position:relative;top:-' + top + 'px';
+    sentinel.style.cssText = 'height:0;width:0;pointer-events:none;visibility:hidden;position:relative;';
     el.parentNode.insertBefore(sentinel, el);
+    function placeSentinel() {
+      sentinel.style.top = '-' + (parseFloat(getComputedStyle(el).top) || 0) + 'px';
+    }
+    placeSentinel();
+    window.addEventListener('resize', placeSentinel);
     new IntersectionObserver(function (entries) {
       el.classList.toggle('stuck', entries[0].intersectionRatio === 0);
     }, { threshold: 0 }).observe(sentinel);

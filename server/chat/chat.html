@@ -2846,15 +2846,14 @@ function _renderChatMenuHtml() {
 // Like the lineup pages: on mobile, tapping anywhere on the top header
 // (except the calendar nav icon and the hamburger's own handler) toggles
 // the menu. Delegated: headers are re-rendered per room.
-if (window.matchMedia('(max-width: 767px)').matches) {
-  document.addEventListener('click', function (e) {
-    var header = e.target.closest('.header');
-    if (!header) return;
-    if (e.target.closest('.hamburger') || e.target.closest('.nav-icon')) return;
-    dbg('[MENU] header tap -> toggleChatMenu');
-    toggleChatMenu();
-  });
-}
+document.addEventListener('click', function (e) {
+  if (!window.matchMedia('(max-width: 767px)').matches) return;
+  var header = e.target.closest('.header');
+  if (!header) return;
+  if (e.target.closest('.hamburger') || e.target.closest('.nav-icon')) return;
+  dbg('[MENU] header tap -> toggleChatMenu');
+  toggleChatMenu();
+});
 
 function toggleChatMenu() {
   dbg('[MENU] toggleChatMenu');

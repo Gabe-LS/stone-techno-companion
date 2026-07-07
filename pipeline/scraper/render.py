@@ -1618,16 +1618,25 @@ def render_output_html(
         parts.append("    const HAS_TIMETABLE = false;")
 
     parts.append("""
-    // Sticky gradient observer
+    // Sticky gradient observer. Sentinel offsets encode the element's sticky
+    // top, which changes across the mobile/desktop breakpoint, so they are
+    // re-derived on every resize (see the shared resize handler below).
+    const _fadePairs = [];
     document.querySelectorAll('.fade-after').forEach(el => {
-      const top = parseFloat(getComputedStyle(el).top) || 0;
       const s = document.createElement('div');
-      s.style.cssText = 'height:0;width:0;pointer-events:none;visibility:hidden;position:relative;top:-' + top + 'px';
+      s.style.cssText = 'height:0;width:0;pointer-events:none;visibility:hidden;position:relative;';
       el.parentNode.insertBefore(s, el);
+      _fadePairs.push([el, s]);
       new IntersectionObserver(([e]) => {
         el.classList.toggle('stuck', e.intersectionRatio === 0);
       }, {threshold: 0}).observe(s);
     });
+    function placeFadeSentinels() {
+      _fadePairs.forEach(([el, s]) => {
+        s.style.top = '-' + (parseFloat(getComputedStyle(el).top) || 0) + 'px';
+      });
+    }
+    placeFadeSentinels();
 
     // Deep-linked actions from the identical command bars on other pages.
     // The action param is captured before the view router strips the query.
@@ -2219,11 +2228,13 @@ def render_output_html(
       document.getElementById('cmd-dropdown').classList.toggle('open');
       document.getElementById('menu-overlay').classList.toggle('open');
     }
-    if (window.matchMedia('(max-width:768px)').matches) {
-      document.getElementById('cmd-bar').addEventListener('click', function(e) {
-        if (!e.target.closest('.hamburger') && !e.target.closest('.nav-icon')) toggleMenu();
-      });
-    }
+    document.getElementById('cmd-bar').addEventListener('click', function(e) {
+      if (!window.matchMedia('(max-width:768px)').matches) return;
+      if (!e.target.closest('.hamburger') && !e.target.closest('.nav-icon')) toggleMenu();
+    });
+    // The dropdown is mobile-only UI: crossing the breakpoint resets it,
+    // otherwise its overlay survives into the desktop layout
+    window.matchMedia('(max-width:768px)').addEventListener('change', closeMenu);
     function closeMenu() {
       document.getElementById('cmd-dropdown').classList.remove('open');
       document.getElementById('menu-overlay').classList.remove('open');
@@ -2760,7 +2771,7 @@ def render_output_html(
       root.setProperty('--sticky-top-h4', (barH + h1H + h2H + h3H) + 'px');
     }
     setStickyTops();
-    window.addEventListener('resize', setStickyTops);
+    window.addEventListener('resize', function() { setStickyTops(); placeFadeSentinels(); });
     document.body.style.opacity = '1';
     """)
     parts.append("  </script>")
