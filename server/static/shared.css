@@ -204,6 +204,13 @@ body {
 .view-label { display: none; }
 .cmd-dropdown { display: none; }
 
+/* iOS-style switch rows inside the dropdown (mirrors the admin panel switch) */
+.cmd-dropdown button.dd-toggle { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); }
+.dd-switch { position: relative; width: 36px; height: 20px; border-radius: 10px; background: var(--gray-700); transition: background 0.2s; flex-shrink: 0; }
+.dd-switch::before { content: ''; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; background: var(--gray-400); border-radius: 50%; transition: transform 0.2s, background 0.2s; }
+.cmd-dropdown button[aria-checked="true"] .dd-switch { background: var(--color-success); }
+.cmd-dropdown button[aria-checked="true"] .dd-switch::before { transform: translateX(16px); background: #fff; }
+
 .fade-after::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 36px; background: var(--fade-gradient); pointer-events: none; opacity: 0; transition: opacity var(--transition-fast); }
 .fade-after.stuck::after { opacity: 1; }
 

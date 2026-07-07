@@ -726,11 +726,14 @@ def render_output_html(
             '    <button type="button" onclick="switchView(\'timetable\', document.getElementById(\'btn-timetable\')); closeMenu()" id="dd-timetable">Timetable</button>'
         )
     parts.append(
-        '    <button type="button" onclick="toggleFilter(document.getElementById(\'btn-filter\')); closeMenu()" id="dd-filter">Show My Picks</button>'
+        '    <button type="button" onclick="dbg(\'[NAV] transport (menu)\'); window.open(\'/public-transport\',\'_self\')">Transport</button>'
+    )
+    parts.append(
+        '    <button type="button" class="dd-toggle" role="switch" aria-checked="false" onclick="toggleFilter(document.getElementById(\'btn-filter\'))" id="dd-filter">Show My Picks<span class="dd-switch" aria-hidden="true"></span></button>'
     )
     if has_timetable:
         parts.append(
-            '    <button type="button" onclick="toggleScheduleFilter(document.getElementById(\'btn-schedule\')); closeMenu()" id="dd-schedule" style="display:none">Show My Schedule</button>'
+            '    <button type="button" class="dd-toggle" role="switch" aria-checked="false" onclick="toggleScheduleFilter(document.getElementById(\'btn-schedule\'))" id="dd-schedule" style="display:none">Show My Schedule<span class="dd-switch" aria-hidden="true"></span></button>'
         )
     parts.append(
         '    <button type="button" onclick="openShareModal(); closeMenu()">Share</button>'
@@ -740,9 +743,6 @@ def render_output_html(
     )
     parts.append(
         '    <button type="button" onclick="toggleNotifications(); closeMenu()" id="dd-bell">Notifications</button>'
-    )
-    parts.append(
-        '    <button type="button" onclick="dbg(\'[NAV] transport (menu)\'); window.open(\'/public-transport\',\'_self\')">Transport</button>'
     )
     parts.append("  </div>")
     parts.append(
@@ -2311,10 +2311,12 @@ def render_output_html(
       if (ddTT && btnTT) {
         ddTT.style.display = btnTT.classList.contains('active') ? 'none' : '';
       }
-      if (ddFilter && btnFilter) ddFilter.classList.toggle('active', btnFilter.classList.contains('active'));
+      if (ddFilter && btnFilter) {
+        ddFilter.setAttribute('aria-checked', btnFilter.classList.contains('active') ? 'true' : 'false');
+      }
       if (ddSched && btnSched) {
         ddSched.style.display = btnSched.style.display;
-        ddSched.classList.toggle('active', btnSched.classList.contains('active'));
+        ddSched.setAttribute('aria-checked', btnSched.classList.contains('active') ? 'true' : 'false');
       }
     }
     """)
