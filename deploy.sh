@@ -3,8 +3,11 @@ set -euo pipefail
 
 # Stone Techno Companion — deploy script
 # Deploys server code to VPS with timestamped backup + local copy
-# Usage: ./deploy.sh [--dry-run]
-#        ./deploy.sh --rollback <commit>   # reset VPS code to <commit> + rebuild
+# Usage: ./deploy.sh [--dry-run] [--ref <branch|tag|commit>]
+#        # --ref defaults to main; use it to ship a branch (e.g. for public
+#        # testing) or a tag without touching main. Reverting is just
+#        # ./deploy.sh --ref main (or --rollback <tag>).
+#        ./deploy.sh --rollback <commit|tag>   # reset VPS code to target + rebuild
 #                                          # (code only — data/.env restore stays
 #                                          # manual, see docs/runbook.md)
 
@@ -16,6 +19,7 @@ LOCAL_BACKUPS="backups"
 LOCAL_ENV="server/.env"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 DRY_RUN=false
+DEPLOY_REF="main"
 
 check_container_health() {
     # Sets STATUS. Waits up to ~35s for the healthcheck to settle.
@@ -37,9 +41,11 @@ if [ "${1:-}" = "--rollback" ]; then
     fi
     echo "=== Stone Techno Rollback -> $TARGET ==="
     echo ""
-    echo "[1/3] Verifying commit exists on VPS..."
-    if ! ssh "$VPS" "cd $VPS_DIR && git rev-parse --verify --quiet $TARGET^{commit}" >/dev/null; then
-        echo "  ERROR: commit '$TARGET' not found in the VPS repo"
+    echo "[1/3] Fetching refs and verifying target on VPS..."
+    # Fetch first so a tag/branch pushed to origin just now (e.g. a known-good
+    # tag created locally) resolves on the VPS instead of failing "not found".
+    if ! ssh "$VPS" "cd $VPS_DIR && git fetch origin --tags --prune --force >/dev/null 2>&1 && git rev-parse --verify --quiet $TARGET^{commit}" >/dev/null; then
+        echo "  ERROR: target '$TARGET' not found in the VPS repo (after fetch)"
         exit 1
     fi
     echo "[2/3] Resetting VPS worktree and rebuilding container..."
@@ -61,9 +67,25 @@ if [ "${1:-}" = "--rollback" ]; then
     exit 0
 fi
 
-if [ "${1:-}" = "--dry-run" ]; then
-    DRY_RUN=true
-fi
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --dry-run) DRY_RUN=true ;;
+        --ref)
+            DEPLOY_REF="${2:-}"
+            if [ -z "$DEPLOY_REF" ]; then
+                echo "Usage: ./deploy.sh [--dry-run] [--ref <branch|tag|commit>]"
+                exit 1
+            fi
+            shift
+            ;;
+        *)
+            echo "Unknown argument: $1"
+            echo "Usage: ./deploy.sh [--dry-run] [--ref <branch|tag|commit>]"
+            exit 1
+            ;;
+    esac
+    shift
+done
 
 run() {
     if [ "$DRY_RUN" = true ]; then
@@ -83,6 +105,7 @@ if [ "$DRY_RUN" = true ]; then
 else
     echo "=== Stone Techno Deploy ==="
 fi
+echo "  Ref: $DEPLOY_REF"
 echo ""
 
 # --- Step 0: Sync env vars to VPS ---
@@ -235,10 +258,18 @@ echo "[3/7] Creating VPS-side backup..."
 run ssh "$VPS" "mv $VPS_DIR/server/data-snap.$TIMESTAMP $VPS_DIR/server/data.bak.$TIMESTAMP"
 echo "  Created server/data.bak.$TIMESTAMP on VPS (verified snapshot)"
 
-# --- Step 4: Pull latest code ---
+# --- Step 4: Check out target ref on VPS ---
+# Fetch everything, then resolve DEPLOY_REF: a remote branch ships its latest
+# tip (origin/<ref>), a tag or commit ships that exact object. Always lands in
+# a detached HEAD at the precise commit -- no local branch state to drift on a
+# deploy box, and the existing `git reset --hard` rollback works from it.
 echo ""
-echo "[4/7] Pulling latest code on VPS..."
-run ssh "$VPS" "cd $VPS_DIR && git pull origin main"
+echo "[4/7] Fetching and checking out '$DEPLOY_REF' on VPS..."
+run ssh "$VPS" "cd $VPS_DIR && git fetch origin --tags --prune --force && \
+  if git rev-parse -q --verify \"origin/$DEPLOY_REF^{commit}\" >/dev/null; then TGT=\"origin/$DEPLOY_REF\"; \
+  elif git rev-parse -q --verify \"$DEPLOY_REF^{commit}\" >/dev/null; then TGT=\"$DEPLOY_REF\"; \
+  else echo \"  ERROR: ref '$DEPLOY_REF' not found on origin\" >&2; exit 1; fi && \
+  git checkout --force --detach \"\$TGT\" && echo \"  Checked out \$(git rev-parse --short HEAD) ($DEPLOY_REF)\""
 
 # --- Step 5: Seed chat.db (first chat deploy only) ---
 # Builds a clean production chat.db from the LOCAL dev database: keeps the
@@ -332,22 +363,6 @@ if [ -n "$local_prune" ]; then
     else
         echo "$local_prune" | xargs rm -rf
         echo "  Pruned old local backups (kept newest 15)"
-    fi
-fi
-
-# --- Ensure the hourly health monitor is installed in this Mac's crontab ---
-CRON_LINE="0 * * * * cd \"$(pwd)\" && ./monitor.sh --quiet >> logs/monitor.log 2>&1"
-if crontab -l 2>/dev/null | grep -qF "monitor.sh"; then
-    echo ""
-    echo "Hourly monitor cron: already installed"
-else
-    if [ "$DRY_RUN" = true ]; then
-        echo ""
-        echo "[DRY RUN] Would install hourly monitor crontab entry"
-    else
-        (crontab -l 2>/dev/null; echo "$CRON_LINE") | crontab -
-        echo ""
-        echo "Hourly monitor cron: INSTALLED (runs monitor.sh --quiet at minute 0)"
     fi
 fi
 
