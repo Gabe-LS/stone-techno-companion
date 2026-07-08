@@ -371,6 +371,10 @@
     .cmd-bar { margin-left: -12px; margin-right: -12px; }
     .sticky-top { top: var(--header-h); margin-top: var(--space-lg); }
     .route-title { font-size: var(--font-xl); padding: var(--space-sm) 0 6px; }
+    /* Transport itineraries as indented secondary rows under the Transport
+       main row in the mobile menu. */
+    .cmd-dropdown button.dd-sub { padding-left: var(--space-2xl); font-size: var(--font-sm); font-weight: 500; color: #cfcfcf; }
+    .cmd-dropdown button.dd-sub.active { color: #fff; }
   }
 </style>
 </head>
@@ -384,6 +388,9 @@
     <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] timetable'); location.href='/timetable'">Timetable</button>
     <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] chat'); location.href='/chat'">Chat</button>
     <button type="button" class="active">Transport</button>
+    <div class="cmd-sep"></div>
+    <button type="button" onmousedown="this.blur()" class="active" onclick="dbg('[NAV] zollverein-essen'); location.href='/transport'">Zollverein &gt; Essen</button>
+    <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] duesseldorf-essen'); location.href='/transport?route=duesseldorf'">D&uuml;sseldorf &gt; Essen</button>
   </div>
   <button type="button" class="hamburger" onclick="toggleMenu()" aria-label="Menu"></button>
 </nav>
@@ -392,6 +399,8 @@
   <button type="button" onclick="dbg('[NAV] timetable (menu)'); location.href='/timetable'">Timetable</button>
   <button type="button" onclick="dbg('[NAV] chat (menu)'); location.href='/chat'">Chat</button>
   <button type="button" class="active" onclick="closeMenu()">Transport</button>
+  <button type="button" class="dd-sub active" onclick="dbg('[NAV] zollverein-essen (menu)'); location.href='/transport'">Zollverein &gt; Essen</button>
+  <button type="button" class="dd-sub" onclick="dbg('[NAV] duesseldorf-essen (menu)'); location.href='/transport?route=duesseldorf'">D&uuml;sseldorf &gt; Essen</button>
 </div>
 <div class="menu-overlay" id="menu-overlay" onclick="closeMenu()"></div>
 <script>
