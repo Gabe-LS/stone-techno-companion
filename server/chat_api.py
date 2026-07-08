@@ -106,6 +106,25 @@ DEFAULT_EVENT_ID = os.environ.get("CHAT_EVENT_ID", "stone-techno-2026")
 ADMIN_TOKEN = os.environ.get("CHAT_ADMIN_TOKEN", "")
 
 _upload_rate: dict[str, list[float]] = {}
+_key_rate: dict[str, list[float]] = {}
+
+
+def _check_key_rate(user_id: str, max_n: int = 60, window: int = 60):
+    # The E2EE key endpoints were the only chat mutation/fetch surface with no
+    # rate limit: PUT with a fresh device_id each call fans out a key_rotated
+    # broadcast to every DM peer, and GET enables bulk device-metadata
+    # enumeration. 60/min/user is far above real use (a page load does ~1 PUT
+    # plus a handful of GETs).
+    now = time.monotonic()
+    bucket = _key_rate.setdefault(user_id, [])
+    bucket[:] = [t for t in bucket if now - t < window]
+    if len(bucket) >= max_n:
+        raise HTTPException(429, "Key endpoint rate limit exceeded")
+    bucket.append(now)
+    if len(_key_rate) > 1000:
+        stale = [k for k, v in _key_rate.items() if all(now - t >= window for t in v)]
+        for k in stale:
+            del _key_rate[k]
 
 
 def _check_upload_rate(user_id: str, max_uploads: int = 10, window: int = 60):
@@ -2406,6 +2425,7 @@ def _validate_e2ee_jwk(public_key: str) -> None:
 async def put_e2ee_key(request: Request):
     user, db = _get_user_from_cookie(request)
     try:
+        _check_key_rate(user["id"])
         body = await request.json()
         device_id = body.get("device_id", "")
         if not isinstance(device_id, str) or not _DEVICE_ID_RE.match(device_id):
@@ -2461,6 +2481,7 @@ async def put_e2ee_key(request: Request):
 async def get_e2ee_key_endpoint(user_id: str, request: Request):
     _user, db = _get_user_from_cookie(request)
     try:
+        _check_key_rate(_user["id"])
         devices = get_e2ee_device_keys(db, user_id)
         if not devices:
             raise HTTPException(404, "Key not found")
