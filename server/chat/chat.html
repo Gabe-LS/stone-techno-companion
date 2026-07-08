@@ -2828,6 +2828,16 @@ async function sendChatMessage(type, content, replyToId) {
       showToast('Message not sent — could not verify encryption. Tap send to retry.');
       return null;
     }
+  } else if (roomType === 'dm' && _roomEncrypted.has(roomId)) {
+    // Reached only when E2EE.available is false (crypto init failed, or the
+    // key upload failed its retries) AND this DM has already carried encrypted
+    // messages this session. Never silently downgrade an encrypted conversation
+    // to plaintext: fail closed, same rule as the keyless-peer branch above.
+    // (A never-encrypted DM -- keyless peer, old client -- still falls through
+    // to plaintext below, which is the intended fallback.)
+    dbg('[E2EE] unavailable but room already encrypted, blocking send (fail closed) room=' + roomId);
+    showToast('Message not sent. Encryption unavailable, reload to retry.');
+    return null;
   }
 
   const tempId = genTempId();
