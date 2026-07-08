@@ -171,6 +171,22 @@
   }
   .day-tab.active .day-tab-count { color: var(--gray-400); }
 
+  /* Compact tabs on narrow bars: "Thu" + "09/07" instead of full day + year. */
+  .day-tab .d-abbr, .day-tab-count .dt-abbr { display: none; }
+  .day-tab-bar.compact .d-full, .day-tab-bar.compact .dt-full { display: none; }
+  .day-tab-bar.compact .d-abbr, .day-tab-bar.compact .dt-abbr { display: inline; }
+
+  /* Chevron separator inside the nav itinerary rows (same glyph as the title). */
+  .nav-arrow { display: inline-flex; align-items: center; vertical-align: middle; margin: 0 0.12em; }
+  /* vertical-align:middle lands ~0.12em low against the cap height; lift to the
+     text's optical centre. */
+  .nav-arrow svg { height: 0.65em; width: auto; transform: translateY(-0.12em); }
+  /* Keep the selected itinerary highlighted over the dd-option background, and
+     drop the inline nudge inside the flex dd-option rows (align-items centres). */
+  .cmd-dropdown button.dd-option.active { background: var(--gray-700); }
+  .cmd-dropdown button.dd-option .nav-arrow { margin: 0 0.3em; }
+  .cmd-dropdown button.dd-option .nav-arrow svg { transform: none; }
+
   .day-panel { display: none; }
   .day-panel[aria-hidden="false"] { display: block; }
 
@@ -258,8 +274,11 @@
     position: relative;
   }
 
+  .line-badge { background: var(--gray-700); color: #fff; }  /* default for any line */
   .line-badge.l-107 { background: var(--badge-107-bg); color: #fff; }
   .line-badge.l-NE2 { background: var(--color-ne2-bg); color: var(--color-ne2-text); }
+  .line-badge.l-re { background: #b5179e; color: #fff; }  /* Regional-Express (Düsseldorf) */
+  .line-badge.l-s { background: #2e7d32; color: #fff; }   /* S-Bahn (Düsseldorf) */
 
   .rt-dot {
     position: absolute;
@@ -331,6 +350,27 @@
   .dep-item.is-too-late .dep-walk,
   .dep-item.is-past .dep-countdown { color: var(--gray-500); }
 
+  /* Airport-train arrival time (right column) + platform/train-number sub-line */
+  .dep-arr {
+    font-size: var(--font-sm);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text);
+    white-space: nowrap;
+  }
+  .dep-arr-label { color: var(--color-text-secondary); font-size: var(--font-xs); }
+  .dep-arr-sched { text-decoration: line-through; color: var(--gray-500); margin-right: 4px; }
+  .dep-arr-real { color: var(--color-delay); font-weight: 600; }
+  .dep-item.is-past .dep-arr,
+  .dep-item.is-past .dep-arr-label { color: var(--gray-500); }
+
+  .dep-sub {
+    font-size: var(--font-xs);
+    color: var(--color-text-secondary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .dep-item.is-past .dep-sub { color: var(--gray-500); }
+
   .empty-state {
     text-align: center;
     padding: var(--space-xl) var(--space-lg);
@@ -351,6 +391,19 @@
      margin on the sticky element it vanishes when stuck, same as the lineup */
   .sticky-top { top: 28px; z-index: 30; margin-top: 21px; }
   .route-title { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; padding: var(--space-md) 0 var(--space-sm); border-bottom: 2px solid var(--color-text); }
+  .route-title-main { display: flex; align-items: center; gap: var(--space-xs); min-width: 0; }
+  .route-title-main > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .route-arrow { display: inline-flex; align-items: center; vertical-align: middle; margin: 0 0.14em; }
+  /* Icons are cropped to their glyph bounds (tight viewBox in shared.js), so
+     sizing by height gives BOTH the chevron and the swap the same visible
+     height and matching stroke weight; width follows each glyph's aspect. */
+  .route-arrow svg { height: 0.42em; width: auto; }
+  .dir-toggle-btn { flex-shrink: 0; background: none; border: none; padding: 6px; margin-left: 2px; cursor: pointer; color: var(--color-muted); display: flex; align-items: center; font-size: inherit; -webkit-tap-highlight-color: transparent; }
+  .dir-toggle-btn:active { color: var(--color-text); }
+  @media (hover: hover) { .dir-toggle-btn:hover { color: var(--color-text); } }
+  /* Nudge to the text's optical middle so it lines up with the chevron, which
+     sits on vertical-align:middle (below the flex line-box centre). */
+  .dir-toggle-btn svg { height: 0.42em; width: auto; display: block; transform: translateY(0.11em); }
   .live-indicator { color: var(--color-text); }
 
   @media (max-width: 768px) {
@@ -358,7 +411,9 @@
     .cmd-bar { margin-left: -12px; margin-right: -12px; }
     .sticky-top { top: var(--header-h); margin-top: var(--space-lg); }
     .route-title { font-size: var(--font-xl); padding: var(--space-sm) 0 6px; }
-  }
+    /* Transport itineraries as indented secondary rows under the Transport
+       main row in the mobile menu. */
+      }
 </style>
 </head>
 <body>
@@ -371,6 +426,9 @@
     <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] timetable'); location.href='/timetable'">Timetable</button>
     <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] chat'); location.href='/chat'">Chat</button>
     <button type="button" class="active">Transport</button>
+    <div class="cmd-sep"></div>
+    <button type="button" onmousedown="this.blur()" class="active" data-route="zollverein" onclick="dbg('[NAV] zollverein-essen'); location.href='/transport?route=zollverein-essen'">Zollverein <span class="nav-arrow"><svg viewBox="7.5 3.5 9 17" fill="currentColor" aria-hidden="true"><path stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" fill-rule="evenodd" clip-rule="evenodd" d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"/></svg></span> Essen</button>
+    <button type="button" onmousedown="this.blur()" data-route="duesseldorf" onclick="dbg('[NAV] dus-airport-essen'); location.href='/transport?route=dus-airport-essen'">DUS Airport <span class="nav-arrow"><svg viewBox="7.5 3.5 9 17" fill="currentColor" aria-hidden="true"><path stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" fill-rule="evenodd" clip-rule="evenodd" d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"/></svg></span> Essen</button>
   </div>
   <button type="button" class="hamburger" onclick="toggleMenu()" aria-label="Menu"></button>
 </nav>
@@ -379,6 +437,10 @@
   <button type="button" onclick="dbg('[NAV] timetable (menu)'); location.href='/timetable'">Timetable</button>
   <button type="button" onclick="dbg('[NAV] chat (menu)'); location.href='/chat'">Chat</button>
   <button type="button" class="active" onclick="closeMenu()">Transport</button>
+  <button type="button" class="dd-option" data-slug="dus-airport-essen" onclick="dbg('[NAV] dus-airport-essen (menu)'); location.href='/transport?route=dus-airport-essen'">DUS Airport <span class="nav-arrow"><svg viewBox="7.5 3.5 9 17" fill="currentColor" aria-hidden="true"><path stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" fill-rule="evenodd" clip-rule="evenodd" d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"/></svg></span> Essen</button>
+  <button type="button" class="dd-option" data-slug="essen-dus-airport" onclick="dbg('[NAV] essen-dus-airport (menu)'); location.href='/transport?route=essen-dus-airport'">Essen <span class="nav-arrow"><svg viewBox="7.5 3.5 9 17" fill="currentColor" aria-hidden="true"><path stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" fill-rule="evenodd" clip-rule="evenodd" d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"/></svg></span> DUS Airport</button>
+  <button type="button" class="dd-option active" data-slug="zollverein-essen" onclick="dbg('[NAV] zollverein-essen (menu)'); location.href='/transport?route=zollverein-essen'">Zollverein <span class="nav-arrow"><svg viewBox="7.5 3.5 9 17" fill="currentColor" aria-hidden="true"><path stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" fill-rule="evenodd" clip-rule="evenodd" d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"/></svg></span> Essen</button>
+  <button type="button" class="dd-option" data-slug="essen-zollverein" onclick="dbg('[NAV] essen-zollverein (menu)'); location.href='/transport?route=essen-zollverein'">Essen <span class="nav-arrow"><svg viewBox="7.5 3.5 9 17" fill="currentColor" aria-hidden="true"><path stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" fill-rule="evenodd" clip-rule="evenodd" d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"/></svg></span> Zollverein</button>
 </div>
 <div class="menu-overlay" id="menu-overlay" onclick="closeMenu()"></div>
 <script>
@@ -420,7 +482,10 @@
 
 <div class="sticky-top fade-after">
   <div class="route-title">
-    <span>Zollverein → Essen Hbf</span>
+    <div class="route-title-main">
+      <span id="route-title-text">Zollverein <span class="route-arrow"><svg viewBox="7 3 10 18" fill="currentColor" aria-hidden="true"><path stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" fill-rule="evenodd" clip-rule="evenodd" d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"/></svg></span> Essen Hbf</span>
+      <button type="button" id="dir-toggle" class="dir-toggle-btn" aria-label="Show the opposite direction"></button>
+    </div>
     <div id="live-indicator" class="live-indicator">
       <div class="live-label"><span class="live-dot"></span><span>LIVE</span></div>
       <div id="live-updated" class="live-updated"></div>
@@ -442,16 +507,117 @@ var TIMETABLE_DATA = null;
   "use strict";
 
   var data = null;
+  var direction = "outbound";  // "outbound" (Zollverein->Hbf) | "inbound" (Hbf->Zollverein)
   var walkMinutes = null;
+  var lastGps = null;  // last located GPS, so a direction switch recomputes walk to the new stop
   var activeDay = 0;
   var realtimeCache = {};
   var realtimeActive = false;
   var POLL_INTERVAL = 60000;
   var API_BASE = "";
+  // ?route= encodes both the itinerary and the direction as one slug. Default
+  // is zollverein-essen. The bare "duesseldorf" is kept for older links.
+  var route = "zollverein";
+  var _ROUTE_SLUGS = {
+    "zollverein-essen": ["zollverein", "outbound"],
+    "essen-zollverein": ["zollverein", "inbound"],
+    "dus-airport-essen": ["duesseldorf", "outbound"],
+    "essen-dus-airport": ["duesseldorf", "inbound"],
+    // legacy aliases
+    "duesseldorf-essen": ["duesseldorf", "outbound"],
+    "essen-duesseldorf": ["duesseldorf", "inbound"],
+    "duesseldorf": ["duesseldorf", "outbound"]
+  };
+  var _rd = _ROUTE_SLUGS[new URLSearchParams(window.location.search).get("route") || ""];
+  if (_rd) { route = _rd[0]; direction = _rd[1]; }
+
+  // The URL slug for the current (route, direction), for nav + URL sync.
+  function routeSlug() {
+    if (route === "duesseldorf") return direction === "inbound" ? "essen-dus-airport" : "dus-airport-essen";
+    return direction === "inbound" ? "essen-zollverein" : "zollverein-essen";
+  }
 
   var STOP_LAT = 51.486095;
   var STOP_LNG = 7.046062;
   var WALK_SPEED_KMH = 4.5;
+
+  // The selected route's forward block: Düsseldorf if that route is chosen,
+  // else the top-level Zollverein block. Each has its own {route, stop, days,
+  // reverse}.
+  function curBase() {
+    return (route === "duesseldorf" && data.duesseldorf) ? data.duesseldorf : data;
+  }
+  // The active "view" ({route, stop, days}): the reverse block when the
+  // direction toggle is on inbound, else the forward block.
+  function curView() {
+    var base = curBase();
+    return (direction === "inbound" && base.reverse) ? base.reverse : base;
+  }
+  function curDays() { return curView().days; }
+  function curRoute() { return curView().route; }
+  function curStop() { return curView().stop || data.stop; }
+  function isOutbound() { return direction === "outbound"; }
+
+  function updateDirToggle() {
+    // Show the direction swap whenever the current route has a reverse dataset
+    // (both Zollverein and Düsseldorf are bidirectional).
+    var toggle = document.getElementById("dir-toggle");
+    if (toggle) toggle.style.display = curBase().reverse ? "" : "none";
+  }
+
+  function setNavActive() {
+    var slug = routeSlug();
+    // Desktop cmd-bar buttons mark the itinerary (base route); the mobile menu
+    // sub-rows mark the exact direction (slug).
+    document.querySelectorAll("[data-route]").forEach(function (el) {
+      el.classList.toggle("active", el.dataset.route === route);
+    });
+    document.querySelectorAll("[data-slug]").forEach(function (el) {
+      el.classList.toggle("active", el.dataset.slug === slug);
+    });
+  }
+
+  function updateRouteTitle() {
+    var r = curRoute();
+    document.getElementById("route-title-text").innerHTML =
+      escapeHtml(r.from) + ' <span class="route-arrow">' + ICON_ARROW_RIGHT + '</span> ' + escapeHtml(r.to);
+    document.title = r.from + " → " + r.to + " · Transport";
+  }
+
+  function refreshWalkForDirection() {
+    // The walk target is the current direction's departure stop. Reuse the
+    // cached GPS to recompute against the new stop; otherwise reset the banner
+    // so the user re-locates against it.
+    if (lastGps) {
+      updateLocation(lastGps.lat, lastGps.lng);
+    } else {
+      walkMinutes = null;
+      document.querySelector(".location-text").textContent = "Walk time unknown";
+      document.getElementById("locate-btn").textContent = "Locate me";
+    }
+  }
+
+  function toggleDirection() {
+    if (!data || !curBase().reverse) return;
+    direction = isOutbound() ? "inbound" : "outbound";
+    dbg("[TRANSPORT] toggle direction -> " + direction);
+    // Keep the URL in sync so the current view is shareable/reloadable.
+    var sp = new URLSearchParams(window.location.search);
+    sp.set("route", routeSlug());
+    history.replaceState(null, "", "/transport?" + sp.toString());
+    // Realtime is per-direction: a stale entry from the other direction could
+    // match by line+time+date, so drop the whole cache on switch.
+    realtimeCache = {};
+    realtimeActive = false;
+    document.getElementById("live-indicator").classList.remove("active");
+    if (activeDay >= curDays().length) activeDay = 0;
+    setNavActive();
+    updateRouteTitle();
+    refreshWalkForDirection();
+    renderTabs();
+    renderPanel();
+    fetchRealtime();
+  }
 
   function parseDate(dateStr) {
     var p = dateStr.split(".");
@@ -494,8 +660,8 @@ var TIMETABLE_DATA = null;
 
   function findTodayIndex() {
     var now = getNow();
-    for (var i = 0; i < data.days.length; i++) {
-      var d = parseDate(data.days[i].date);
+    for (var i = 0; i < curDays().length; i++) {
+      var d = parseDate(curDays()[i].date);
       if (d.day === now.day && d.month === now.month && d.year === now.year) return i;
       if (now.hours < 4) {
         var yesterday = new Date(now.year, now.month - 1, now.day - 1);
@@ -520,7 +686,7 @@ var TIMETABLE_DATA = null;
   }
 
   function fetchRealtime() {
-    var dayData = data.days[activeDay];
+    var dayData = curDays()[activeDay];
     if (!dayData) return;
 
     var now = getNow();
@@ -539,10 +705,10 @@ var TIMETABLE_DATA = null;
       return;
     }
 
-    var timeStr = String(now.hours).padStart(2, "0") + String(now.minutes).padStart(2, "0");
+    var timeStr = String(now.hours).padStart(2, "0") + ":" + String(now.minutes).padStart(2, "0");
     var dateStr = String(now.day).padStart(2, "0") + "." + String(now.month).padStart(2, "0") + "." + now.year;
 
-    fetch(API_BASE + "/api/transport/departures?date=" + encodeURIComponent(dateStr) + "&time=" + timeStr + "&limit=30")
+    fetch(API_BASE + "/api/transport/departures?date=" + encodeURIComponent(dateStr) + "&time=" + encodeURIComponent(timeStr) + "&dir=" + direction + "&route=" + route + "&limit=30")
       .then(function (r) { return r.json(); })
       .then(function (result) {
         if (!result.departures) return;
@@ -574,16 +740,33 @@ var TIMETABLE_DATA = null;
   function renderTabs() {
     var tabs = document.getElementById("day-tabs");
     tabs.innerHTML = "";
-    for (var i = 0; i < data.days.length; i++) {
-      var d = data.days[i];
+    for (var i = 0; i < curDays().length; i++) {
+      var d = curDays()[i];
       var btn = document.createElement("button");
       btn.type = "button";
       btn.className = "day-tab" + (i === activeDay ? " active" : "");
       btn.dataset.index = i;
-      btn.innerHTML = '<span>' + d.day + '</span><span class="day-tab-count">' + d.date + '</span>';
+      var dateSlash = d.date.replace(/\./g, "/");           // 09/07/2026
+      var dateShort = dateSlash.split("/").slice(0, 2).join("/");  // 09/07
+      btn.innerHTML =
+        '<span><span class="d-full">' + d.day + '</span>' +
+        '<span class="d-abbr">' + d.day.slice(0, 3) + '</span></span>' +
+        '<span class="day-tab-count"><span class="dt-full">' + dateSlash + '</span>' +
+        '<span class="dt-abbr">' + dateShort + '</span></span>';
       btn.addEventListener("click", onTabClick);
       tabs.appendChild(btn);
     }
+    updateTabDensity();
+  }
+
+  // Narrow viewport (or 4-day airport view): abbreviate the day name and drop
+  // the year so the tabs never wrap or crowd. Measured per-tab, so it adapts to
+  // both the 3-day tram and 4-day airport boards.
+  function updateTabDensity() {
+    var bar = document.getElementById("day-tabs");
+    var n = bar.children.length;
+    if (!n) return;
+    bar.classList.toggle("compact", bar.clientWidth / n < 96);
   }
 
   function onTabClick(e) {
@@ -598,7 +781,7 @@ var TIMETABLE_DATA = null;
     var panels = document.getElementById("day-panels");
     panels.innerHTML = "";
 
-    var dayData = data.days[activeDay];
+    var dayData = curDays()[activeDay];
     if (!dayData || dayData.departures.length === 0) {
       panels.innerHTML = '<div class="empty-state">No departures available</div>';
       return;
@@ -695,7 +878,7 @@ var TIMETABLE_DATA = null;
       }
 
       var badge = document.createElement("span");
-      badge.className = "line-badge l-" + dep.line;
+      badge.className = "line-badge " + (dep.badge ? "l-" + dep.badge : "l-" + dep.line);
       badge.textContent = dep.line;
 
       if (rt && rt.realtime && !isCanceled) {
@@ -712,6 +895,21 @@ var TIMETABLE_DATA = null;
       dest.textContent = dep.direction.replace("Essen ", "");
       middle.appendChild(dest);
 
+      // Airport trains: platform (from schedule, live overrides) + the live
+      // train number under the headsign.
+      if (route === "duesseldorf") {
+        var plat = (rt && rt.platform) || dep.platform;
+        var subParts = [];
+        if (plat) subParts.push("Pl. " + plat);
+        if (rt && rt.trainNumber) subParts.push("#" + rt.trainNumber);
+        if (subParts.length) {
+          var sub = document.createElement("span");
+          sub.className = "dep-sub";
+          sub.textContent = subParts.join("  ·  ");
+          middle.appendChild(sub);
+        }
+      }
+
       if (isCanceled) {
         var cancelBadge = document.createElement("span");
         cancelBadge.className = "cancel-badge";
@@ -721,6 +919,29 @@ var TIMETABLE_DATA = null;
 
       var right = document.createElement("div");
       right.className = "dep-right";
+
+      // Airport trains: always show the arrival time (live-adjusted when late).
+      if (route === "duesseldorf" && dep.arr) {
+        var arrEl = document.createElement("span");
+        arrEl.className = "dep-arr";
+        var arrLbl = document.createElement("span");
+        arrLbl.className = "dep-arr-label";
+        arrLbl.textContent = "arr ";
+        arrEl.appendChild(arrLbl);
+        if (rt && rt.arrReal && rt.arrDelay > 0 && !isCanceled) {
+          var arrS = document.createElement("span");
+          arrS.className = "dep-arr-sched";
+          arrS.textContent = dep.arr;
+          var arrR = document.createElement("span");
+          arrR.className = "dep-arr-real";
+          arrR.textContent = rt.arrReal;
+          arrEl.appendChild(arrS);
+          arrEl.appendChild(arrR);
+        } else {
+          arrEl.appendChild(document.createTextNode(dep.arr));
+        }
+        right.appendChild(arrEl);
+      }
 
       if (rt && rt.countdown != null && isToday && !isPast && !isCanceled) {
         var cdEl = document.createElement("span");
@@ -755,7 +976,7 @@ var TIMETABLE_DATA = null;
   }
 
   function fetchWalkRoute(lat, lng) {
-    var url = API_BASE + "/api/transport/walk?lat=" + lat + "&lng=" + lng;
+    var url = API_BASE + "/api/transport/walk?lat=" + lat + "&lng=" + lng + "&dir=" + direction + "&route=" + route;
     return fetch(url)
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
@@ -778,12 +999,13 @@ var TIMETABLE_DATA = null;
     walkMinutes = durationS ? Math.ceil(durationS / 60) : Math.ceil((distanceM / 1000) / WALK_SPEED_KMH * 60);
     var banner = document.getElementById("location-banner");
     banner.querySelector(".location-text").textContent =
-      fmtDist(distanceM) + " / " + fmtNum(walkMinutes) + " min to stop";
+      fmtDist(distanceM) + " / " + fmtNum(walkMinutes) + " min to " + curRoute().from;
     document.getElementById("locate-btn").textContent = "Update";
     renderPanel();
   }
 
   function updateLocation(lat, lng) {
+    lastGps = { lat: lat, lng: lng };
     var banner = document.getElementById("location-banner");
     banner.querySelector(".location-text").textContent = "Calculating route...";
 
@@ -791,7 +1013,8 @@ var TIMETABLE_DATA = null;
       if (result) {
         applyWalkData(result.distanceM, result.durationS);
       } else {
-        var dist = haversineKm(lat, lng, STOP_LAT, STOP_LNG);
+        var st = curStop();
+        var dist = haversineKm(lat, lng, st.lat, st.lng);
         if (dist > 20) {
           // A "walk to the stop" is meaningless from this far away; a
           // straight-line figure (e.g. 687 km from Milan) only confuses.
@@ -801,7 +1024,7 @@ var TIMETABLE_DATA = null;
         } else {
           walkMinutes = Math.ceil((dist / WALK_SPEED_KMH) * 60);
           banner.querySelector(".location-text").textContent =
-            "~" + fmtDist(dist * 1000) + " / ~" + fmtNum(walkMinutes) + " min";
+            "~" + fmtDist(dist * 1000) + " / ~" + fmtNum(walkMinutes) + " min to " + curRoute().from;
         }
         document.getElementById("locate-btn").textContent = "Update";
         renderPanel();
@@ -839,6 +1062,12 @@ var TIMETABLE_DATA = null;
       STOP_LAT = d.stop.lat;
       STOP_LNG = d.stop.lng;
     }
+    // If ?route=duesseldorf was requested but the dataset lacks it (old JSON),
+    // fall back to the Zollverein route.
+    if (route === "duesseldorf" && !d.duesseldorf) route = "zollverein";
+    setNavActive();
+    updateDirToggle();
+    updateRouteTitle();
     activeDay = findTodayIndex();
     renderTabs();
     renderPanel();
@@ -858,7 +1087,10 @@ var TIMETABLE_DATA = null;
         });
     }
 
+    document.getElementById("dir-toggle").innerHTML = ICON_DIRECTION_SWAP;
+    document.getElementById("dir-toggle").addEventListener("click", toggleDirection);
     document.getElementById("locate-btn").addEventListener("click", onLocateClick);
+    window.addEventListener("resize", updateTabDensity);
 
     setInterval(function () {
       if (data) {

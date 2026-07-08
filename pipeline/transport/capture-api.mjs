@@ -8,6 +8,8 @@ import { writeFileSync } from 'fs';
 // This bypasses CORS and lets us set date/time parameters
 
 const ZOLLVEREIN_ID = '20009206';
+const ESSEN_HBF_ID = '20009289';
+const DFLUG_ID = '20018488'; // Düsseldorf Flughafen Bf (airport station)
 
 function toBerlinTime(dateObj) {
   const h = String(dateObj.hour).padStart(2, '0');
@@ -74,23 +76,30 @@ try {
 }
 
 // If EFA works, build the full timetable
-async function buildDayTimetable(date, nextDate, label, dayName) {
+async function buildDayTimetable(stopId, termini, date, nextDate) {
   const allDeps = new Map();
 
-  const [dayData, nightData] = await Promise.all([
-    fetchDepartures(ZOLLVEREIN_ID, date, '0400', 500),
-    fetchDepartures(ZOLLVEREIN_ID, nextDate, '0000', 50),
+  // One departure-monitor fetch returns the next N departures across ALL lines
+  // at the stop, so a single limit=500 call from 04:00 only spans ~4h at a big
+  // hub like Essen Hbf (confirmed empirically). Window the day in ~3h steps and
+  // merge -- the dedup Map below collapses overlaps -- so both the small
+  // Zollverein stop and the huge Essen Hbf get full-day coverage.
+  const startTimes = ['0400', '0700', '1000', '1300', '1600', '1900', '2200'];
+  const results = await Promise.all([
+    ...startTimes.map((t) => fetchDepartures(stopId, date, t, 500)),
+    fetchDepartures(stopId, nextDate, '0100', 500),
   ]);
+  const allDepartures = results.flatMap((r) => r.departureList || []);
 
   const calDateNum = date.split('.').reverse().join('');
   const nextDateNum = nextDate.split('.').reverse().join('');
 
-  for (const dep of [...(dayData.departureList || []), ...(nightData.departureList || [])]) {
+  for (const dep of allDepartures) {
     const line = dep.servingLine;
     if (line.number !== '107' && line.number !== 'NE2') continue;
 
     const dir = line.direction;
-    if (!dir.includes('Bredeney') && !dir.includes('Hauptbahnhof')) continue;
+    if (!termini.some(function (x) { return dir.includes(x); })) continue;
 
     const dt = dep.dateTime;
     const depTime = toBerlinTime(dt);
@@ -133,112 +142,185 @@ const dates = [
   { date: '11.07.2026', next: '12.07.2026', label: '11.07.2026', day: 'Saturday' },
   { date: '12.07.2026', next: '13.07.2026', label: '12.07.2026', day: 'Sunday' },
 ];
+// The Düsseldorf airport trains also cover Thursday (the arrival day before the
+// festival); the Zollverein tram board stays Fri-Sun only.
+const duesDates = [
+  { date: '09.07.2026', next: '10.07.2026', label: '09.07.2026', day: 'Thursday' },
+  ...dates,
+];
 
-const allData = {};
+const DIRECTIONS = {
+  outbound: { stopId: ZOLLVEREIN_ID, termini: ['Bredeney', 'Hauptbahnhof'] },  // Zollverein -> Essen Hbf
+  inbound: { stopId: ESSEN_HBF_ID, termini: ['Hanielstr', 'Gelsenkirchen'] },  // Essen Hbf -> Zollverein (both pass Zollverein)
+};
 
-for (const { date, next, label, day } of dates) {
-  console.log(`\nQuerying ${day} ${label}...`);
-  const trips = await buildDayTimetable(date, next, label, day);
-  allData[label] = { label, day, trips };
-  const lines = {};
-  for (const t of trips) lines[t.line] = (lines[t.line] || 0) + 1;
-  console.log(`  ${trips.length} connections (${Object.entries(lines).map(([k, v]) => `${k}: ${v}`).join(', ')})`);
-  console.log(`  First: ${trips[0]?.depTime}, Last: ${trips[trips.length-1]?.depTime}`);
-}
-
-// Build HTML
-let html = `<!DOCTYPE html>
-<html lang="de">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Zollverein → Essen Hbf | 107 &amp; NE2</title>
-<style>
-  :root { --bg: #fafafa; --card: #fff; --border: #e0e0e0; --accent: #0057a8; --text: #222; --muted: #777; }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 1.5rem; max-width: 960px; margin: 0 auto; }
-  h1 { font-size: 1.4rem; margin-bottom: .2rem; }
-  .subtitle { color: var(--muted); margin-bottom: 1.5rem; font-size: .9rem; }
-  .day-section { margin-bottom: 2.5rem; }
-  .day-header { display: flex; align-items: baseline; gap: .7rem; padding: .5rem .8rem; background: var(--accent); color: #fff; border-radius: 6px 6px 0 0; }
-  .day-name { font-size: 1.1rem; font-weight: 700; }
-  .day-date { font-size: .9rem; opacity: .85; }
-  .day-count { margin-left: auto; font-size: .8rem; opacity: .7; }
-  table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--border); border-top: none; border-radius: 0 0 6px 6px; overflow: hidden; }
-  th { background: #f0f4f8; text-align: left; padding: .45rem .7rem; font-size: .75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; border-bottom: 2px solid var(--border); }
-  td { padding: .35rem .7rem; font-size: .85rem; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
-  tr:last-child td { border-bottom: none; }
-  tr:hover td { background: #f7fafd; }
-  .line-107 { display: inline-block; background: var(--accent); color: #fff; font-weight: 700; font-size: .78rem; padding: .12rem .45rem; border-radius: 4px; min-width: 2.2rem; text-align: center; }
-  .line-NE2 { display: inline-block; background: #2c3e50; color: #ffe066; font-weight: 700; font-size: .78rem; padding: .12rem .45rem; border-radius: 4px; min-width: 2.2rem; text-align: center; }
-  .time { font-variant-numeric: tabular-nums; font-weight: 500; }
-  .dur { color: var(--muted); }
-  .gap-row td { border-bottom: 2px dashed #ddd; }
-  @media (max-width: 600px) { body { padding: .75rem; } td, th { padding: .3rem .4rem; font-size: .8rem; } }
-</style>
-</head>
-<body>
-<h1>Zollverein → Essen Hbf</h1>
-<p class="subtitle">Straßenbahn 107 &amp; NachtExpress NE2 — direct connections (toward Bredeney/Hbf)</p>
-`;
-
-for (const { date, label } of dates) {
-  const { day, trips } = allData[label];
-  html += `<div class="day-section">
-<div class="day-header">
-  <span class="day-name">${day}</span>
-  <span class="day-date">${label}</span>
-  <span class="day-count">${trips.length} connections</span>
-</div>
-<table>
-<thead><tr><th>Dep</th><th>Arr</th><th>Line</th><th>Direction</th><th>Dur</th><th>Plat</th></tr></thead>
-<tbody>
-`;
-
-  let prevSortKey = null;
-  for (const trip of trips) {
-    const lineClass = trip.line === 'NE2' ? 'line-NE2' : 'line-107';
-    const isGap = prevSortKey !== null && (trip.sortKey - prevSortKey) > 25;
-    const gapClass = isGap ? ' class="gap-row"' : '';
-    prevSortKey = trip.sortKey;
-
-    html += `<tr${gapClass}>
-  <td class="time">${trip.depTime}</td>
-  <td class="time">~${trip.arrTime}</td>
-  <td><span class="${lineClass}">${trip.line}</span></td>
-  <td>${trip.direction}</td>
-  <td class="dur">${trip.duration} min</td>
-  <td>${trip.platform}</td>
-</tr>
-`;
+async function buildDirection(cfg) {
+  const out = {};
+  for (const { date, next, label } of dates) {
+    out[label] = { trips: await buildDayTimetable(cfg.stopId, cfg.termini, date, next) };
   }
-
-  html += `</tbody></table></div>\n`;
+  return out;
 }
 
-html += `</body></html>`;
+function daysFrom(built) {
+  return dates.map(({ label, day }) => ({
+    day,
+    date: label,
+    departures: built[label].trips.map(t => ({
+      dep: t.depTime,
+      arr: t.arrTime,
+      line: t.line,
+      direction: t.direction,
+      duration: t.duration,
+      platform: t.platform,
+    })),
+  }));
+}
 
-// Legacy HTML output dropped: the app consumes only the JSON.
+console.log('\n=== Outbound: Zollverein -> Essen Hbf ===');
+const outbound = await buildDirection(DIRECTIONS.outbound);
+for (const { label } of dates) console.log(`  ${label}: ${outbound[label].trips.length} connections`);
+
+console.log('\n=== Inbound: Essen Hbf -> Zollverein ===');
+const inbound = await buildDirection(DIRECTIONS.inbound);
+for (const { label } of dates) console.log(`  ${label}: ${inbound[label].trips.length} connections`);
+
+// --- Düsseldorf Airport -> Essen Hbf: regional trains via the VRR journey
+// planner (XML_TRIP_REQUEST2). Direct trips only; ~4 journeys per request, so
+// window the day in pages. VRR response times are UTC, so convert to Berlin. ---
+const _BERLIN = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', hour12: false,
+});
+function berlinParts(iso) {
+  const p = _BERLIN.formatToParts(new Date(iso));
+  const g = (t) => p.find((x) => x.type === t).value;
+  return { dateNum: `${g('year')}${g('month')}${g('day')}`, hh: g('hour'), mm: g('minute') };
+}
+
+function shortenHeadsign(name) {
+  // "Hamm (Westf.) Hbf" -> "Hamm", "Düsseldorf Hbf" -> "Düsseldorf": drop the
+  // parenthetical region and the trailing station-type so the terminus reads
+  // cleanly on the board (the tram board's terminus label equivalent).
+  return (name || '')
+    .replace(/\s*\([^)]*\)/g, '')
+    .replace(/\s+(Hauptbahnhof|Hbf|Bahnhof|Bhf|Bf)$/i, '')
+    .trim();
+}
+
+async function fetchTripsPage(originId, destId, dateNum, time) {
+  const params = {
+    outputFormat: 'rapidJSON', language: 'en',
+    name_origin: originId, type_origin: 'any',
+    name_destination: destId, type_destination: 'any',
+    itdDate: dateNum, itdTime: time, itdTripDateTimeDepArr: 'dep',
+    coordOutputFormat: 'WGS84[dd.ddddd]', useRealtime: '0',
+    routeType: 'LEASTTIME', maxChanges: '0',
+    useProxFootSearchOrigin: 'false', useProxFootSearchDestination: 'false',
+    version: '11.0.6.72',
+  };
+  const url = 'https://www.vrr.de/vrr-efa/XML_TRIP_REQUEST2?' + new URLSearchParams(params);
+  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+async function buildDuesseldorfDay(originId, destId, date, nextDate) {
+  const dateNum = date.split('.').reverse().join('');
+  const nextNum = nextDate.split('.').reverse().join('');
+  const deps = new Map();
+  let curDate = dateNum;
+  let curTime = '0400';
+  for (let page = 0; page < 50; page++) {
+    let d;
+    try { d = await fetchTripsPage(originId, destId, curDate, curTime); } catch (e) { break; }
+    const js = d.journeys || [];
+    if (!js.length) break;
+    let lastIso = null;
+    for (const j of js) {
+      const f = j.legs[0];
+      const l = j.legs[j.legs.length - 1];
+      const depIso = f.origin && f.origin.departureTimePlanned;
+      if (!depIso) continue;
+      lastIso = depIso;
+      if (j.interchanges !== 0) continue; // direct only
+      const train = j.legs.find((x) => x.transportation && x.transportation.product);
+      const line = (train && (train.transportation.disassembledName || train.transportation.number)) || '';
+      if (!/^(RE|RB|S)/.test(line)) continue; // regional/S-Bahn only (skip long-distance ICE/IC train numbers)
+      const b = berlinParts(depIso);
+      const depH = parseInt(b.hh, 10);
+      if (b.dateNum < dateNum) continue;
+      if (b.dateNum === dateNum && depH < 4) continue;
+      if (b.dateNum > nextNum) continue;
+      if (b.dateNum === nextNum && depH >= 4) continue;
+      if (deps.has(depIso)) continue;
+      const arrIso = l.destination && l.destination.arrivalTimePlanned;
+      const ab = arrIso ? berlinParts(arrIso) : null;
+      deps.set(depIso, {
+        dep: `${b.hh}:${b.mm}`,
+        arr: ab ? `${ab.hh}:${ab.mm}` : '',
+        line,
+        badge: /^S/.test(line) ? 's' : 're',
+        // The train's terminus/headsign (e.g. "Hamm", "Köln") -- helps identify
+        // the train on the platform, like the tram board's terminus column.
+        direction: shortenHeadsign(train.transportation.destination && train.transportation.destination.name) || '',
+        duration: Math.round(j.legs.reduce((s, x) => s + (x.duration || 0), 0) / 60),
+        platform: (f.origin.properties && f.origin.properties.platform) || '',
+      });
+    }
+    if (!lastIso) break;
+    const lb = berlinParts(lastIso);
+    if (lb.dateNum > nextNum || (lb.dateNum === nextNum && parseInt(lb.hh, 10) >= 4)) break;
+    let mi = parseInt(lb.mm, 10) + 1;
+    let h = parseInt(lb.hh, 10);
+    let Y = +lb.dateNum.slice(0, 4);
+    let M = +lb.dateNum.slice(4, 6);
+    let D = +lb.dateNum.slice(6, 8);
+    if (mi >= 60) { mi -= 60; h++; }
+    if (h >= 24) { h -= 24; const nd = new Date(Date.UTC(Y, M - 1, D + 1)); Y = nd.getUTCFullYear(); M = nd.getUTCMonth() + 1; D = nd.getUTCDate(); }
+    curDate = `${Y}${String(M).padStart(2, '0')}${String(D).padStart(2, '0')}`;
+    curTime = `${String(h).padStart(2, '0')}${String(mi).padStart(2, '0')}`;
+  }
+  const svc = (t) => { const [h, m] = t.dep.split(':').map(Number); const x = h * 60 + m; return x < 240 ? x + 1440 : x; };
+  return [...deps.values()].sort((a, b) => svc(a) - svc(b));
+}
+
+console.log('\n=== DUS Airport -> Essen Hbf (regional) ===');
+const duesDays = [];
+for (const { date, next, label, day } of duesDates) {
+  const trips = await buildDuesseldorfDay(DFLUG_ID, ESSEN_HBF_ID, date, next);
+  console.log(`  ${label}: ${trips.length} direct regional trips`);
+  duesDays.push({ day, date: label, departures: trips });
+}
+
+console.log('\n=== Essen Hbf -> DUS Airport (regional) ===');
+const duesRevDays = [];
+for (const { date, next, label, day } of duesDates) {
+  const trips = await buildDuesseldorfDay(ESSEN_HBF_ID, DFLUG_ID, date, next);
+  console.log(`  ${label}: ${trips.length} direct regional trips`);
+  duesRevDays.push({ day, date: label, departures: trips });
+}
 
 const transportJson = {
-  route: { from: 'Zollverein', to: 'Essen Hbf', fromId: ZOLLVEREIN_ID, toId: '20009289' },
+  route: { from: 'Zollverein', to: 'Essen Hbf', fromId: ZOLLVEREIN_ID, toId: ESSEN_HBF_ID },
   stop: { lat: 51.486095, lng: 7.046062 },
-  days: dates.map(({ label }) => {
-    const { day, trips } = allData[label];
-    return {
-      day,
-      date: label,
-      departures: trips.map(t => ({
-        dep: t.depTime,
-        arr: t.arrTime,
-        line: t.line,
-        direction: t.direction,
-        duration: t.duration,
-        platform: t.platform,
-      })),
-    };
-  }),
+  days: daysFrom(outbound),
+  reverse: {
+    route: { from: 'Essen Hbf', to: 'Zollverein', fromId: ESSEN_HBF_ID, toId: ZOLLVEREIN_ID },
+    stop: { lat: 51.449732, lng: 7.012213 },  // Essen Hbf (inbound departure stop)
+    days: daysFrom(inbound),
+  },
+  duesseldorf: {
+    route: { from: 'DUS Airport', to: 'Essen Hbf', fromId: DFLUG_ID, toId: ESSEN_HBF_ID },
+    stop: { lat: 51.291368, lng: 6.787158 },  // D-Flughafen Bf (departure stop)
+    days: duesDays,
+    reverse: {
+      route: { from: 'Essen Hbf', to: 'DUS Airport', fromId: ESSEN_HBF_ID, toId: DFLUG_ID },
+      stop: { lat: 51.449732, lng: 7.012213 },  // Essen Hbf (reverse departure stop)
+      days: duesRevDays,
+    },
+  },
 };
 
 writeFileSync(new URL('../../server/static/timetable-transport.json', import.meta.url), JSON.stringify(transportJson));
-console.log('JSON saved to server/static/timetable-transport.json');
+console.log('\nJSON saved to server/static/timetable-transport.json');
