@@ -484,12 +484,17 @@ var TIMETABLE_DATA = null;
   var STOP_LNG = 7.046062;
   var WALK_SPEED_KMH = 4.5;
 
-  // The active "view" block ({route, stop, days}): the Düsseldorf route if
-  // selected, else the Zollverein inbound/outbound block.
+  // The selected route's forward block: Düsseldorf if that route is chosen,
+  // else the top-level Zollverein block. Each has its own {route, stop, days,
+  // reverse}.
+  function curBase() {
+    return (route === "duesseldorf" && data.duesseldorf) ? data.duesseldorf : data;
+  }
+  // The active "view" ({route, stop, days}): the reverse block when the
+  // direction toggle is on inbound, else the forward block.
   function curView() {
-    if (route === "duesseldorf" && data.duesseldorf) return data.duesseldorf;
-    if (direction === "inbound" && data.reverse) return data.reverse;
-    return data;
+    var base = curBase();
+    return (direction === "inbound" && base.reverse) ? base.reverse : base;
   }
   function curDays() { return curView().days; }
   function curRoute() { return curView().route; }
@@ -497,10 +502,10 @@ var TIMETABLE_DATA = null;
   function isOutbound() { return direction === "outbound"; }
 
   function updateDirToggle() {
-    // The direction swap only applies to the Zollverein route (which has a
-    // reverse); the Düsseldorf route is one-way, so hide it there.
+    // Show the direction swap whenever the current route has a reverse dataset
+    // (both Zollverein and Düsseldorf are bidirectional).
     var toggle = document.getElementById("dir-toggle");
-    if (toggle) toggle.style.display = (route === "zollverein" && data.reverse) ? "" : "none";
+    if (toggle) toggle.style.display = curBase().reverse ? "" : "none";
   }
 
   function setNavActive() {
@@ -530,7 +535,7 @@ var TIMETABLE_DATA = null;
   }
 
   function toggleDirection() {
-    if (route !== "zollverein" || !data || !data.reverse) return;
+    if (!data || !curBase().reverse) return;
     direction = isOutbound() ? "inbound" : "outbound";
     dbg("[TRANSPORT] toggle direction -> " + direction);
     // Realtime is per-direction: a stale entry from the other direction could

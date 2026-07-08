@@ -192,11 +192,21 @@ function berlinParts(iso) {
   return { dateNum: `${g('year')}${g('month')}${g('day')}`, hh: g('hour'), mm: g('minute') };
 }
 
-async function fetchTripsPage(dateNum, time) {
+function shortenHeadsign(name) {
+  // "Hamm (Westf.) Hbf" -> "Hamm", "Düsseldorf Hbf" -> "Düsseldorf": drop the
+  // parenthetical region and the trailing station-type so the terminus reads
+  // cleanly on the board (the tram board's terminus label equivalent).
+  return (name || '')
+    .replace(/\s*\([^)]*\)/g, '')
+    .replace(/\s+(Hauptbahnhof|Hbf|Bahnhof|Bhf|Bf)$/i, '')
+    .trim();
+}
+
+async function fetchTripsPage(originId, destId, dateNum, time) {
   const params = {
     outputFormat: 'rapidJSON', language: 'en',
-    name_origin: DFLUG_ID, type_origin: 'any',
-    name_destination: ESSEN_HBF_ID, type_destination: 'any',
+    name_origin: originId, type_origin: 'any',
+    name_destination: destId, type_destination: 'any',
     itdDate: dateNum, itdTime: time, itdTripDateTimeDepArr: 'dep',
     coordOutputFormat: 'WGS84[dd.ddddd]', useRealtime: '0',
     routeType: 'LEASTTIME', maxChanges: '0',
@@ -209,7 +219,7 @@ async function fetchTripsPage(dateNum, time) {
   return res.json();
 }
 
-async function buildDuesseldorfDay(date, nextDate) {
+async function buildDuesseldorfDay(originId, destId, date, nextDate) {
   const dateNum = date.split('.').reverse().join('');
   const nextNum = nextDate.split('.').reverse().join('');
   const deps = new Map();
@@ -217,7 +227,7 @@ async function buildDuesseldorfDay(date, nextDate) {
   let curTime = '0400';
   for (let page = 0; page < 50; page++) {
     let d;
-    try { d = await fetchTripsPage(curDate, curTime); } catch (e) { break; }
+    try { d = await fetchTripsPage(originId, destId, curDate, curTime); } catch (e) { break; }
     const js = d.journeys || [];
     if (!js.length) break;
     let lastIso = null;
@@ -245,7 +255,9 @@ async function buildDuesseldorfDay(date, nextDate) {
         arr: ab ? `${ab.hh}:${ab.mm}` : '',
         line,
         badge: /^S/.test(line) ? 's' : 're',
-        direction: 'Essen Hbf',
+        // The train's terminus/headsign (e.g. "Hamm", "Köln") -- helps identify
+        // the train on the platform, like the tram board's terminus column.
+        direction: shortenHeadsign(train.transportation.destination && train.transportation.destination.name) || '',
         duration: Math.round(j.legs.reduce((s, x) => s + (x.duration || 0), 0) / 60),
         platform: (f.origin.properties && f.origin.properties.platform) || '',
       });
@@ -270,9 +282,17 @@ async function buildDuesseldorfDay(date, nextDate) {
 console.log('\n=== Düsseldorf Airport -> Essen Hbf (regional) ===');
 const duesDays = [];
 for (const { date, next, label, day } of dates) {
-  const trips = await buildDuesseldorfDay(date, next);
+  const trips = await buildDuesseldorfDay(DFLUG_ID, ESSEN_HBF_ID, date, next);
   console.log(`  ${label}: ${trips.length} direct regional trips`);
   duesDays.push({ day, date: label, departures: trips });
+}
+
+console.log('\n=== Essen Hbf -> Düsseldorf Airport (regional) ===');
+const duesRevDays = [];
+for (const { date, next, label, day } of dates) {
+  const trips = await buildDuesseldorfDay(ESSEN_HBF_ID, DFLUG_ID, date, next);
+  console.log(`  ${label}: ${trips.length} direct regional trips`);
+  duesRevDays.push({ day, date: label, departures: trips });
 }
 
 const transportJson = {
@@ -288,6 +308,11 @@ const transportJson = {
     route: { from: 'Düsseldorf Airport', to: 'Essen Hbf', fromId: DFLUG_ID, toId: ESSEN_HBF_ID },
     stop: { lat: 51.291368, lng: 6.787158 },  // D-Flughafen Bf (departure stop)
     days: duesDays,
+    reverse: {
+      route: { from: 'Essen Hbf', to: 'Düsseldorf Airport', fromId: ESSEN_HBF_ID, toId: DFLUG_ID },
+      stop: { lat: 51.449732, lng: 7.012213 },  // Essen Hbf (reverse departure stop)
+      days: duesRevDays,
+    },
   },
 };
 

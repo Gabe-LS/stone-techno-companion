@@ -1174,7 +1174,8 @@ async def transport_walk(request: Request, lat: float, lng: float):
     route = request.query_params.get("route") or "zollverein"
     dir_key = request.query_params.get("dir") or "outbound"
     if route == "duesseldorf":
-        tgt_lat, tgt_lng = (51.291368, 6.787158)  # D-Flughafen Bf (departure stop)
+        # Outbound departs D-Flughafen Bf; inbound (Essen -> airport) departs Essen Hbf.
+        tgt_lat, tgt_lng = (51.449732, 7.012213) if dir_key == "inbound" else (51.291368, 6.787158)
     elif dir_key in _TRANSPORT_STOP_COORDS:
         tgt_lat, tgt_lng = _TRANSPORT_STOP_COORDS[dir_key]
     else:
