@@ -178,7 +178,9 @@
 
   /* Chevron separator inside the nav itinerary rows (same glyph as the title). */
   .nav-arrow { display: inline-flex; align-items: center; vertical-align: middle; margin: 0 0.12em; }
-  .nav-arrow svg { height: 0.75em; width: auto; }
+  /* vertical-align:middle lands ~0.12em low against the cap height; lift to the
+     text's optical centre. */
+  .nav-arrow svg { height: 0.65em; width: auto; transform: translateY(-0.12em); }
 
   .day-panel { display: none; }
   .day-panel[aria-hidden="false"] { display: block; }
