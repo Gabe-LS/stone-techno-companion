@@ -1227,6 +1227,29 @@ async def serve_manifest():
     raise HTTPException(404, "Not found")
 
 
+@app.get("/manifest-chat.json")
+async def serve_manifest_chat():
+    # Chat's own manifest: start_url /chat, so an app added to the home
+    # screen FROM the chat page launches into chat, while the main manifest
+    # keeps '/' (last used lineup view) for installs made from the lineup.
+    file_path = STATIC_DIR / "manifest-chat.json"
+    if file_path.exists():
+        return FileResponse(
+            file_path,
+            media_type="application/manifest+json",
+            headers={"Cache-Control": "no-cache"},
+        )
+    raise HTTPException(404, "Not found")
+
+
+@app.get("/icon-chat.png")
+async def serve_icon_chat():
+    file_path = STATIC_DIR / "icon-chat.png"
+    if file_path.exists():
+        return FileResponse(file_path)
+    raise HTTPException(404, "Not found")
+
+
 @app.get("/sw.js")
 async def serve_sw():
     file_path = STATIC_DIR / "sw.js"

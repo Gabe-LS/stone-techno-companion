@@ -1,0 +1,14 @@
+{
+  "name": "Stone Techno Chat",
+  "short_name": "Chat",
+  "description": "Festival chat with rooms, direct messages, and meetups",
+  "id": "/chat",
+  "start_url": "/chat",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#111827",
+  "icons": [
+    { "src": "/icon-chat.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
