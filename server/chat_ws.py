@@ -92,6 +92,26 @@ def _is_e2ee_content(content: str) -> bool:
     return isinstance(c, dict) and c.get("e2ee") is True
 
 
+def _is_e2ee_envelope_shaped(content: str) -> bool:
+    # Stricter than _is_e2ee_content, used ONLY to gate the larger E2EE length
+    # allowance: a bare {"e2ee": true} flag stapled to arbitrary bulk JSON must
+    # not unlock ~6x the size cap. A real envelope has a non-empty string ct
+    # and, for v2, a bounded keys map (the device cap is 12 across both users).
+    try:
+        c = json.loads(content)
+    except (json.JSONDecodeError, TypeError):
+        return False
+    if not isinstance(c, dict) or c.get("e2ee") is not True:
+        return False
+    ct = c.get("ct")
+    if not isinstance(ct, str) or not ct:
+        return False
+    keys = c.get("keys")
+    if keys is not None and (not isinstance(keys, dict) or len(keys) > 16):
+        return False
+    return True
+
+
 def _dm_preview(sender_name: str) -> tuple[str, str]:
     return sender_name, "Sent you a message"
 
@@ -1544,7 +1564,9 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                         continue
 
                 max_content = msg_char_limit + 20 if msg_type == "text" else 2000
-                if is_e2ee_msg:
+                # Only a well-shaped envelope earns the larger allowance (M2);
+                # a bare e2ee flag on bulk JSON stays on the normal limit.
+                if is_e2ee_msg and _is_e2ee_envelope_shaped(content):
                     # v2 envelopes add ~125 chars per device slot (device_id ->
                     # wrapped message key) on top of the base overhead, and this
                     # applies to EVERY message type now, not just text -- a

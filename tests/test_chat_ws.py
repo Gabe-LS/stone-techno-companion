@@ -714,6 +714,37 @@ class TestE2eeSendMessage:
         assert get_room_messages(db, room_id) == []
 
     @pytest.mark.asyncio
+    async def test_e2ee_bare_flag_does_not_unlock_length_allowance(
+        self, db, user1, user2, session1, event_id
+    ):
+        # M2: a bare {"e2ee": true} flag with no ct must NOT get the larger
+        # E2EE length allowance. The blob fits WITHIN the allowance (< 6000)
+        # but exceeds the normal text limit, so withholding the allowance is
+        # exactly what causes the rejection.
+        room_id = find_or_create_dm(db, event_id, user1["id"], user2["id"])
+        blob = json.dumps({"e2ee": True, "v": 2, "x": "A" * 3000})
+        assert 1020 < len(blob) < 6000
+
+        ws = FakeWebSocket()
+        ws.to_receive = [
+            json.dumps(
+                {
+                    "event": "send_message",
+                    "room_id": room_id,
+                    "type": "text",
+                    "content": blob,
+                    "temp_id": "tm2",
+                }
+            )
+        ]
+        await _run_ws(ws, session1["token"], event_id, db)
+
+        rejected = ws.get_events_by_type("message_rejected")
+        assert len(rejected) == 1
+        assert rejected[0]["reason"] == "Message too long."
+        assert get_room_messages(db, room_id) == []
+
+    @pytest.mark.asyncio
     async def test_media_url_check_enforced_for_plaintext_image(
         self, db, user1, user2, session1, event_id
     ):
