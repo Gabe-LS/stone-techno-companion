@@ -2364,6 +2364,7 @@ def _validate_e2ee_jwk(public_key: str) -> None:
         raise HTTPException(422, "Invalid JWK: crv must be P-256")
     if "d" in jwk:
         raise HTTPException(422, "Invalid JWK: private key field d not allowed")
+    coords: dict[str, bytes] = {}
     for coord in ("x", "y"):
         val = jwk.get(coord)
         if not val or not isinstance(val, str):
@@ -2378,6 +2379,27 @@ def _validate_e2ee_jwk(public_key: str) -> None:
             raise HTTPException(
                 422, f"Invalid JWK: {coord} must decode to exactly 32 bytes"
             )
+        coords[coord] = decoded
+    # Point-on-curve check: reject (x, y) pairs that aren't actually a P-256
+    # point. Browsers validate this at importKey time per recipient, but doing
+    # it once server-side is cheap defense-in-depth for every peer at once (an
+    # invalid-curve point fed to a lenient ECDH implementation is a key-recovery
+    # risk). cryptography is present via PyJWT[crypto].
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ec import (
+            EllipticCurvePublicNumbers,
+            SECP256R1,
+        )
+
+        EllipticCurvePublicNumbers(
+            int.from_bytes(coords["x"], "big"),
+            int.from_bytes(coords["y"], "big"),
+            SECP256R1(),
+        ).public_key()
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(422, "Invalid JWK: point is not on the P-256 curve")
 
 
 @router.put("/keys", status_code=204)

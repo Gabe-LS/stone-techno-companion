@@ -738,8 +738,24 @@ class TestAdmin:
 
 
 def _valid_jwk(x_byte: int = 0x01, y_byte: int = 0x02) -> str:
-    x = base64.urlsafe_b64encode(bytes([x_byte]) * 32).rstrip(b"=").decode()
-    y = base64.urlsafe_b64encode(bytes([y_byte]) * 32).rstrip(b"=").decode()
+    # Real on-curve P-256 public key, deterministic from the byte args: same
+    # args -> same key (the re-key / no-broadcast tests depend on that),
+    # distinct args -> distinct keys. Server-side validation now rejects
+    # arbitrary (x, y) bytes that aren't a real curve point (K3), so the test
+    # keys must be genuine points.
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    seed = (((x_byte & 0xFF) << 8) | (y_byte & 0xFF)) or 1
+    nums = ec.derive_private_key(seed, ec.SECP256R1()).public_key().public_numbers()
+    x = base64.urlsafe_b64encode(nums.x.to_bytes(32, "big")).rstrip(b"=").decode()
+    y = base64.urlsafe_b64encode(nums.y.to_bytes(32, "big")).rstrip(b"=").decode()
+    return json.dumps({"kty": "EC", "crv": "P-256", "x": x, "y": y})
+
+
+def _offcurve_jwk() -> str:
+    # Syntactically valid JWK (32-byte x/y) whose point is not on P-256.
+    x = base64.urlsafe_b64encode(b"\x01" * 32).rstrip(b"=").decode()
+    y = base64.urlsafe_b64encode(b"\x02" * 32).rstrip(b"=").decode()
     return json.dumps({"kty": "EC", "crv": "P-256", "x": x, "y": y})
 
 
@@ -878,6 +894,14 @@ class TestE2eeDeviceKeys:
         jwk = json.dumps({"kty": "EC", "crv": "P-256", "x": x, "y": y, "d": d})
         r = auth_client.put(
             "/chat/api/keys", json={"device_id": _DEVICE_A, "public_key": jwk}
+        )
+        assert r.status_code == 422
+
+    def test_jwk_offcurve_rejected(self, auth_client):
+        # K3: 32-byte x/y that decode fine but are not a real P-256 point.
+        r = auth_client.put(
+            "/chat/api/keys",
+            json={"device_id": _DEVICE_A, "public_key": _offcurve_jwk()},
         )
         assert r.status_code == 422
 
