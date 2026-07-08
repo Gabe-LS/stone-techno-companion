@@ -355,10 +355,12 @@
   .route-title-main > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .route-arrow { display: inline-flex; align-items: center; vertical-align: middle; margin: 0 0.14em; }
   .route-arrow svg { width: 0.6em; height: 0.6em; }
-  .dir-toggle-btn { flex-shrink: 0; background: none; border: none; padding: 6px; margin-left: 2px; cursor: pointer; color: var(--color-muted); display: flex; align-items: center; -webkit-tap-highlight-color: transparent; }
+  .dir-toggle-btn { flex-shrink: 0; background: none; border: none; padding: 6px; margin-left: 2px; cursor: pointer; color: var(--color-muted); display: flex; align-items: center; font-size: inherit; -webkit-tap-highlight-color: transparent; }
   .dir-toggle-btn:active { color: var(--color-text); }
   @media (hover: hover) { .dir-toggle-btn:hover { color: var(--color-text); } }
-  .dir-toggle-btn svg { width: 22px; height: 22px; display: block; }
+  /* Nudge to the text's optical middle so it lines up with the chevron, which
+     uses vertical-align:middle (slightly below the flex line-box centre). */
+  .dir-toggle-btn svg { width: 0.6em; height: 0.6em; display: block; transform: translateY(0.11em); }
   .live-indicator { color: var(--color-text); }
 
   @media (max-width: 768px) {
