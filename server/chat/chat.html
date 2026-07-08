@@ -35,12 +35,17 @@
   --user-self: #64748B; --user-self-bg: #E2E8F0;
 }
 /* ===== BASE OVERRIDES ===== */
-html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-behavior: none; touch-action: pan-x pan-y; -webkit-tap-highlight-color: transparent; }
+html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-behavior: none; touch-action: pan-x pan-y; -webkit-tap-highlight-color: transparent; overflow: hidden; }
 
 /* ===== COMPONENTS ===== */
 
 /* --- Layout --- */
-.app { display: flex; flex-direction: column; height: 100vh; }
+/* 100dvh (with a 100vh fallback) tracks Safari's collapsing bottom toolbar, so
+   the app column ends exactly at the toolbar's top and the input bar never
+   paints behind it. Mirrors the timetable fix (see render.py .view-timetable).
+   Paired with html,body{overflow:hidden} so the document can't scroll the
+   chrome out from under the layout. */
+.app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
 .header { display: flex; align-items: center; height: var(--header-h); background: var(--gray-900); color: #fff; padding: 0 var(--space-lg); flex-shrink: 0; z-index: var(--z-header); position: relative; }
 .header .back { background: none; border: none; color: #fff; font-size: var(--font-xl); cursor: pointer; padding: var(--space-sm); margin-right: var(--space-sm); line-height: 1; }
 .header .title { flex: 1; font-weight: 600; font-size: var(--font-base); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -366,9 +371,9 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 /* --- Desktop --- */
 @media (min-width: 768px) {
   .app { flex-direction: row; }
-  .sidebar { width: 320px; border-right: 1px solid var(--color-border); display: flex; flex-direction: column; height: 100vh; flex-shrink: 0; }
+  .sidebar { width: 320px; border-right: 1px solid var(--color-border); display: flex; flex-direction: column; height: 100vh; height: 100dvh; flex-shrink: 0; }
   .sidebar .content { flex: 1; overflow-y: auto; min-height: 0; }
-  .main-panel { flex: 1; display: flex; flex-direction: column; height: 100vh; }
+  .main-panel { flex: 1; display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
   .main-panel .header { display: flex; }
   .header .header-info { padding-left: 0; }
   .room-item.active { background: var(--color-surface); }
