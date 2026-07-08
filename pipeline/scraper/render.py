@@ -238,11 +238,22 @@ def render_output_html(
     parts.append("<!DOCTYPE html>")
     parts.append('<html lang="en">')
     parts.append("<head>")
-    # '/' always resolves to the last used LINEUP view (stc_view, set in the
-    # script below): line-up or timetable, never chat or transport. The old
-    # last-section memory that bounced a PWA launch at '/' into /chat was
-    # removed on purpose (owner decision, July 2026): the neutral root must
-    # be deterministic between the two lineup views only.
+    # Last-section resume, INSTALLED APP ONLY: a home-screen launch at
+    # start_url '/' reopens whichever section the user was in last (chat
+    # included). In a normal browser tab '/' never bounces to chat: it
+    # always resolves to the last used lineup view via stc_view below
+    # (owner decision, July 2026). The standalone checks mirror the
+    # pwa-standalone detection in chat.html. Explicit lineup visits
+    # reclaim the flag so the next launch returns here.
+    parts.append(
+        "  <script>(function(){try{"
+        "if(location.pathname==='/'"
+        "&&(window.navigator.standalone||window.matchMedia('(display-mode: standalone)').matches)"
+        "&&localStorage.getItem('last_section')==='chat')"
+        "{location.replace('/chat');return;}"
+        "localStorage.setItem('last_section','lineup');"
+        "}catch(e){}})()</script>"
+    )
     if has_timetable:
         parts.append(
             "  <script>(function(){"
