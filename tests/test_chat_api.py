@@ -738,8 +738,24 @@ class TestAdmin:
 
 
 def _valid_jwk(x_byte: int = 0x01, y_byte: int = 0x02) -> str:
-    x = base64.urlsafe_b64encode(bytes([x_byte]) * 32).rstrip(b"=").decode()
-    y = base64.urlsafe_b64encode(bytes([y_byte]) * 32).rstrip(b"=").decode()
+    # Real on-curve P-256 public key, deterministic from the byte args: same
+    # args -> same key (the re-key / no-broadcast tests depend on that),
+    # distinct args -> distinct keys. Server-side validation now rejects
+    # arbitrary (x, y) bytes that aren't a real curve point (K3), so the test
+    # keys must be genuine points.
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    seed = (((x_byte & 0xFF) << 8) | (y_byte & 0xFF)) or 1
+    nums = ec.derive_private_key(seed, ec.SECP256R1()).public_key().public_numbers()
+    x = base64.urlsafe_b64encode(nums.x.to_bytes(32, "big")).rstrip(b"=").decode()
+    y = base64.urlsafe_b64encode(nums.y.to_bytes(32, "big")).rstrip(b"=").decode()
+    return json.dumps({"kty": "EC", "crv": "P-256", "x": x, "y": y})
+
+
+def _offcurve_jwk() -> str:
+    # Syntactically valid JWK (32-byte x/y) whose point is not on P-256.
+    x = base64.urlsafe_b64encode(b"\x01" * 32).rstrip(b"=").decode()
+    y = base64.urlsafe_b64encode(b"\x02" * 32).rstrip(b"=").decode()
     return json.dumps({"kty": "EC", "crv": "P-256", "x": x, "y": y})
 
 
@@ -748,6 +764,17 @@ _DEVICE_B = "b" * 32
 
 
 class TestE2eeDeviceKeys:
+    @pytest.fixture(autouse=True)
+    def _reset_key_rate(self):
+        # The key-endpoint rate limiter (K1) keys a module-global bucket by
+        # user; without a per-test reset the class's many PUT/GET calls would
+        # accumulate within the 60s window and spuriously 429 later tests.
+        from chat_api import _key_rate
+
+        _key_rate.clear()
+        yield
+        _key_rate.clear()
+
     def test_put_get_round_trip(self, auth_client, user1):
         jwk = _valid_jwk()
         r = auth_client.put(
@@ -762,7 +789,8 @@ class TestE2eeDeviceKeys:
         assert len(data["devices"]) == 1
         assert data["devices"][0]["device_id"] == _DEVICE_A
         assert data["devices"][0]["public_key"] == jwk
-        assert "created_at" in data["devices"][0]
+        # K4: created_at is no longer exposed (device-churn timing metadata).
+        assert "created_at" not in data["devices"][0]
 
     def test_put_multiple_devices_listed(self, auth_client, user1):
         jwk1 = _valid_jwk(0x01, 0x02)
@@ -781,6 +809,23 @@ class TestE2eeDeviceKeys:
     def test_get_404_missing(self, auth_client):
         r = auth_client.get("/chat/api/keys/nonexistent-user-id")
         assert r.status_code == 404
+
+    def test_get_keys_denied_when_target_blocked_caller(
+        self, auth_client, user1, user2
+    ):
+        # K4: user2 has keys and is reachable, until user2 blocks the caller.
+        upsert_e2ee_device_key(_test_db, user2["id"], _DEVICE_A, _valid_jwk())
+        assert auth_client.get(f"/chat/api/keys/{user2['id']}").status_code == 200
+        block_user(_test_db, user2["id"], user1["id"])
+        assert auth_client.get(f"/chat/api/keys/{user2['id']}").status_code == 404
+
+    def test_get_keys_denied_when_caller_blocked_target(
+        self, auth_client, user1, user2
+    ):
+        # K4: the block hides keys in either direction.
+        upsert_e2ee_device_key(_test_db, user2["id"], _DEVICE_A, _valid_jwk())
+        block_user(_test_db, user1["id"], user2["id"])
+        assert auth_client.get(f"/chat/api/keys/{user2['id']}").status_code == 404
 
     def test_put_auth_required(self, client):
         jwk = _valid_jwk()
@@ -876,6 +921,36 @@ class TestE2eeDeviceKeys:
         y = base64.urlsafe_b64encode(b"\x02" * 32).rstrip(b"=").decode()
         d = base64.urlsafe_b64encode(b"\x03" * 32).rstrip(b"=").decode()
         jwk = json.dumps({"kty": "EC", "crv": "P-256", "x": x, "y": y, "d": d})
+        r = auth_client.put(
+            "/chat/api/keys", json={"device_id": _DEVICE_A, "public_key": jwk}
+        )
+        assert r.status_code == 422
+
+    def test_key_endpoint_rate_limited(self, auth_client, user1):
+        # K1: 60/min/user shared PUT+GET budget; the 61st call in the window
+        # trips 429. The rate check runs before the 404, so GETs on a keyless
+        # user still consume budget.
+        statuses = [
+            auth_client.get(f"/chat/api/keys/{user1['id']}").status_code
+            for _ in range(61)
+        ]
+        assert 429 not in statuses[:60]
+        assert statuses[-1] == 429
+
+    def test_jwk_offcurve_rejected(self, auth_client):
+        # K3: 32-byte x/y that decode fine but are not a real P-256 point.
+        r = auth_client.put(
+            "/chat/api/keys",
+            json={"device_id": _DEVICE_A, "public_key": _offcurve_jwk()},
+        )
+        assert r.status_code == 422
+
+    def test_jwk_oversized_rejected(self, auth_client):
+        # K2: public_key over the length cap is rejected before json.loads,
+        # so it can't be parsed or stored (DB-bloat guard).
+        big = "A" * 2000
+        jwk = json.dumps({"kty": "EC", "crv": "P-256", "x": big, "y": big})
+        assert len(jwk) > 1024
         r = auth_client.put(
             "/chat/api/keys", json={"device_id": _DEVICE_A, "public_key": jwk}
         )

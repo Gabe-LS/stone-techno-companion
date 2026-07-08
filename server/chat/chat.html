@@ -323,6 +323,14 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .country-item { padding: var(--space-md); cursor: pointer; font-size: var(--font-sm); display: flex; align-items: center; gap: var(--space-sm); }
 .country-item:hover, .country-item.highlighted { background: var(--color-surface); }
 .country-item .flag { font-size: 18px; }
+/* Mobile: when the keyboard opens the visualViewport handler shrinks #app, and
+   justify-content:center would clip the (now taller-than-viewport) content with
+   no way to reach it. Make the prompt a scroll container and use safe centering
+   (falls back to start when overflowing) so focused fields can scroll into view.
+   Scoped to mobile so the desktop layout is untouched. */
+@media (max-width: 767px) {
+  .profile-prompt { justify-content: safe center; overflow-y: auto; }
+}
 .profile-prompt button { width: 320px; padding: var(--space-md); background: var(--gray-900); color: #fff; border: none; border-radius: var(--radius-md); font-size: var(--font-base); cursor: pointer; font-weight: 600; font-family: inherit; }
 .avatar-upload { width: 128px; height: 128px; border-radius: 50%; background: var(--color-surface); border: 2px dashed var(--color-border); display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; position: relative; }
 .avatar-upload img { width: 100%; height: 100%; object-fit: cover; }
@@ -465,6 +473,26 @@ let _roomEncrypted = new Set();
 let _unencryptedRooms = new Set();
 let _decryptRetried = new Set();
 const _UPLOAD_URL_RE = /^\/chat\/uploads\/[a-f0-9]{32}\.(webp|mp4)$/;
+
+// Relationship-scoped anti-downgrade: _roomEncrypted is in-memory and resets
+// on reload, so once a DM's history has TTL-purged, a reopened room has no
+// signal it was ever encrypted -- reopening the very downgrade window the
+// fail-closed rule exists to close. Persist a per-peer "has had E2EE" bit and
+// consult it in the keyless-peer fallback, so a previously-encrypted
+// relationship never silently downgrades to plaintext across sessions.
+const _E2EE_PEERS_KEY = 'stc_e2ee_peers';
+function _hasPeerBeenEncrypted(peerUserId) {
+  if (!peerUserId) return false;
+  try { return JSON.parse(localStorage.getItem(_E2EE_PEERS_KEY) || '{}')[peerUserId] === 1; }
+  catch (e) { return false; }
+}
+function _markPeerEncrypted(peerUserId) {
+  if (!peerUserId || peerUserId === currentUser?.id) return;
+  try {
+    const m = JSON.parse(localStorage.getItem(_E2EE_PEERS_KEY) || '{}');
+    if (m[peerUserId] !== 1) { m[peerUserId] = 1; localStorage.setItem(_E2EE_PEERS_KEY, JSON.stringify(m)); }
+  } catch (e) {}
+}
 
 const REACTION_EMOJIS = {'👍':'thumbs_up','❤️':'heart','😂':'laugh','🔥':'fire','😮':'wow','👏':'clap'};
 const REACTION_KEYS = Object.entries(REACTION_EMOJIS);
@@ -816,12 +844,12 @@ function renderProfilePrompt() {
       </div>
       <div class="avatar-zoom" id="avatar-zoom"><span>-</span><div class="avatar-zoom-track" id="avatar-zoom-track"><div class="avatar-zoom-thumb hidden" id="avatar-zoom-thumb"></div></div><span>+</span></div>
       <div class="profile-field">
-        <input id="username-input" placeholder="Username" maxlength="20" value="${currentUser?.username || ''}" oninput="onUsernameInput()" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <input id="username-input" placeholder="Username" maxlength="20" value="${currentUser?.username || ''}" oninput="onUsernameInput()" onfocus="_profileFieldFocus(this)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         <span class="field-status" id="username-status"></span>
         <div class="field-hint" id="username-hint">Allowed: a-z 0-9 . _ -</div>
       </div>
       <div class="profile-field">
-        <input id="displayname-input" placeholder="Display name (optional)" maxlength="30" value="${currentUser?.display_name || ''}" oninput="onDisplayNameInput()" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <input id="displayname-input" placeholder="Display name (optional)" maxlength="30" value="${currentUser?.display_name || ''}" oninput="onDisplayNameInput()" onfocus="_profileFieldFocus(this)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         <span class="field-status" id="displayname-status"></span>
         <div class="field-hint" id="displayname-hint">Shown in chat instead of username</div>
       </div>
@@ -840,6 +868,15 @@ function renderProfilePrompt() {
   _profileAvatarUrl = currentUser?.avatar_url || '';
   document.getElementById('username-input').focus();
   updateProfilePreview();
+}
+
+function _profileFieldFocus(el) {
+  // Mobile only: after the keyboard opens and the visualViewport handler
+  // resizes #app, scroll the focused field to the centre of the visible area
+  // (.profile-prompt is a scroll container on mobile). No-op on desktop, where
+  // the field is already visible and a scroll would be a jarring jump.
+  if (!isMobile) return;
+  setTimeout(() => { try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {} }, 300);
 }
 
 function onUsernameInput() {
@@ -943,6 +980,10 @@ function openCountryPicker() {
   input.focus();
   let _hlIdx = 0;
   renderCountryList('', 0);
+  // Centre the picker (input + open list) in the visible area once the keyboard
+  // has opened, so the results list isn't hidden behind it. The list is already
+  // rendered above, so the picker has its full height when we scroll.
+  if (isMobile) setTimeout(() => { try { picker.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {} }, 300);
   input.oninput = () => { _hlIdx = 0; renderCountryList(input.value, _hlIdx); };
   input.onkeydown = (e) => {
     if (e.key === 'Escape') { closeCountryPicker(); return; }
@@ -1335,6 +1376,9 @@ async function _decryptV2(msg, parsed, envelope) {
     }
     msg.content = plaintext;
     _roomEncrypted.add(msg.room_id);
+    // Receiving decryptable content from this peer is also proof the
+    // relationship is encrypted -- persist it so a later send can't downgrade.
+    _markPeerEncrypted(msg.user_id);
   } catch (e) {
     dbg('[E2EE] v2 decrypt failed:', e && e.message);
     if (msg.id != null && !_decryptRetried.has(msg.id)) {
@@ -2801,9 +2845,13 @@ async function sendChatMessage(type, content, replyToId) {
     try {
       const envelope = await E2EE.encrypt(roomId, peerUserId, content);
       if (envelope === null) {
-        if (_roomEncrypted.has(roomId)) {
-          dbg('[E2EE] peer has no key but room is already encrypted, blocking send (fail closed)');
-          showToast('Message not sent. Encryption error.');
+        if (_roomEncrypted.has(roomId) || _hasPeerBeenEncrypted(peerUserId)) {
+          // In-memory (this session) OR persisted (a prior session) evidence
+          // that this relationship was encrypted: never downgrade to plaintext
+          // on a keyless-peer response, even after a reload/TTL purge cleared
+          // _roomEncrypted. Fail closed.
+          dbg('[E2EE] peer keyless but relationship was encrypted before, blocking send (fail closed) room=' + roomId);
+          showToast('Message not sent. Encryption unavailable.');
           return null;
         }
         if (!_unencryptedRooms.has(roomId)) {
@@ -2815,6 +2863,7 @@ async function sendChatMessage(type, content, replyToId) {
         outgoingContent = envelope;
         _roomEncrypted.add(roomId);
         _unencryptedRooms.delete(roomId);
+        _markPeerEncrypted(peerUserId);
         dbg('[E2EE] message encrypted for room ' + roomId);
       }
     } catch (e) {
@@ -2828,6 +2877,16 @@ async function sendChatMessage(type, content, replyToId) {
       showToast('Message not sent — could not verify encryption. Tap send to retry.');
       return null;
     }
+  } else if (roomType === 'dm' && _roomEncrypted.has(roomId)) {
+    // Reached only when E2EE.available is false (crypto init failed, or the
+    // key upload failed its retries) AND this DM has already carried encrypted
+    // messages this session. Never silently downgrade an encrypted conversation
+    // to plaintext: fail closed, same rule as the keyless-peer branch above.
+    // (A never-encrypted DM -- keyless peer, old client -- still falls through
+    // to plaintext below, which is the intended fallback.)
+    dbg('[E2EE] unavailable but room already encrypted, blocking send (fail closed) room=' + roomId);
+    showToast('Message not sent. Encryption unavailable, reload to retry.');
+    return null;
   }
 
   const tempId = genTempId();
@@ -4824,6 +4883,7 @@ async function doLogout() {
   document.cookie = 'chat_session=; path=/; max-age=0';
   localStorage.removeItem('e2ee_keypair');
   localStorage.removeItem('e2ee_device_id');
+  localStorage.removeItem(_E2EE_PEERS_KEY);
   E2EE._keyPair = null;
   E2EE._deviceId = null;
   E2EE.available = true;
@@ -5109,10 +5169,13 @@ const E2EE = {
     this._deviceLists[userId] = p;
     try {
       const devices = await p;
-      if (devices === null) delete this._deviceLists[userId];
+      // Only evict if this promise is still the cached one: a key_rotated
+      // (or block) may have replaced the entry with a newer fetch while p was
+      // in flight, and a stale null/404 must not clobber that (C3).
+      if (devices === null && this._deviceLists[userId] === p) delete this._deviceLists[userId];
       return devices;
     } catch (e) {
-      delete this._deviceLists[userId];
+      if (this._deviceLists[userId] === p) delete this._deviceLists[userId];
       throw e;
     }
   },
@@ -5125,7 +5188,7 @@ const E2EE = {
     try {
       return await p;
     } catch (e) {
-      delete this._keks[cacheKey];
+      if (this._keks[cacheKey] === p) delete this._keks[cacheKey];
       throw e;
     }
   },
@@ -5256,7 +5319,17 @@ async function route() {
   if (!ws || ws.readyState !== 1) await connectWS();
   if (!E2EE._initialized && currentUser) {
     E2EE._initialized = true;
-    E2EE.init().then(function() { return E2EE.uploadPublicKey(); }).catch(function(e) { dbg('[E2EE] setup error:', e && e.message); });
+    // Await init() (local only: loads/generates the device id + key pair) so
+    // _deviceId is set before loadRooms() -> openRoom() -> room_history can run
+    // _decryptV2, which otherwise reads keys[null] and marks a decryptable
+    // message as a permanent no-slot sentinel (C2). uploadPublicKey() is the
+    // network step and stays in the background.
+    try {
+      await E2EE.init();
+      E2EE.uploadPublicKey().catch(function(e) { dbg('[E2EE] key upload error:', e && e.message); });
+    } catch (e) {
+      dbg('[E2EE] setup error:', e && e.message);
+    }
   }
   await loadBlockedUsers();
   await loadRooms();

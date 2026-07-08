@@ -106,6 +106,25 @@ DEFAULT_EVENT_ID = os.environ.get("CHAT_EVENT_ID", "stone-techno-2026")
 ADMIN_TOKEN = os.environ.get("CHAT_ADMIN_TOKEN", "")
 
 _upload_rate: dict[str, list[float]] = {}
+_key_rate: dict[str, list[float]] = {}
+
+
+def _check_key_rate(user_id: str, max_n: int = 60, window: int = 60):
+    # The E2EE key endpoints were the only chat mutation/fetch surface with no
+    # rate limit: PUT with a fresh device_id each call fans out a key_rotated
+    # broadcast to every DM peer, and GET enables bulk device-metadata
+    # enumeration. 60/min/user is far above real use (a page load does ~1 PUT
+    # plus a handful of GETs).
+    now = time.monotonic()
+    bucket = _key_rate.setdefault(user_id, [])
+    bucket[:] = [t for t in bucket if now - t < window]
+    if len(bucket) >= max_n:
+        raise HTTPException(429, "Key endpoint rate limit exceeded")
+    bucket.append(now)
+    if len(_key_rate) > 1000:
+        stale = [k for k, v in _key_rate.items() if all(now - t >= window for t in v)]
+        for k in stale:
+            del _key_rate[k]
 
 
 def _check_upload_rate(user_id: str, max_uploads: int = 10, window: int = 60):
@@ -2346,6 +2365,12 @@ def _validate_e2ee_jwk(public_key: str) -> None:
     """Validate a P-256 public key JWK string. Raises HTTPException 422 on invalid input."""
     if not isinstance(public_key, str):
         raise HTTPException(422, "public_key must be a string")
+    # A P-256 public JWK serializes to ~150 bytes; cap well above that but far
+    # below the 110MB global body limit (sized for media uploads). Without this
+    # an authenticated client could store near-body-limit blobs in public_key,
+    # a DB-bloat vector (the device-count prune trims rows, not bytes).
+    if len(public_key) > 1024:
+        raise HTTPException(422, "Invalid JWK: public_key too large")
     try:
         jwk = json.loads(public_key)
     except Exception:
@@ -2358,6 +2383,7 @@ def _validate_e2ee_jwk(public_key: str) -> None:
         raise HTTPException(422, "Invalid JWK: crv must be P-256")
     if "d" in jwk:
         raise HTTPException(422, "Invalid JWK: private key field d not allowed")
+    coords: dict[str, bytes] = {}
     for coord in ("x", "y"):
         val = jwk.get(coord)
         if not val or not isinstance(val, str):
@@ -2372,12 +2398,34 @@ def _validate_e2ee_jwk(public_key: str) -> None:
             raise HTTPException(
                 422, f"Invalid JWK: {coord} must decode to exactly 32 bytes"
             )
+        coords[coord] = decoded
+    # Point-on-curve check: reject (x, y) pairs that aren't actually a P-256
+    # point. Browsers validate this at importKey time per recipient, but doing
+    # it once server-side is cheap defense-in-depth for every peer at once (an
+    # invalid-curve point fed to a lenient ECDH implementation is a key-recovery
+    # risk). cryptography is present via PyJWT[crypto].
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ec import (
+            EllipticCurvePublicNumbers,
+            SECP256R1,
+        )
+
+        EllipticCurvePublicNumbers(
+            int.from_bytes(coords["x"], "big"),
+            int.from_bytes(coords["y"], "big"),
+            SECP256R1(),
+        ).public_key()
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(422, "Invalid JWK: point is not on the P-256 curve")
 
 
 @router.put("/keys", status_code=204)
 async def put_e2ee_key(request: Request):
     user, db = _get_user_from_cookie(request)
     try:
+        _check_key_rate(user["id"])
         body = await request.json()
         device_id = body.get("device_id", "")
         if not isinstance(device_id, str) or not _DEVICE_ID_RE.match(device_id):
@@ -2433,17 +2481,25 @@ async def put_e2ee_key(request: Request):
 async def get_e2ee_key_endpoint(user_id: str, request: Request):
     _user, db = _get_user_from_cookie(request)
     try:
+        _check_key_rate(_user["id"])
+        # K4: a block in either direction hides the target's key metadata -- a
+        # blocked user must not be able to fetch or enumerate the other party's
+        # device list. 404 (not 403) so it's indistinguishable from "no keys".
+        if user_id != _user["id"] and (
+            db_is_blocked(db, user_id, _user["id"])
+            or db_is_blocked(db, _user["id"], user_id)
+        ):
+            raise HTTPException(404, "Key not found")
         devices = get_e2ee_device_keys(db, user_id)
         if not devices:
             raise HTTPException(404, "Key not found")
+        # created_at intentionally omitted: the client only needs
+        # device_id + public_key to encrypt, and per-device timestamps leak
+        # device-registration/churn timing about an arbitrary user (K4).
         return {
             "user_id": user_id,
             "devices": [
-                {
-                    "device_id": d["device_id"],
-                    "public_key": d["public_key"],
-                    "created_at": d["created_at"],
-                }
+                {"device_id": d["device_id"], "public_key": d["public_key"]}
                 for d in devices
             ],
         }
