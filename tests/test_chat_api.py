@@ -789,7 +789,8 @@ class TestE2eeDeviceKeys:
         assert len(data["devices"]) == 1
         assert data["devices"][0]["device_id"] == _DEVICE_A
         assert data["devices"][0]["public_key"] == jwk
-        assert "created_at" in data["devices"][0]
+        # K4: created_at is no longer exposed (device-churn timing metadata).
+        assert "created_at" not in data["devices"][0]
 
     def test_put_multiple_devices_listed(self, auth_client, user1):
         jwk1 = _valid_jwk(0x01, 0x02)
@@ -808,6 +809,23 @@ class TestE2eeDeviceKeys:
     def test_get_404_missing(self, auth_client):
         r = auth_client.get("/chat/api/keys/nonexistent-user-id")
         assert r.status_code == 404
+
+    def test_get_keys_denied_when_target_blocked_caller(
+        self, auth_client, user1, user2
+    ):
+        # K4: user2 has keys and is reachable, until user2 blocks the caller.
+        upsert_e2ee_device_key(_test_db, user2["id"], _DEVICE_A, _valid_jwk())
+        assert auth_client.get(f"/chat/api/keys/{user2['id']}").status_code == 200
+        block_user(_test_db, user2["id"], user1["id"])
+        assert auth_client.get(f"/chat/api/keys/{user2['id']}").status_code == 404
+
+    def test_get_keys_denied_when_caller_blocked_target(
+        self, auth_client, user1, user2
+    ):
+        # K4: the block hides keys in either direction.
+        upsert_e2ee_device_key(_test_db, user2["id"], _DEVICE_A, _valid_jwk())
+        block_user(_test_db, user1["id"], user2["id"])
+        assert auth_client.get(f"/chat/api/keys/{user2['id']}").status_code == 404
 
     def test_put_auth_required(self, client):
         jwk = _valid_jwk()

@@ -2482,17 +2482,24 @@ async def get_e2ee_key_endpoint(user_id: str, request: Request):
     _user, db = _get_user_from_cookie(request)
     try:
         _check_key_rate(_user["id"])
+        # K4: a block in either direction hides the target's key metadata -- a
+        # blocked user must not be able to fetch or enumerate the other party's
+        # device list. 404 (not 403) so it's indistinguishable from "no keys".
+        if user_id != _user["id"] and (
+            db_is_blocked(db, user_id, _user["id"])
+            or db_is_blocked(db, _user["id"], user_id)
+        ):
+            raise HTTPException(404, "Key not found")
         devices = get_e2ee_device_keys(db, user_id)
         if not devices:
             raise HTTPException(404, "Key not found")
+        # created_at intentionally omitted: the client only needs
+        # device_id + public_key to encrypt, and per-device timestamps leak
+        # device-registration/churn timing about an arbitrary user (K4).
         return {
             "user_id": user_id,
             "devices": [
-                {
-                    "device_id": d["device_id"],
-                    "public_key": d["public_key"],
-                    "created_at": d["created_at"],
-                }
+                {"device_id": d["device_id"], "public_key": d["public_key"]}
                 for d in devices
             ],
         }
