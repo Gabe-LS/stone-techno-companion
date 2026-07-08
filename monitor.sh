@@ -94,7 +94,10 @@ done
 # Chat WebSocket route must be reachable THROUGH the proxy. An unauthenticated
 # probe gets 101 (accepted then closed) or 400/403 from the app — all prove the
 # upgrade path works. 404/5xx means Caddy or the app is not routing WS.
-ws_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 \
+# --http1.1 is mandatory: over HTTP/2 (curl's default on https) the
+# Connection/Upgrade headers are dropped, the request reaches the app as a
+# plain GET, and the SPA catch-all answers 200 — a false failure.
+ws_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 --http1.1 \
     -H "Connection: Upgrade" -H "Upgrade: websocket" \
     -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
     "$SITE/ws/chat/monitor-probe" || echo "000")
@@ -133,11 +136,20 @@ esac
 expiry=$(echo | openssl s_client -servername "$HOST" -connect "$HOST:443" 2>/dev/null \
     | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
 if [ -n "$expiry" ]; then
-    exp_epoch=$(date -j -f "%b %e %T %Y %Z" "$expiry" +%s 2>/dev/null || date -d "$expiry" +%s 2>/dev/null)
-    days=$(( (exp_epoch - $(date +%s)) / 86400 ))
-    if [ "$days" -lt 7 ]; then fail "TLS cert expires in ${days}d"
-    elif [ "$days" -lt 21 ]; then warn "TLS cert expires in ${days}d (Caddy renewal may be failing)"
-    else ok "TLS cert (${days}d left)"; fi
+    # Three parsers: BSD date (macOS), GNU date (Linux), python3 (BusyBox,
+    # e.g. the Alpine monitor container, where both date variants fail and
+    # an empty epoch used to read as "expires in -20642d").
+    exp_epoch=$(date -j -f "%b %e %T %Y %Z" "$expiry" +%s 2>/dev/null \
+        || date -d "$expiry" +%s 2>/dev/null \
+        || python3 -c "import sys,time,calendar; print(calendar.timegm(time.strptime(sys.argv[1].strip(), '%b %d %H:%M:%S %Y %Z')))" "$expiry" 2>/dev/null)
+    if [ -z "$exp_epoch" ]; then
+        warn "TLS cert expiry unparseable: $expiry"
+    else
+        days=$(( (exp_epoch - $(date +%s)) / 86400 ))
+        if [ "$days" -lt 7 ]; then fail "TLS cert expires in ${days}d"
+        elif [ "$days" -lt 21 ]; then warn "TLS cert expires in ${days}d (Caddy renewal may be failing)"
+        else ok "TLS cert (${days}d left)"; fi
+    fi
 else
     fail "TLS cert (could not read expiry)"
 fi
@@ -163,7 +175,7 @@ uploads_mb=\$(du -sm $VPS_DIR/server/chat-uploads 2>/dev/null | cut -f1)
 uploads_mb=\${uploads_mb:-0}
 errors_1h=\$(docker logs --since 1h stone-techno 2>&1 | grep -cE 'ERROR|CRITICAL|Traceback' || true)
 vapid_ok=\$(docker logs stone-techno 2>&1 | grep -c 'VAPID key pair verified' || true)
-mod=\$(docker exec stone-techno python3 - <<'PYMOD' 2>/dev/null
+mod=\$(docker exec -i stone-techno python3 - <<'PYMOD' 2>/dev/null
 import os
 k = os.environ.get('OPENAI_API_KEY')
 if not k:
