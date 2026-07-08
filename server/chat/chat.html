@@ -466,6 +466,26 @@ let _unencryptedRooms = new Set();
 let _decryptRetried = new Set();
 const _UPLOAD_URL_RE = /^\/chat\/uploads\/[a-f0-9]{32}\.(webp|mp4)$/;
 
+// Relationship-scoped anti-downgrade: _roomEncrypted is in-memory and resets
+// on reload, so once a DM's history has TTL-purged, a reopened room has no
+// signal it was ever encrypted -- reopening the very downgrade window the
+// fail-closed rule exists to close. Persist a per-peer "has had E2EE" bit and
+// consult it in the keyless-peer fallback, so a previously-encrypted
+// relationship never silently downgrades to plaintext across sessions.
+const _E2EE_PEERS_KEY = 'stc_e2ee_peers';
+function _hasPeerBeenEncrypted(peerUserId) {
+  if (!peerUserId) return false;
+  try { return JSON.parse(localStorage.getItem(_E2EE_PEERS_KEY) || '{}')[peerUserId] === 1; }
+  catch (e) { return false; }
+}
+function _markPeerEncrypted(peerUserId) {
+  if (!peerUserId || peerUserId === currentUser?.id) return;
+  try {
+    const m = JSON.parse(localStorage.getItem(_E2EE_PEERS_KEY) || '{}');
+    if (m[peerUserId] !== 1) { m[peerUserId] = 1; localStorage.setItem(_E2EE_PEERS_KEY, JSON.stringify(m)); }
+  } catch (e) {}
+}
+
 const REACTION_EMOJIS = {'👍':'thumbs_up','❤️':'heart','😂':'laugh','🔥':'fire','😮':'wow','👏':'clap'};
 const REACTION_KEYS = Object.entries(REACTION_EMOJIS);
 
@@ -1335,6 +1355,9 @@ async function _decryptV2(msg, parsed, envelope) {
     }
     msg.content = plaintext;
     _roomEncrypted.add(msg.room_id);
+    // Receiving decryptable content from this peer is also proof the
+    // relationship is encrypted -- persist it so a later send can't downgrade.
+    _markPeerEncrypted(msg.user_id);
   } catch (e) {
     dbg('[E2EE] v2 decrypt failed:', e && e.message);
     if (msg.id != null && !_decryptRetried.has(msg.id)) {
@@ -2801,9 +2824,13 @@ async function sendChatMessage(type, content, replyToId) {
     try {
       const envelope = await E2EE.encrypt(roomId, peerUserId, content);
       if (envelope === null) {
-        if (_roomEncrypted.has(roomId)) {
-          dbg('[E2EE] peer has no key but room is already encrypted, blocking send (fail closed)');
-          showToast('Message not sent. Encryption error.');
+        if (_roomEncrypted.has(roomId) || _hasPeerBeenEncrypted(peerUserId)) {
+          // In-memory (this session) OR persisted (a prior session) evidence
+          // that this relationship was encrypted: never downgrade to plaintext
+          // on a keyless-peer response, even after a reload/TTL purge cleared
+          // _roomEncrypted. Fail closed.
+          dbg('[E2EE] peer keyless but relationship was encrypted before, blocking send (fail closed) room=' + roomId);
+          showToast('Message not sent. Encryption unavailable.');
           return null;
         }
         if (!_unencryptedRooms.has(roomId)) {
@@ -2815,6 +2842,7 @@ async function sendChatMessage(type, content, replyToId) {
         outgoingContent = envelope;
         _roomEncrypted.add(roomId);
         _unencryptedRooms.delete(roomId);
+        _markPeerEncrypted(peerUserId);
         dbg('[E2EE] message encrypted for room ' + roomId);
       }
     } catch (e) {
@@ -4834,6 +4862,7 @@ async function doLogout() {
   document.cookie = 'chat_session=; path=/; max-age=0';
   localStorage.removeItem('e2ee_keypair');
   localStorage.removeItem('e2ee_device_id');
+  localStorage.removeItem(_E2EE_PEERS_KEY);
   E2EE._keyPair = null;
   E2EE._deviceId = null;
   E2EE.available = true;
