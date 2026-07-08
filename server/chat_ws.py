@@ -45,6 +45,7 @@ from chat_db import (
     update_last_seen,
     update_last_active,
     delete_user_messages,
+    _unlink_media_if_orphaned,
     purge_expired_messages,
     purge_expired_meetups,
     delete_meetup,
@@ -1000,22 +1001,18 @@ async def _moderate_and_broadcast(
             mod_result = await check_ban_mute(db, user_id)
 
         if not mod_result["allowed"]:
-            if msg_type in ("image", "video"):
-                try:
-                    _u = msg.get("media_url") or json.loads(content).get("url", "")
-                    if _u:
-                        _fn = _u.rsplit("/", 1)[-1]
-                        _stem = _fn.rsplit(".", 1)[0]
-                        (_UPLOADS_DIR / _fn).unlink(missing_ok=True)
-                        (_UPLOADS_DIR / f"{_stem}_mod.webp").unlink(missing_ok=True)
-                        for _i in range(3):
-                            (_UPLOADS_DIR / f"{_stem}_mod{_i}.webp").unlink(
-                                missing_ok=True
-                            )
-                except Exception:
-                    pass
             db.execute("DELETE FROM messages WHERE id = ?", (msg["id"],))
             db.commit()
+            if msg_type in ("image", "video"):
+                # Orphan-checked unlink AFTER the row is deleted: media_url is
+                # client-supplied (format-validated only), so an unconditional
+                # unlink here could delete a file still referenced by another
+                # user's live message.
+                try:
+                    _u = msg.get("media_url") or json.loads(content).get("url", "")
+                    _unlink_media_if_orphaned(db, _UPLOADS_DIR, _u)
+                except Exception:
+                    pass
             await mgr.send_to_user(
                 user_id,
                 {
@@ -1092,22 +1089,18 @@ async def _moderate_and_broadcast(
         # room ahead of the other task's delete_user_messages cleanup.
         recheck = await check_ban_mute(db, user_id)
         if not recheck["allowed"]:
-            if msg_type in ("image", "video"):
-                try:
-                    _u = msg.get("media_url") or json.loads(content).get("url", "")
-                    if _u:
-                        _fn = _u.rsplit("/", 1)[-1]
-                        _stem = _fn.rsplit(".", 1)[0]
-                        (_UPLOADS_DIR / _fn).unlink(missing_ok=True)
-                        (_UPLOADS_DIR / f"{_stem}_mod.webp").unlink(missing_ok=True)
-                        for _i in range(3):
-                            (_UPLOADS_DIR / f"{_stem}_mod{_i}.webp").unlink(
-                                missing_ok=True
-                            )
-                except Exception:
-                    pass
             db.execute("DELETE FROM messages WHERE id = ?", (msg["id"],))
             db.commit()
+            if msg_type in ("image", "video"):
+                # Orphan-checked unlink AFTER the row is deleted: media_url is
+                # client-supplied (format-validated only), so an unconditional
+                # unlink here could delete a file still referenced by another
+                # user's live message.
+                try:
+                    _u = msg.get("media_url") or json.loads(content).get("url", "")
+                    _unlink_media_if_orphaned(db, _UPLOADS_DIR, _u)
+                except Exception:
+                    pass
             await mgr.send_to_user(
                 user_id,
                 {
