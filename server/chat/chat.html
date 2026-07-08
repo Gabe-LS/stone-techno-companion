@@ -5119,10 +5119,13 @@ const E2EE = {
     this._deviceLists[userId] = p;
     try {
       const devices = await p;
-      if (devices === null) delete this._deviceLists[userId];
+      // Only evict if this promise is still the cached one: a key_rotated
+      // (or block) may have replaced the entry with a newer fetch while p was
+      // in flight, and a stale null/404 must not clobber that (C3).
+      if (devices === null && this._deviceLists[userId] === p) delete this._deviceLists[userId];
       return devices;
     } catch (e) {
-      delete this._deviceLists[userId];
+      if (this._deviceLists[userId] === p) delete this._deviceLists[userId];
       throw e;
     }
   },
@@ -5135,7 +5138,7 @@ const E2EE = {
     try {
       return await p;
     } catch (e) {
-      delete this._keks[cacheKey];
+      if (this._keks[cacheKey] === p) delete this._keks[cacheKey];
       throw e;
     }
   },
@@ -5266,7 +5269,17 @@ async function route() {
   if (!ws || ws.readyState !== 1) await connectWS();
   if (!E2EE._initialized && currentUser) {
     E2EE._initialized = true;
-    E2EE.init().then(function() { return E2EE.uploadPublicKey(); }).catch(function(e) { dbg('[E2EE] setup error:', e && e.message); });
+    // Await init() (local only: loads/generates the device id + key pair) so
+    // _deviceId is set before loadRooms() -> openRoom() -> room_history can run
+    // _decryptV2, which otherwise reads keys[null] and marks a decryptable
+    // message as a permanent no-slot sentinel (C2). uploadPublicKey() is the
+    // network step and stays in the background.
+    try {
+      await E2EE.init();
+      E2EE.uploadPublicKey().catch(function(e) { dbg('[E2EE] key upload error:', e && e.message); });
+    } catch (e) {
+      dbg('[E2EE] setup error:', e && e.message);
+    }
   }
   await loadBlockedUsers();
   await loadRooms();
