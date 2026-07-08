@@ -91,7 +91,13 @@ def main() -> int:
     import chat_db
 
     email = args.email.strip().lower()
-    user = chat_db.create_user(db, "email", email, args.display_name)
+    # provider_id for the email provider is the SHA-256 of the address, not
+    # the raw address: every auth path (magic link, Google email-linking)
+    # looks accounts up via hash_email. A raw-email provider_id makes the
+    # seeded account unreachable by any login, so the owner's first sign-in
+    # silently creates a duplicate account while the orphaned seed row
+    # squats on the username.
+    user = chat_db.create_user(db, "email", chat_db.hash_email(email), args.display_name)
     db.execute(
         "UPDATE users SET username = ?, username_lower = ?, country = ? WHERE id = ?",
         (args.username, args.username.lower(), args.country, user["id"]),
