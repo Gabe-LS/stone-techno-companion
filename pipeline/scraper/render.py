@@ -2425,12 +2425,19 @@ def render_output_html(
     async function enableNotifications() {
       if (_needsSafariSwitch) { openDialog('m-ios-switch'); return; }
       if (_isIOS && !_isStandalone) { openDialog('m-ios'); return; }
-      if (!_supportsPush) return;
+      if (!_supportsPush) { showToast('This browser does not support notifications.'); return; }
       const perm = await Notification.requestPermission();
-      if (perm !== 'granted') return;
+      if (perm !== 'granted') {
+        // Blocked or dismissed: give feedback instead of failing silently, so
+        // the switch never looks inert. requestPermission returns immediately
+        // with 'denied' when the site is blocked in browser settings.
+        dbg('notifications permission not granted:', perm);
+        showToast('Notifications are blocked. Enable them for this site in your browser settings, then try again.');
+        return;
+      }
       try {
         const vapidRes = await fetch(API + '/push/vapid-key');
-        if (!vapidRes.ok) return;
+        if (!vapidRes.ok) { showToast('Could not enable notifications. Please try again.'); return; }
         const { public_key } = await vapidRes.json();
         const reg = await navigator.serviceWorker.ready;
         const keyBytes = _urlBase64ToUint8Array(public_key);
@@ -2439,15 +2446,24 @@ def render_output_html(
           sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes });
         }
         await ensureSession();
-        if (!sessionId) return;
+        if (!sessionId) { showToast('Could not enable notifications. Please try again.'); return; }
         const subRes = await fetch(API + '/session/' + sessionId + '/push/subscribe', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(sub.toJSON()) });
-        if (!subRes.ok) { dbg('push subscribe POST failed', subRes.status); return; }
+        if (!subRes.ok) { dbg('push subscribe POST failed', subRes.status); showToast('Could not enable notifications. Please try again.'); return; }
         storageSet('stc_push', '1');
         storageSet('stc_push_endpoint', sub.endpoint);
         track('push-enable');
       } catch (e) {
         if (navigator.brave && e.name === 'AbortError') { openDialog('m-brave'); return; }
         dbg('Push subscribe failed', e);
+        // Push permission can be denied at the subscribe step even after
+        // requestPermission resolved (blocked site / OS-level block on Chrome),
+        // surfacing as NotAllowedError. Tell the user rather than swallowing it.
+        if (e && e.name === 'NotAllowedError') {
+          showToast('Notifications are blocked. Enable them for this site in your browser settings, then try again.');
+        } else {
+          showToast('Could not enable notifications. Please try again.');
+        }
+        return;
       }
       updateBellState();
     }
