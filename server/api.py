@@ -1171,10 +1171,14 @@ async def transport_walk(request: Request, lat: float, lng: float):
     a third party directly (OSRM sees only the VPS IP). Coordinates are used
     transiently and never stored or logged. Bounded to the Essen area so this
     cannot be abused as a generic routing proxy."""
+    route = request.query_params.get("route") or "zollverein"
     dir_key = request.query_params.get("dir") or "outbound"
-    if dir_key not in _TRANSPORT_STOP_COORDS:
-        raise HTTPException(400, "dir must be 'outbound' or 'inbound'")
-    tgt_lat, tgt_lng = _TRANSPORT_STOP_COORDS[dir_key]
+    if route == "duesseldorf":
+        tgt_lat, tgt_lng = (51.291368, 6.787158)  # D-Flughafen Bf (departure stop)
+    elif dir_key in _TRANSPORT_STOP_COORDS:
+        tgt_lat, tgt_lng = _TRANSPORT_STOP_COORDS[dir_key]
+    else:
+        raise HTTPException(400, "invalid route/dir")
     if abs(lat - _TRANSPORT_STOP_LAT) > 0.35 or abs(lng - _TRANSPORT_STOP_LNG) > 0.5:
         raise HTTPException(400, "Out of service area")
     _check_transport_rate(request, limit=10)

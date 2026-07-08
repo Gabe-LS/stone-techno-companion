@@ -229,6 +229,15 @@ class TestWalk:
         r = client.get("/api/transport/walk?lat=51.49&lng=7.05&dir=nope")
         assert r.status_code == 400
 
+    def test_walk_route_duesseldorf_targets_airport(self):
+        _FakeAsyncClient.payload = {
+            "code": "Ok",
+            "routes": [{"distance": 50, "duration": 60}],
+        }
+        client.get("/api/transport/walk?lat=51.29&lng=6.79&route=duesseldorf")
+        # Düsseldorf view walks to D-Flughafen Bf, never a client-supplied point.
+        assert "6.787158,51.291368" in _FakeAsyncClient.last_url
+
     def test_rate_limited(self):
         _FakeAsyncClient.payload = {
             "code": "Ok",

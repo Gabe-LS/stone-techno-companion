@@ -258,8 +258,11 @@
     position: relative;
   }
 
+  .line-badge { background: var(--gray-700); color: #fff; }  /* default for any line */
   .line-badge.l-107 { background: var(--badge-107-bg); color: #fff; }
   .line-badge.l-NE2 { background: var(--color-ne2-bg); color: var(--color-ne2-text); }
+  .line-badge.l-re { background: #b5179e; color: #fff; }  /* Regional-Express (Düsseldorf) */
+  .line-badge.l-s { background: #2e7d32; color: #fff; }   /* S-Bahn (Düsseldorf) */
 
   .rt-dot {
     position: absolute;
@@ -389,8 +392,8 @@
     <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] chat'); location.href='/chat'">Chat</button>
     <button type="button" class="active">Transport</button>
     <div class="cmd-sep"></div>
-    <button type="button" onmousedown="this.blur()" class="active" onclick="dbg('[NAV] zollverein-essen'); location.href='/transport'">Zollverein &gt; Essen</button>
-    <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] duesseldorf-essen'); location.href='/transport?route=duesseldorf'">D&uuml;sseldorf &gt; Essen</button>
+    <button type="button" onmousedown="this.blur()" class="active" data-route="zollverein" onclick="dbg('[NAV] zollverein-essen'); location.href='/transport'">Zollverein &gt; Essen</button>
+    <button type="button" onmousedown="this.blur()" data-route="duesseldorf" onclick="dbg('[NAV] duesseldorf-essen'); location.href='/transport?route=duesseldorf'">D&uuml;sseldorf &gt; Essen</button>
   </div>
   <button type="button" class="hamburger" onclick="toggleMenu()" aria-label="Menu"></button>
 </nav>
@@ -399,8 +402,8 @@
   <button type="button" onclick="dbg('[NAV] timetable (menu)'); location.href='/timetable'">Timetable</button>
   <button type="button" onclick="dbg('[NAV] chat (menu)'); location.href='/chat'">Chat</button>
   <button type="button" class="active" onclick="closeMenu()">Transport</button>
-  <button type="button" class="dd-sub active" onclick="dbg('[NAV] zollverein-essen (menu)'); location.href='/transport'">Zollverein &gt; Essen</button>
-  <button type="button" class="dd-sub" onclick="dbg('[NAV] duesseldorf-essen (menu)'); location.href='/transport?route=duesseldorf'">D&uuml;sseldorf &gt; Essen</button>
+  <button type="button" class="dd-sub active" data-route="zollverein" onclick="dbg('[NAV] zollverein-essen (menu)'); location.href='/transport'">Zollverein &gt; Essen</button>
+  <button type="button" class="dd-sub" data-route="duesseldorf" onclick="dbg('[NAV] duesseldorf-essen (menu)'); location.href='/transport?route=duesseldorf'">D&uuml;sseldorf &gt; Essen</button>
 </div>
 <div class="menu-overlay" id="menu-overlay" onclick="closeMenu()"></div>
 <script>
@@ -475,21 +478,36 @@ var TIMETABLE_DATA = null;
   var realtimeActive = false;
   var POLL_INTERVAL = 60000;
   var API_BASE = "";
+  var route = (new URLSearchParams(window.location.search).get("route") === "duesseldorf") ? "duesseldorf" : "zollverein";
 
   var STOP_LAT = 51.486095;
   var STOP_LNG = 7.046062;
   var WALK_SPEED_KMH = 4.5;
 
-  function curDays() {
-    return (direction === "inbound" && data.reverse) ? data.reverse.days : data.days;
+  // The active "view" block ({route, stop, days}): the Düsseldorf route if
+  // selected, else the Zollverein inbound/outbound block.
+  function curView() {
+    if (route === "duesseldorf" && data.duesseldorf) return data.duesseldorf;
+    if (direction === "inbound" && data.reverse) return data.reverse;
+    return data;
   }
-  function curRoute() {
-    return (direction === "inbound" && data.reverse) ? data.reverse.route : data.route;
-  }
-  function curStop() {
-    return (direction === "inbound" && data.reverse && data.reverse.stop) ? data.reverse.stop : data.stop;
-  }
+  function curDays() { return curView().days; }
+  function curRoute() { return curView().route; }
+  function curStop() { return curView().stop || data.stop; }
   function isOutbound() { return direction === "outbound"; }
+
+  function updateDirToggle() {
+    // The direction swap only applies to the Zollverein route (which has a
+    // reverse); the Düsseldorf route is one-way, so hide it there.
+    var toggle = document.getElementById("dir-toggle");
+    if (toggle) toggle.style.display = (route === "zollverein" && data.reverse) ? "" : "none";
+  }
+
+  function setNavActive() {
+    document.querySelectorAll("[data-route]").forEach(function (el) {
+      el.classList.toggle("active", el.dataset.route === route);
+    });
+  }
 
   function updateRouteTitle() {
     var r = curRoute();
@@ -512,7 +530,7 @@ var TIMETABLE_DATA = null;
   }
 
   function toggleDirection() {
-    if (!data || !data.reverse) return;
+    if (route !== "zollverein" || !data || !data.reverse) return;
     direction = isOutbound() ? "inbound" : "outbound";
     dbg("[TRANSPORT] toggle direction -> " + direction);
     // Realtime is per-direction: a stale entry from the other direction could
@@ -595,6 +613,14 @@ var TIMETABLE_DATA = null;
   }
 
   function fetchRealtime() {
+    // Realtime for the Düsseldorf route (journey planner) is not wired yet, so
+    // that view shows the static schedule only. Zollverein keeps its live
+    // departure-monitor overlay below.
+    if (route !== "zollverein") {
+      realtimeActive = false;
+      document.getElementById("live-indicator").classList.remove("active");
+      return;
+    }
     var dayData = curDays()[activeDay];
     if (!dayData) return;
 
@@ -770,7 +796,7 @@ var TIMETABLE_DATA = null;
       }
 
       var badge = document.createElement("span");
-      badge.className = "line-badge l-" + dep.line;
+      badge.className = "line-badge " + (dep.badge ? "l-" + dep.badge : "l-" + dep.line);
       badge.textContent = dep.line;
 
       if (rt && rt.realtime && !isCanceled) {
@@ -830,7 +856,7 @@ var TIMETABLE_DATA = null;
   }
 
   function fetchWalkRoute(lat, lng) {
-    var url = API_BASE + "/api/transport/walk?lat=" + lat + "&lng=" + lng + "&dir=" + direction;
+    var url = API_BASE + "/api/transport/walk?lat=" + lat + "&lng=" + lng + "&dir=" + direction + "&route=" + route;
     return fetch(url)
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
@@ -916,9 +942,11 @@ var TIMETABLE_DATA = null;
       STOP_LAT = d.stop.lat;
       STOP_LNG = d.stop.lng;
     }
-    // Show the direction toggle only when the reverse dataset is present.
-    var toggle = document.getElementById("dir-toggle");
-    if (toggle) toggle.style.display = d.reverse ? "" : "none";
+    // If ?route=duesseldorf was requested but the dataset lacks it (old JSON),
+    // fall back to the Zollverein route.
+    if (route === "duesseldorf" && !d.duesseldorf) route = "zollverein";
+    setNavActive();
+    updateDirToggle();
     updateRouteTitle();
     activeDay = findTodayIndex();
     renderTabs();
