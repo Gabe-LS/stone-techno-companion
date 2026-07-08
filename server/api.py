@@ -1227,17 +1227,6 @@ async def serve_manifest():
     raise HTTPException(404, "Not found")
 
 
-@app.get("/icon-chat.png")
-async def serve_icon_chat():
-    # Home-screen icon for installs made from the chat page. Same single app
-    # (chat links the shared /manifest.json, start_url '/'), just a prettier
-    # icon for that install path.
-    file_path = STATIC_DIR / "icon-chat.png"
-    if file_path.exists():
-        return FileResponse(file_path)
-    raise HTTPException(404, "Not found")
-
-
 @app.get("/sw.js")
 async def serve_sw():
     file_path = STATIC_DIR / "sw.js"
