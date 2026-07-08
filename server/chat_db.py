@@ -1562,6 +1562,17 @@ def get_dm_participant_names(db: sqlite3.Connection, room_id: str) -> list[str]:
 
 
 def purge_old_reports(db: sqlite3.Connection) -> int:
+    """Delete reviewed (actioned/dismissed) reports older than 30 days.
+
+    Retention is intentionally longer than the message/DM TTLs (M3): a
+    report's message_snapshot is moderation evidence, and for an E2EE DM it is
+    the ONLY copy the server ever holds (reporter-provided, flagged
+    unverified), so it must outlive the 24h DM TTL to stay actionable. PENDING
+    reports are kept until an admin reviews them -- an unreviewed abuse report
+    must not silently expire. Implication: reporter-provided DM plaintext can
+    persist here past the DM's own TTL; that is a deliberate evidence hold, not
+    a leak.
+    """
     cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
     result = db.execute(
         "DELETE FROM reports WHERE status IN ('actioned', 'dismissed') "
