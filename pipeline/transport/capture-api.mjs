@@ -142,6 +142,12 @@ const dates = [
   { date: '11.07.2026', next: '12.07.2026', label: '11.07.2026', day: 'Saturday' },
   { date: '12.07.2026', next: '13.07.2026', label: '12.07.2026', day: 'Sunday' },
 ];
+// The Düsseldorf airport trains also cover Thursday (the arrival day before the
+// festival); the Zollverein tram board stays Fri-Sun only.
+const duesDates = [
+  { date: '09.07.2026', next: '10.07.2026', label: '09.07.2026', day: 'Thursday' },
+  ...dates,
+];
 
 const DIRECTIONS = {
   outbound: { stopId: ZOLLVEREIN_ID, termini: ['Bredeney', 'Hauptbahnhof'] },  // Zollverein -> Essen Hbf
@@ -279,17 +285,17 @@ async function buildDuesseldorfDay(originId, destId, date, nextDate) {
   return [...deps.values()].sort((a, b) => svc(a) - svc(b));
 }
 
-console.log('\n=== Düsseldorf Airport -> Essen Hbf (regional) ===');
+console.log('\n=== DUS Airport -> Essen Hbf (regional) ===');
 const duesDays = [];
-for (const { date, next, label, day } of dates) {
+for (const { date, next, label, day } of duesDates) {
   const trips = await buildDuesseldorfDay(DFLUG_ID, ESSEN_HBF_ID, date, next);
   console.log(`  ${label}: ${trips.length} direct regional trips`);
   duesDays.push({ day, date: label, departures: trips });
 }
 
-console.log('\n=== Essen Hbf -> Düsseldorf Airport (regional) ===');
+console.log('\n=== Essen Hbf -> DUS Airport (regional) ===');
 const duesRevDays = [];
-for (const { date, next, label, day } of dates) {
+for (const { date, next, label, day } of duesDates) {
   const trips = await buildDuesseldorfDay(ESSEN_HBF_ID, DFLUG_ID, date, next);
   console.log(`  ${label}: ${trips.length} direct regional trips`);
   duesRevDays.push({ day, date: label, departures: trips });
@@ -305,11 +311,11 @@ const transportJson = {
     days: daysFrom(inbound),
   },
   duesseldorf: {
-    route: { from: 'Düsseldorf Airport', to: 'Essen Hbf', fromId: DFLUG_ID, toId: ESSEN_HBF_ID },
+    route: { from: 'DUS Airport', to: 'Essen Hbf', fromId: DFLUG_ID, toId: ESSEN_HBF_ID },
     stop: { lat: 51.291368, lng: 6.787158 },  // D-Flughafen Bf (departure stop)
     days: duesDays,
     reverse: {
-      route: { from: 'Essen Hbf', to: 'Düsseldorf Airport', fromId: ESSEN_HBF_ID, toId: DFLUG_ID },
+      route: { from: 'Essen Hbf', to: 'DUS Airport', fromId: ESSEN_HBF_ID, toId: DFLUG_ID },
       stop: { lat: 51.449732, lng: 7.012213 },  // Essen Hbf (reverse departure stop)
       days: duesRevDays,
     },

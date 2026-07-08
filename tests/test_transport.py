@@ -196,6 +196,72 @@ class TestDepartures:
         assert codes[0] == 200
 
 
+def _trip_journey(name="RE6", cls=13, **extra):
+    leg = {
+        "origin": {
+            "departureTimePlanned": "2026-07-10T12:03:00Z",
+            "departureTimeEstimated": "2026-07-10T12:07:00Z",
+            "properties": {"platform": "5"},
+        },
+        "destination": {
+            "arrivalTimePlanned": "2026-07-10T12:27:00Z",
+            "arrivalTimeEstimated": "2026-07-10T12:30:00Z",
+        },
+        "transportation": {
+            "disassembledName": name,
+            "product": {"class": cls},
+            "properties": {"trainNumber": "89737"},
+        },
+    }
+    return {"interchanges": extra.get("interchanges", 0), "legs": [leg]}
+
+
+class TestDuesseldorf:
+    def test_route_maps_trip_realtime(self):
+        _FakeAsyncClient.payload = {"journeys": [_trip_journey()]}
+        r = client.get(
+            "/api/transport/departures?date=10.07.2026&time=14:00&route=duesseldorf"
+        )
+        assert r.status_code == 200
+        deps = r.json()["departures"]
+        assert len(deps) == 1
+        d = deps[0]
+        # 12:03 UTC -> 14:03 Berlin (CEST); estimated 12:07 -> 14:07, +4 min.
+        assert d["line"] == "RE6"
+        assert d["scheduled"] == "14:03"
+        assert d["real"] == "14:07"
+        assert d["delay"] == 4
+        assert d["platform"] == "5"
+        assert d["trainNumber"] == "89737"
+        assert d["arr"] == "14:27"
+        assert d["arrReal"] == "14:30"
+        assert "_iso" not in d
+        # Origin is pinned server-side (D-Flughafen), never client-supplied.
+        assert _FakeAsyncClient.last_params["name_origin"] == "20018488"
+
+    def test_inbound_swaps_origin_to_essen(self):
+        _FakeAsyncClient.payload = {"journeys": []}
+        client.get(
+            "/api/transport/departures?date=10.07.2026&time=14:00&route=duesseldorf&dir=inbound"
+        )
+        assert _FakeAsyncClient.last_params["name_origin"] == "20009289"
+
+    def test_long_distance_filtered_out(self):
+        # ICE/IC come through as bare train numbers (class 15/16) -> dropped.
+        _FakeAsyncClient.payload = {"journeys": [_trip_journey(name="849", cls=16)]}
+        r = client.get(
+            "/api/transport/departures?date=10.07.2026&time=14:00&route=duesseldorf"
+        )
+        assert r.json()["departures"] == []
+
+    def test_non_direct_filtered_out(self):
+        _FakeAsyncClient.payload = {"journeys": [_trip_journey(interchanges=1)]}
+        r = client.get(
+            "/api/transport/departures?date=10.07.2026&time=14:00&route=duesseldorf"
+        )
+        assert r.json()["departures"] == []
+
+
 class TestWalk:
     def test_out_of_service_area(self):
         r = client.get("/api/transport/walk?lat=48.13&lng=11.58")  # Munich

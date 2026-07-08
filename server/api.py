@@ -1048,10 +1048,140 @@ _TRANSPORT_STOP_COORDS = {
     "outbound": (51.486095, 7.046062),  # Zollverein
     "inbound": (51.449732, 7.012213),  # Essen Hbf
 }
+_VRR_TRIP_BASE = "https://www.vrr.de/vrr-efa/XML_TRIP_REQUEST2"
+# Düsseldorf Airport <-> Essen Hbf via the VRR journey planner. Origin/dest are
+# pinned per direction (never client-supplied), so this cannot be abused as an
+# open trip proxy, mirroring the departure-monitor invariant above.
+_TRANSPORT_DUES_TRIP = {
+    "outbound": ("20018488", "20009289"),  # D-Flughafen -> Essen Hbf
+    "inbound": ("20009289", "20018488"),  # Essen Hbf -> D-Flughafen
+}
 _TRANSPORT_DATE_RE = re.compile(r"^\d{2}\.\d{2}\.\d{4}$")
 _TRANSPORT_TIME_RE = re.compile(r"^\d{1,2}:\d{2}$")
 _transport_cache: dict[tuple[str, str, str], tuple[float, list]] = {}
 _transport_rate: dict[str, list[float]] = {}
+
+
+def _berlin_hhmm_date(iso):
+    """VRR rapidJSON times are UTC; return (HH:MM, DD.MM.YYYY) in Europe/Berlin."""
+    if not iso:
+        return None, None
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone(
+            ZoneInfo("Europe/Berlin")
+        )
+    except (ValueError, TypeError):
+        return None, None
+    return dt.strftime("%H:%M"), dt.strftime("%d.%m.%Y")
+
+
+def _iso_delay_min(planned, estimated):
+    if not planned or not estimated:
+        return 0
+    try:
+        p = datetime.fromisoformat(planned.replace("Z", "+00:00"))
+        e = datetime.fromisoformat(estimated.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return 0
+    return round((e - p).total_seconds() / 60)
+
+
+async def _duesseldorf_trip_realtime(origin_id, dest_id, date, t, want=6):
+    """Next `want` direct regional (RE/RB/S) trips origin->dest with realtime,
+    via XML_TRIP_REQUEST2 (~4 journeys/request, so page forward). Shaped like the
+    departure-monitor entries so the client overlays them identically."""
+    import httpx
+
+    yyyymmdd = date[6:10] + date[3:5] + date[0:2]
+    cur_time = t.replace(":", "")
+    deps = []
+    seen = set()
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        for _page in range(3):
+            params = {
+                "outputFormat": "rapidJSON", "language": "en",
+                "name_origin": origin_id, "type_origin": "any",
+                "name_destination": dest_id, "type_destination": "any",
+                "itdDate": yyyymmdd, "itdTime": cur_time,
+                "itdTripDateTimeDepArr": "dep", "coordOutputFormat": "WGS84[dd.ddddd]",
+                "useRealtime": "1", "routeType": "LEASTTIME", "maxChanges": "0",
+                "useProxFootSearchOrigin": "false",
+                "useProxFootSearchDestination": "false", "version": "11.0.6.72",
+            }
+            r = await client.get(
+                _VRR_TRIP_BASE, params=params, headers={"User-Agent": "Mozilla/5.0"}
+            )
+            r.raise_for_status()
+            journeys = (r.json() or {}).get("journeys") or []
+            if not journeys:
+                break
+            last_iso = None
+            for j in journeys:
+                legs = j.get("legs") or []
+                if not legs:
+                    continue
+                first, last = legs[0], legs[-1]
+                origin = first.get("origin") or {}
+                dep_iso = origin.get("departureTimePlanned")
+                if not dep_iso:
+                    continue
+                last_iso = dep_iso
+                if j.get("interchanges") != 0:
+                    continue  # direct only
+                train = next(
+                    (x for x in legs if (x.get("transportation") or {}).get("product")),
+                    None,
+                )
+                tr = (train or {}).get("transportation") or {}
+                line = tr.get("disassembledName") or tr.get("number") or ""
+                if not re.match(r"^(RE|RB|S)", line):
+                    continue  # regional/S-Bahn only
+                if dep_iso in seen:
+                    continue
+                seen.add(dep_iso)
+                dest = last.get("destination") or {}
+                arr_iso = dest.get("arrivalTimePlanned")
+                sort_iso = dep_iso
+                sched, sched_date = _berlin_hhmm_date(dep_iso)
+                real, _ = _berlin_hhmm_date(origin.get("departureTimeEstimated"))
+                arr, _ = _berlin_hhmm_date(arr_iso)
+                arr_real, _ = _berlin_hhmm_date(dest.get("arrivalTimeEstimated"))
+                entry = {
+                    "line": line,
+                    "scheduled": sched,
+                    "scheduledDate": sched_date,
+                    "realtime": bool(real),
+                    "platform": (origin.get("properties") or {}).get("platform"),
+                    "trainNumber": (tr.get("properties") or {}).get("trainNumber"),
+                    "arr": arr,
+                    "_iso": sort_iso,
+                }
+                if real:
+                    entry["real"] = real
+                    entry["delay"] = _iso_delay_min(
+                        dep_iso, origin.get("departureTimeEstimated")
+                    )
+                if arr_real:
+                    entry["arrReal"] = arr_real
+                    entry["arrDelay"] = _iso_delay_min(
+                        arr_iso, dest.get("arrivalTimeEstimated")
+                    )
+                deps.append(entry)
+            if len(deps) >= want or not last_iso:
+                break
+            try:
+                adv = datetime.fromisoformat(
+                    last_iso.replace("Z", "+00:00")
+                ).astimezone(ZoneInfo("Europe/Berlin")) + timedelta(minutes=1)
+            except (ValueError, TypeError):
+                break
+            yyyymmdd = adv.strftime("%Y%m%d")
+            cur_time = adv.strftime("%H%M")
+    deps.sort(key=lambda e: e["_iso"])
+    deps = deps[:want]
+    for e in deps:
+        e.pop("_iso", None)
+    return deps
 
 
 def _check_transport_rate(request: Request, limit: int, window: float = 60.0) -> None:
@@ -1074,7 +1204,35 @@ async def transport_departures(request: Request, date: str):
     t = request.query_params.get("time") or ""
     if not _TRANSPORT_DATE_RE.match(date) or not _TRANSPORT_TIME_RE.match(t):
         raise HTTPException(400, "date (DD.MM.YYYY) and time (HH:MM) required")
+    route = request.query_params.get("route") or "zollverein"
     dir_key = request.query_params.get("dir") or "outbound"
+
+    if route == "duesseldorf":
+        if dir_key not in _TRANSPORT_DUES_TRIP:
+            raise HTTPException(400, "dir must be 'outbound' or 'inbound'")
+        _check_transport_rate(request, limit=30)
+        key = (date, t, f"dues:{dir_key}")
+        now = time.monotonic()
+        cached = _transport_cache.get(key)
+        if cached and now - cached[0] < 55:
+            return {"departures": cached[1], "ts": datetime.now(timezone.utc).isoformat()}
+        origin_id, dest_id = _TRANSPORT_DUES_TRIP[dir_key]
+        try:
+            deps = await _duesseldorf_trip_realtime(origin_id, dest_id, date, t)
+        except Exception:
+            if cached:
+                return {
+                    "departures": cached[1],
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "stale": True,
+                }
+            raise HTTPException(502, "Departure service unavailable")
+        _transport_cache[key] = (now, deps)
+        if len(_transport_cache) > 50:
+            oldest = min(_transport_cache, key=lambda k: _transport_cache[k][0])
+            del _transport_cache[oldest]
+        return {"departures": deps, "ts": datetime.now(timezone.utc).isoformat()}
+
     if dir_key not in _TRANSPORT_DIRECTIONS:
         raise HTTPException(400, "dir must be 'outbound' or 'inbound'")
     stop_id, dest_filters = _TRANSPORT_DIRECTIONS[dir_key]

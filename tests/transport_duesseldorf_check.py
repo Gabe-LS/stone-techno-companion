@@ -48,8 +48,8 @@ try:
               live: getComputedStyle(document.getElementById('live-indicator')).display,
             })"""
         )
-        if "Düsseldorf" not in out["title"]:
-            fails.append("outbound title not Düsseldorf")
+        if "DUS Airport" not in out["title"]:
+            fails.append("outbound title not DUS Airport")
         if out["swap"] == "none":
             fails.append("direction swap hidden (Düsseldorf is bidirectional)")
         if not any(x.startswith("RE") or x.startswith("S") for x in out["badges"]):
@@ -64,8 +64,8 @@ try:
             fails.append("Zollverein nav still active on Düsseldorf")
         if out["banner"] == "none":
             fails.append("walk banner hidden")
-        if out["tabs"] != 3:
-            fails.append("expected 3 day tabs")
+        if out["tabs"] != 4:
+            fails.append("expected 4 day tabs (Thu-Sun; airport adds Thursday)")
         if out["live"] != "none":
             fails.append("live indicator should be off (no realtime for Düsseldorf)")
 
@@ -77,7 +77,7 @@ try:
               dests: [...document.querySelectorAll('.dep-dest')].slice(0,6).map(e=>e.textContent.trim()),
             })"""
         )
-        if "Essen Hbf" not in rev["title"] or "Düsseldorf" not in rev["title"]:
+        if "Essen Hbf" not in rev["title"] or "DUS Airport" not in rev["title"]:
             fails.append("inbound title wrong")
         if not any(d in REV_HEADSIGNS for d in rev["dests"]):
             fails.append("no reverse headsigns")

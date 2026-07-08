@@ -334,6 +334,27 @@
   .dep-item.is-too-late .dep-walk,
   .dep-item.is-past .dep-countdown { color: var(--gray-500); }
 
+  /* Airport-train arrival time (right column) + platform/train-number sub-line */
+  .dep-arr {
+    font-size: var(--font-sm);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text);
+    white-space: nowrap;
+  }
+  .dep-arr-label { color: var(--color-text-secondary); font-size: var(--font-xs); }
+  .dep-arr-sched { text-decoration: line-through; color: var(--gray-500); margin-right: 4px; }
+  .dep-arr-real { color: var(--color-delay); font-weight: 600; }
+  .dep-item.is-past .dep-arr,
+  .dep-item.is-past .dep-arr-label { color: var(--gray-500); }
+
+  .dep-sub {
+    font-size: var(--font-xs);
+    color: var(--color-text-secondary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .dep-item.is-past .dep-sub { color: var(--gray-500); }
+
   .empty-state {
     text-align: center;
     padding: var(--space-xl) var(--space-lg);
@@ -618,14 +639,6 @@ var TIMETABLE_DATA = null;
   }
 
   function fetchRealtime() {
-    // Realtime for the Düsseldorf route (journey planner) is not wired yet, so
-    // that view shows the static schedule only. Zollverein keeps its live
-    // departure-monitor overlay below.
-    if (route !== "zollverein") {
-      realtimeActive = false;
-      document.getElementById("live-indicator").classList.remove("active");
-      return;
-    }
     var dayData = curDays()[activeDay];
     if (!dayData) return;
 
@@ -645,10 +658,10 @@ var TIMETABLE_DATA = null;
       return;
     }
 
-    var timeStr = String(now.hours).padStart(2, "0") + String(now.minutes).padStart(2, "0");
+    var timeStr = String(now.hours).padStart(2, "0") + ":" + String(now.minutes).padStart(2, "0");
     var dateStr = String(now.day).padStart(2, "0") + "." + String(now.month).padStart(2, "0") + "." + now.year;
 
-    fetch(API_BASE + "/api/transport/departures?date=" + encodeURIComponent(dateStr) + "&time=" + timeStr + "&dir=" + direction + "&limit=30")
+    fetch(API_BASE + "/api/transport/departures?date=" + encodeURIComponent(dateStr) + "&time=" + encodeURIComponent(timeStr) + "&dir=" + direction + "&route=" + route + "&limit=30")
       .then(function (r) { return r.json(); })
       .then(function (result) {
         if (!result.departures) return;
@@ -818,6 +831,21 @@ var TIMETABLE_DATA = null;
       dest.textContent = dep.direction.replace("Essen ", "");
       middle.appendChild(dest);
 
+      // Airport trains: platform (from schedule, live overrides) + the live
+      // train number under the headsign.
+      if (route === "duesseldorf") {
+        var plat = (rt && rt.platform) || dep.platform;
+        var subParts = [];
+        if (plat) subParts.push("Pl. " + plat);
+        if (rt && rt.trainNumber) subParts.push("#" + rt.trainNumber);
+        if (subParts.length) {
+          var sub = document.createElement("span");
+          sub.className = "dep-sub";
+          sub.textContent = subParts.join("  ·  ");
+          middle.appendChild(sub);
+        }
+      }
+
       if (isCanceled) {
         var cancelBadge = document.createElement("span");
         cancelBadge.className = "cancel-badge";
@@ -827,6 +855,29 @@ var TIMETABLE_DATA = null;
 
       var right = document.createElement("div");
       right.className = "dep-right";
+
+      // Airport trains: always show the arrival time (live-adjusted when late).
+      if (route === "duesseldorf" && dep.arr) {
+        var arrEl = document.createElement("span");
+        arrEl.className = "dep-arr";
+        var arrLbl = document.createElement("span");
+        arrLbl.className = "dep-arr-label";
+        arrLbl.textContent = "arr ";
+        arrEl.appendChild(arrLbl);
+        if (rt && rt.arrReal && rt.arrDelay > 0 && !isCanceled) {
+          var arrS = document.createElement("span");
+          arrS.className = "dep-arr-sched";
+          arrS.textContent = dep.arr;
+          var arrR = document.createElement("span");
+          arrR.className = "dep-arr-real";
+          arrR.textContent = rt.arrReal;
+          arrEl.appendChild(arrS);
+          arrEl.appendChild(arrR);
+        } else {
+          arrEl.appendChild(document.createTextNode(dep.arr));
+        }
+        right.appendChild(arrEl);
+      }
 
       if (rt && rt.countdown != null && isToday && !isPast && !isCanceled) {
         var cdEl = document.createElement("span");
