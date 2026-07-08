@@ -538,6 +538,37 @@ async function checkAuth() {
   catch { currentUser = null; return false; }
 }
 
+// Shared chrome for the signed-out screens (sign-in and profile setup):
+// desktop shows the cmd-bar matching the other pages, mobile shows the chat
+// header; the hamburger menu markup pairs with the header.
+function _authChromeTop(title) {
+  return `
+    <nav class="cmd-bar auth-cmd-bar" aria-label="Main navigation">
+      <div class="cmd-group">
+        <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] lineup (auth cmd-bar)');location.href='/line-up'">Line-up</button>
+        <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] timetable (auth cmd-bar)');location.href='/timetable'">Timetable</button>
+        <button type="button" class="active">Chat</button>
+        <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] transport (auth cmd-bar)');location.href='/transport'">Transport</button>
+      </div>
+    </nav>
+    <div class="header">
+      <a href="/line-up" class="nav-icon" aria-label="Lineup section" onclick="event.preventDefault();dbg('[NAV] lineup section (calendar icon)');location.href=storageGet('stc_view')==='timetable'?'/timetable':'/line-up'">${ICON_CALENDAR}</a>
+      <div class="header-info"><span class="title">${title || 'Chat'}</span></div>
+      <button type="button" class="hamburger" onclick="toggleChatMenu()">${ICON_HAMBURGER}</button>
+    </div>`;
+}
+
+function _authChromeMenu() {
+  return `
+    <div class="chat-menu" id="chat-menu">
+      <a class="menu-section" href="/line-up" onclick="dbg('[NAV] lineup (login menu)')" style="text-decoration:none">Line-up</a>
+      <a class="menu-section" href="/timetable" onclick="dbg('[NAV] timetable (login menu)')" style="text-decoration:none">Timetable</a>
+      <a class="menu-section" href="/transport" onclick="dbg('[NAV] transport (login menu)')" style="text-decoration:none">Transport</a>
+      <a class="menu-footer" href="/privacy" onclick="dbg('[NAV] privacy (login menu)')">Privacy</a>
+    </div>
+    <div class="menu-overlay" id="menu-overlay" onclick="closeChatMenu()"></div>`;
+}
+
 async function renderAuth() {
   dbg('renderAuth');
   if (!_googleClientId) {
@@ -562,19 +593,7 @@ async function renderAuth() {
     : '';
   document.getElementById('app').classList.add('auth-mode');
   document.getElementById('app').innerHTML = `
-    <nav class="cmd-bar auth-cmd-bar" aria-label="Main navigation">
-      <div class="cmd-group">
-        <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] lineup (auth cmd-bar)');location.href='/line-up'">Line-up</button>
-        <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] timetable (auth cmd-bar)');location.href='/timetable'">Timetable</button>
-        <button type="button" class="active">Chat</button>
-        <button type="button" onmousedown="this.blur()" onclick="dbg('[NAV] transport (auth cmd-bar)');location.href='/transport'">Transport</button>
-      </div>
-    </nav>
-    <div class="header">
-      <a href="/line-up" class="nav-icon" aria-label="Lineup section" onclick="event.preventDefault();dbg('[NAV] lineup section (calendar icon)');location.href=storageGet('stc_view')==='timetable'?'/timetable':'/line-up'">${ICON_CALENDAR}</a>
-      <div class="header-info"><span class="title">Chat</span></div>
-      <button class="hamburger" onclick="toggleChatMenu()">${ICON_HAMBURGER}</button>
-    </div>
+    ${_authChromeTop()}
     <div class="auth-screen">
       <h2>Sign in to chat</h2>
       <div class="auth-stage" id="auth-stage">
@@ -592,13 +611,7 @@ async function renderAuth() {
         </div>
       </div>
     </div>
-    <div class="chat-menu" id="chat-menu">
-      <a class="menu-section" href="/line-up" onclick="dbg('[NAV] lineup (login menu)')" style="text-decoration:none">Line-up</a>
-      <a class="menu-section" href="/timetable" onclick="dbg('[NAV] timetable (login menu)')" style="text-decoration:none">Timetable</a>
-      <a class="menu-section" href="/transport" onclick="dbg('[NAV] transport (login menu)')" style="text-decoration:none">Transport</a>
-      <a class="menu-footer" href="/privacy" onclick="dbg('[NAV] privacy (login menu)')">Privacy</a>
-    </div>
-    <div class="menu-overlay" id="menu-overlay" onclick="closeChatMenu()"></div>`;
+    ${_authChromeMenu()}`;
   if (_googleClientId) _ensureGoogleInit();
   verify('renderAuth', document.querySelector('.auth-screen'), 'auth screen rendered');
   verify('renderAuth', document.getElementById('email-input'), 'email input exists');
@@ -793,8 +806,9 @@ function renderProfilePrompt() {
   _selectedCountry = currentUser?.country || '';
   _usernameOk = !!(currentUser?.username);
   const countryDisplay = _selectedCountry ? FLAG(_selectedCountry) + ' ' + (COUNTRIES.find(c => c[0] === _selectedCountry)?.[1] || '') : '';
-  document.getElementById('app').classList.remove('auth-mode');
+  document.getElementById('app').classList.add('auth-mode');
   document.getElementById('app').innerHTML = `
+    ${_authChromeTop('Set up your profile')}
     <div class="profile-prompt">
       <h2>Set up your profile</h2>
       <div class="avatar-upload" id="avatar-upload" onclick="uploadAvatar()">
@@ -821,7 +835,8 @@ function renderProfilePrompt() {
         <div id="preview-bubble"></div>
       </div>
       <button onclick="submitProfile()">Continue</button>
-    </div>`;
+    </div>
+    ${_authChromeMenu()}`;
   _profileAvatarUrl = currentUser?.avatar_url || '';
   document.getElementById('username-input').focus();
   updateProfilePreview();
@@ -3194,7 +3209,7 @@ function showTrimEditor(file, objectUrl, duration) {
     </div>`;
 
     const dismiss = () => { overlay.classList.remove('open'); setTimeout(() => overlay.remove(), 200); };
-    overlay.addEventListener('click', () => { dismiss(); reject(new Error('Cancelled')); });
+    _bindBackdropClose(overlay, () => { dismiss(); reject(new Error('Cancelled')); });
     document.body.appendChild(overlay);
     requestAnimationFrame(() => overlay.classList.add('open'));
 
@@ -3576,7 +3591,7 @@ function openMeetupModal() {
       <button class="modal-btn-primary" onclick="submitMeetup()">Create Meetup</button>
     </div>
   </div>`;
-  modal.addEventListener('click', closeMeetupModal);
+  _bindBackdropClose(modal, closeMeetupModal);
   modal._trigger = _meetupTrigger;
   document.body.appendChild(modal);
   modal.querySelector('.modal').addEventListener('keydown', (e) => {
@@ -3715,8 +3730,7 @@ async function openMeetupMapPicker() {
   </div>`;
   // Close only on a genuine backdrop click (press starts AND ends on the overlay),
   // so a map pan that releases over the backdrop doesn't dismiss it.
-  overlay.addEventListener('pointerdown', (e) => { overlay._downOnBackdrop = (e.target === overlay); });
-  overlay.addEventListener('click', (e) => { if (e.target === overlay && overlay._downOnBackdrop) closeMeetupMapPicker(); });
+  _bindBackdropClose(overlay, closeMeetupMapPicker);
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('open'));
   _meetupMap = new maplibregl.Map({
@@ -3906,7 +3920,7 @@ function showConfirm(title, detail, onConfirm, btnLabel) {
       <button class="modal-btn-primary" id="confirm-yes">${escapeHtml(btnLabel || 'Confirm')}</button>
     </div>
   </div>`;
-  overlay.addEventListener('click', dismiss);
+  _bindBackdropClose(overlay, dismiss);
   document.body.appendChild(overlay);
   document.getElementById('confirm-yes').onclick = () => { dismiss(); onConfirm(); };
   document.getElementById('confirm-close').onclick = dismiss;
@@ -4117,7 +4131,7 @@ function openProfileModal() {
       <button class="modal-btn-primary" onclick="saveProfile()">Save</button>
     </div>
   </div>`;
-  overlay.addEventListener('click', closeProfileModal);
+  _bindBackdropClose(overlay, closeProfileModal);
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('open'));
   updateEditPreview();
@@ -4611,7 +4625,7 @@ function openNotificationsModal() {
       <button class="modal-btn-primary" onclick="${active ? '_disableAllNotifications()' : '_enableAllNotifications()'}">${active ? 'Disable notifications' : 'Enable notifications'}</button>
     </div>
   </div>`;
-  overlay.addEventListener('click', closeNotificationsModal);
+  _bindBackdropClose(overlay, closeNotificationsModal);
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('open'));
 }
@@ -4757,7 +4771,7 @@ async function openBlockedUsersModal() {
     </div>
     <div class="modal-body">${items}</div>
   </div>`;
-  overlay.addEventListener('click', () => overlay.remove());
+  _bindBackdropClose(overlay, () => overlay.remove());
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('open'));
 }
@@ -4866,7 +4880,14 @@ function openImageViewer(url) {
   overlay.id = 'image-viewer';
   overlay.className = 'image-viewer';
   overlay.innerHTML = `<img src="${esc(url)}">`;
-  overlay.addEventListener('click', closeViewer);
+  // Click anywhere (image included) closes by design, so gate on drag
+  // distance rather than target: releasing a pan/selection over the
+  // overlay fires a click that must not close the viewer.
+  overlay.addEventListener('pointerdown', (e) => { overlay._down = { x: e.clientX, y: e.clientY }; });
+  overlay.addEventListener('click', (e) => {
+    const d = overlay._down;
+    if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 8) closeViewer();
+  });
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('open'));
 }
@@ -4881,12 +4902,21 @@ function openVideoViewer(url, startTime) {
     <video src="${esc(url)}" autoplay playsinline style="width:100%;max-height:90vh;border-radius:4px;display:block" onclick="this.paused?this.play():this.pause()" onloadedmetadata="this.currentTime=${startTime || 0}"></video>
     <svg class="viewer-close" viewBox="0 0 24 24" fill="#fff" onclick="event.stopPropagation();closeViewer()"><path fill-rule="evenodd" clip-rule="evenodd" d="M14 1.25C14.4142 1.25 14.75 1.58579 14.75 2C14.75 3.90682 14.7516 5.26149 14.8898 6.28915C15.025 7.29524 15.2787 7.87489 15.7019 8.2981C16.1251 8.72131 16.7048 8.97498 17.7108 9.11024C18.7385 9.24841 20.0932 9.25 22 9.25C22.4142 9.25 22.75 9.58579 22.75 10C22.75 10.4142 22.4142 10.75 22 10.75H21.9436C20.1058 10.75 18.6502 10.75 17.511 10.5969C16.3386 10.4392 15.3896 10.1071 14.6412 9.35876C13.8929 8.61039 13.5608 7.66145 13.4031 6.48902C13.25 5.34981 13.25 3.89417 13.25 2.05641V2C13.25 1.58579 13.5858 1.25 14 1.25ZM10 1.25C10.4142 1.25 10.75 1.58579 10.75 2V2.05641C10.75 3.89417 10.75 5.34981 10.5969 6.48902C10.4392 7.66145 10.1071 8.61039 9.35876 9.35876C8.61039 10.1071 7.66145 10.4392 6.48902 10.5969C5.34981 10.75 3.89417 10.75 2.05641 10.75H2C1.58579 10.75 1.25 10.4142 1.25 10C1.25 9.58579 1.58579 9.25 2 9.25C3.90682 9.25 5.26149 9.24841 6.28915 9.11024C7.29524 8.97498 7.87489 8.72131 8.2981 8.2981C8.72131 7.87489 8.97498 7.29524 9.11024 6.28915C9.24841 5.26149 9.25 3.90682 9.25 2C9.25 1.58579 9.58579 1.25 10 1.25ZM1.25 14C1.25 13.5858 1.58579 13.25 2 13.25H2.05641C3.89417 13.25 5.34981 13.25 6.48902 13.4031C7.66145 13.5608 8.61039 13.8929 9.35876 14.6412C10.1071 15.3896 10.4392 16.3386 10.5969 17.511C10.75 18.6502 10.75 20.1058 10.75 21.9436V22C10.75 22.4142 10.4142 22.75 10 22.75C9.58579 22.75 9.25 22.4142 9.25 22C9.25 20.0932 9.24841 18.7385 9.11024 17.7108C8.97498 16.7048 8.72131 16.1251 8.2981 15.7019C7.87489 15.2787 7.29524 15.025 6.28915 14.8898C5.26149 14.7516 3.90682 14.75 2 14.75C1.58579 14.75 1.25 14.4142 1.25 14ZM21.9436 13.25H22C22.4142 13.25 22.75 13.5858 22.75 14C22.75 14.4142 22.4142 14.75 22 14.75C20.0932 14.75 18.7385 14.7516 17.7108 14.8898C16.7048 15.025 16.1251 15.2787 15.7019 15.7019C15.2787 16.1251 15.025 16.7048 14.8898 17.7108C14.7516 18.7385 14.75 20.0932 14.75 22C14.75 22.4142 14.4142 22.75 14 22.75C13.5858 22.75 13.25 22.4142 13.25 22V21.9436C13.25 20.1058 13.25 18.6502 13.4031 17.511C13.5608 16.3386 13.8929 15.3896 14.6412 14.6412C15.3896 13.8929 16.3386 13.5608 17.511 13.4031C18.6502 13.25 20.1058 13.25 21.9436 13.25Z"/></svg>
   </div>`;
-  overlay.addEventListener('click', closeViewer);
+  _bindBackdropClose(overlay, closeViewer);
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('open'));
 }
 
 // --- Helpers ---
+// Backdrop click-to-close that ignores drags started inside the dialog: when
+// a text selection or image pan is released over the gray overlay, the click
+// event fires on the overlay (the common ancestor of press and release) and
+// would close the dialog mid-interaction. Close only when the press ALSO
+// started on the backdrop itself.
+function _bindBackdropClose(overlay, close) {
+  overlay.addEventListener('pointerdown', (e) => { overlay._downOnBackdrop = (e.target === overlay); });
+  overlay.addEventListener('click', (e) => { if (e.target === overlay && overlay._downOnBackdrop) close(e); });
+}
 function jss(s) { return esc(String(s).replace(/[`'\\]/g, '\\$&')); }
 function _safeHref(url) { return /^https?:\/\//i.test(url) ? url : '#'; }
 function _linkify(text) {

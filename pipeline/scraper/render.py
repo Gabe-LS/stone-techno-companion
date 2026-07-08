@@ -2162,7 +2162,12 @@ def render_output_html(
       if (_modalTrigger) { _modalTrigger.focus(); _modalTrigger = null; }
     }
     document.querySelectorAll('.modal-overlay').forEach(ov => {
-      ov.addEventListener('click', e => { if (e.target === ov) closeDialog(ov.id); });
+      // Close only when the press STARTED on the backdrop too: a text
+      // selection or drag that begins inside the box and is released over
+      // the overlay fires the click on the overlay (common ancestor of
+      // press and release) and must not close the dialog.
+      ov.addEventListener('pointerdown', e => { ov._downOnBackdrop = (e.target === ov); });
+      ov.addEventListener('click', e => { if (e.target === ov && ov._downOnBackdrop) closeDialog(ov.id); });
       ov.addEventListener('wheel', e => { if (!e.target.closest('.modal-box')) e.preventDefault(); }, { passive: false });
     });
     document.addEventListener('keydown', e => {
