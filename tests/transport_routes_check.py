@@ -2,7 +2,7 @@
 """Browser check for the transport route slugs, slash dates, and compact tabs.
 
 - The four ?route= slugs each load the right view/direction:
-  zollverein-essen, essen-zollverein, duesseldorf-essen, essen-duesseldorf
+  zollverein-essen, essen-zollverein, dus-airport-essen, essen-dus-airport
   (and bare /transport defaults to zollverein-essen).
 - Day-tab dates render with slashes (dd/mm/yyyy), never dots.
 - Narrow viewports abbreviate the tabs ("Thu" / "09/07") without wrapping;
@@ -31,9 +31,11 @@ fails = []
 EXPECT = {
     "zollverein-essen": ("Zollverein", "Essen Hbf"),
     "essen-zollverein": ("Essen Hbf", "Zollverein"),
-    "duesseldorf-essen": ("DUS Airport", "Essen Hbf"),
-    "essen-duesseldorf": ("Essen Hbf", "DUS Airport"),
+    "dus-airport-essen": ("DUS Airport", "Essen Hbf"),
+    "essen-dus-airport": ("Essen Hbf", "DUS Airport"),
 }
+# The mobile Transport sub-rows, in order (line-up dd-option style).
+MENU_ORDER = ["dus-airport-essen", "essen-dus-airport", "zollverein-essen", "essen-zollverein"]
 try:
     from playwright.sync_api import sync_playwright
 
@@ -75,7 +77,7 @@ try:
             )
 
         pg = b.new_context(viewport={"width": 360, "height": 800}).new_page()
-        pg.goto(base + "/transport?route=duesseldorf-essen", timeout=30000)
+        pg.goto(base + "/transport?route=dus-airport-essen", timeout=30000)
         pg.wait_for_selector(".dep-item", timeout=15000)
         pg.wait_for_timeout(150)
         narrow = probe(pg)
@@ -86,7 +88,7 @@ try:
         pg.close()
 
         pg = b.new_context(viewport={"width": 768, "height": 800}).new_page()
-        pg.goto(base + "/transport?route=duesseldorf-essen", timeout=30000)
+        pg.goto(base + "/transport?route=dus-airport-essen", timeout=30000)
         pg.wait_for_selector(".dep-item", timeout=15000)
         pg.wait_for_timeout(150)
         wide = probe(pg)
@@ -102,15 +104,24 @@ try:
         if tram["wrap"]:
             fails.append("tram tabs wrap at 360px")
 
-        # Menu label.
-        pg = b.new_context(viewport={"width": 1000, "height": 700}).new_page()
+        # Mobile Transport sub-rows: line-up dd-option style, order, DUS Airport
+        # label, and the current view highlighted.
+        pg = b.new_context(viewport={"width": 420, "height": 820}).new_page()
         pg.goto(base + "/transport?route=zollverein-essen", timeout=30000)
         pg.wait_for_selector(".dep-item", timeout=15000)
-        labels = pg.evaluate(
-            "()=>[...document.querySelectorAll('[data-route=\"duesseldorf\"]')].map(e=>e.textContent.trim())"
+        pg.evaluate("toggleMenu()")
+        pg.wait_for_timeout(250)
+        menu = pg.evaluate(
+            """()=>[...document.querySelectorAll('.cmd-dropdown button.dd-option')].map(r=>({
+              slug:r.dataset.slug, txt:r.textContent.replace(/\\s+/g,' ').trim(),
+              active:r.classList.contains('active')}))"""
         )
-        if not labels or not all("DUS Airport" in x for x in labels):
-            fails.append(f"menu label not DUS Airport ({labels})")
+        if [r["slug"] for r in menu] != MENU_ORDER:
+            fails.append(f"mobile sub-row order wrong ({[r['slug'] for r in menu]})")
+        if not any("DUS Airport" in r["txt"] for r in menu):
+            fails.append("no DUS Airport sub-row")
+        if not any(r["slug"] == "zollverein-essen" and r["active"] for r in menu):
+            fails.append("default view not highlighted in menu")
         b.close()
 finally:
     h.stop_server(proc)

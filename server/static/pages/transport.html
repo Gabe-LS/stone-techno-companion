@@ -181,6 +181,11 @@
   /* vertical-align:middle lands ~0.12em low against the cap height; lift to the
      text's optical centre. */
   .nav-arrow svg { height: 0.65em; width: auto; transform: translateY(-0.12em); }
+  /* Keep the selected itinerary highlighted over the dd-option background, and
+     drop the inline nudge inside the flex dd-option rows (align-items centres). */
+  .cmd-dropdown button.dd-option.active { background: var(--gray-700); }
+  .cmd-dropdown button.dd-option .nav-arrow { margin: 0 0.3em; }
+  .cmd-dropdown button.dd-option .nav-arrow svg { transform: none; }
 
   .day-panel { display: none; }
   .day-panel[aria-hidden="false"] { display: block; }
@@ -408,9 +413,7 @@
     .route-title { font-size: var(--font-xl); padding: var(--space-sm) 0 6px; }
     /* Transport itineraries as indented secondary rows under the Transport
        main row in the mobile menu. */
-    .cmd-dropdown button.dd-sub { padding-left: var(--space-2xl); font-size: var(--font-sm); font-weight: 500; color: #cfcfcf; }
-    .cmd-dropdown button.dd-sub.active { color: #fff; }
-  }
+      }
 </style>
 </head>
 <body>
@@ -425,7 +428,7 @@
     <button type="button" class="active">Transport</button>
     <div class="cmd-sep"></div>
     <button type="button" onmousedown="this.blur()" class="active" data-route="zollverein" onclick="dbg('[NAV] zollverein-essen'); location.href='/transport?route=zollverein-essen'">Zollverein <span class="nav-arrow"><svg viewBox="7.5 3.5 9 17" fill="currentColor" aria-hidden="true"><path stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" fill-rule="evenodd" clip-rule="evenodd" d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"/></svg></span> Essen</button>
-    <button type="button" onmousedown="this.blur()" data-route="duesseldorf" onclick="dbg('[NAV] duesseldorf-essen'); location.href='/transport?route=duesseldorf-essen'">DUS Airport <span class="nav-arrow"><svg viewBox="7.5 3.5 9 17" fill="currentColor" aria-hidden="true"><path stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" fill-rule="evenodd" clip-rule="evenodd" d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"/></svg></span> Essen</button>
+    <button type="button" onmousedown="this.blur()" data-route="duesseldorf" onclick="dbg('[NAV] dus-airport-essen'); location.href='/transport?route=dus-airport-essen'">DUS Airport <span class="nav-arrow"><svg viewBox="7.5 3.5 9 17" fill="currentColor" aria-hidden="true"><path stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" fill-rule="evenodd" clip-rule="evenodd" d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"/></svg></span> Essen</button>
   </div>
   <button type="button" class="hamburger" onclick="toggleMenu()" aria-label="Menu"></button>
 </nav>
@@ -434,8 +437,10 @@
   <button type="button" onclick="dbg('[NAV] timetable (menu)'); location.href='/timetable'">Timetable</button>
   <button type="button" onclick="dbg('[NAV] chat (menu)'); location.href='/chat'">Chat</button>
   <button type="button" class="active" onclick="closeMenu()">Transport</button>
-  <button type="button" class="dd-sub active" data-route="zollverein" onclick="dbg('[NAV] zollverein-essen (menu)'); location.href='/transport?route=zollverein-essen'">Zollverein <span class="nav-arrow"><svg viewBox="7.5 3.5 9 17" fill="currentColor" aria-hidden="true"><path stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" fill-rule="evenodd" clip-rule="evenodd" d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"/></svg></span> Essen</button>
-  <button type="button" class="dd-sub" data-route="duesseldorf" onclick="dbg('[NAV] duesseldorf-essen (menu)'); location.href='/transport?route=duesseldorf-essen'">DUS Airport <span class="nav-arrow"><svg viewBox="7.5 3.5 9 17" fill="currentColor" aria-hidden="true"><path stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" fill-rule="evenodd" clip-rule="evenodd" d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"/></svg></span> Essen</button>
+  <button type="button" class="dd-option" data-slug="dus-airport-essen" onclick="dbg('[NAV] dus-airport-essen (menu)'); location.href='/transport?route=dus-airport-essen'">DUS Airport <span class="nav-arrow"><svg viewBox="7.5 3.5 9 17" fill="currentColor" aria-hidden="true"><path stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" fill-rule="evenodd" clip-rule="evenodd" d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"/></svg></span> Essen</button>
+  <button type="button" class="dd-option" data-slug="essen-dus-airport" onclick="dbg('[NAV] essen-dus-airport (menu)'); location.href='/transport?route=essen-dus-airport'">Essen <span class="nav-arrow"><svg viewBox="7.5 3.5 9 17" fill="currentColor" aria-hidden="true"><path stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" fill-rule="evenodd" clip-rule="evenodd" d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"/></svg></span> DUS Airport</button>
+  <button type="button" class="dd-option active" data-slug="zollverein-essen" onclick="dbg('[NAV] zollverein-essen (menu)'); location.href='/transport?route=zollverein-essen'">Zollverein <span class="nav-arrow"><svg viewBox="7.5 3.5 9 17" fill="currentColor" aria-hidden="true"><path stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" fill-rule="evenodd" clip-rule="evenodd" d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"/></svg></span> Essen</button>
+  <button type="button" class="dd-option" data-slug="essen-zollverein" onclick="dbg('[NAV] essen-zollverein (menu)'); location.href='/transport?route=essen-zollverein'">Essen <span class="nav-arrow"><svg viewBox="7.5 3.5 9 17" fill="currentColor" aria-hidden="true"><path stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" fill-rule="evenodd" clip-rule="evenodd" d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"/></svg></span> Zollverein</button>
 </div>
 <div class="menu-overlay" id="menu-overlay" onclick="closeMenu()"></div>
 <script>
@@ -516,6 +521,9 @@ var TIMETABLE_DATA = null;
   var _ROUTE_SLUGS = {
     "zollverein-essen": ["zollverein", "outbound"],
     "essen-zollverein": ["zollverein", "inbound"],
+    "dus-airport-essen": ["duesseldorf", "outbound"],
+    "essen-dus-airport": ["duesseldorf", "inbound"],
+    // legacy aliases
     "duesseldorf-essen": ["duesseldorf", "outbound"],
     "essen-duesseldorf": ["duesseldorf", "inbound"],
     "duesseldorf": ["duesseldorf", "outbound"]
@@ -525,7 +533,7 @@ var TIMETABLE_DATA = null;
 
   // The URL slug for the current (route, direction), for nav + URL sync.
   function routeSlug() {
-    if (route === "duesseldorf") return direction === "inbound" ? "essen-duesseldorf" : "duesseldorf-essen";
+    if (route === "duesseldorf") return direction === "inbound" ? "essen-dus-airport" : "dus-airport-essen";
     return direction === "inbound" ? "essen-zollverein" : "zollverein-essen";
   }
 
@@ -558,8 +566,14 @@ var TIMETABLE_DATA = null;
   }
 
   function setNavActive() {
+    var slug = routeSlug();
+    // Desktop cmd-bar buttons mark the itinerary (base route); the mobile menu
+    // sub-rows mark the exact direction (slug).
     document.querySelectorAll("[data-route]").forEach(function (el) {
       el.classList.toggle("active", el.dataset.route === route);
+    });
+    document.querySelectorAll("[data-slug]").forEach(function (el) {
+      el.classList.toggle("active", el.dataset.slug === slug);
     });
   }
 
@@ -597,6 +611,7 @@ var TIMETABLE_DATA = null;
     realtimeActive = false;
     document.getElementById("live-indicator").classList.remove("active");
     if (activeDay >= curDays().length) activeDay = 0;
+    setNavActive();
     updateRouteTitle();
     refreshWalkForDirection();
     renderTabs();
