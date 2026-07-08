@@ -238,17 +238,11 @@ def render_output_html(
     parts.append("<!DOCTYPE html>")
     parts.append('<html lang="en">')
     parts.append("<head>")
-    # Last-section memory: a PWA launch at start_url '/' lands on whichever
-    # section the user was in last. Only '/' redirects -- explicit visits to
-    # /line-up or /timetable always stay, and those visits reclaim the flag
-    # so the next launch returns here.
-    parts.append(
-        "  <script>(function(){try{"
-        "if(location.pathname==='/'&&localStorage.getItem('last_section')==='chat')"
-        "{location.replace('/chat');return;}"
-        "localStorage.setItem('last_section','lineup');"
-        "}catch(e){}})()</script>"
-    )
+    # '/' always resolves to the last used LINEUP view (stc_view, set in the
+    # script below): line-up or timetable, never chat or transport. The old
+    # last-section memory that bounced a PWA launch at '/' into /chat was
+    # removed on purpose (owner decision, July 2026): the neutral root must
+    # be deterministic between the two lineup views only.
     if has_timetable:
         parts.append(
             "  <script>(function(){"
