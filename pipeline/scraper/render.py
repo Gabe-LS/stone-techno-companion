@@ -277,7 +277,7 @@ def render_output_html(
         ".view-timetable #btn-timetable{color:#fff!important}"
         ".view-list #btn-timetable{color:#aaa}"
         ".view-timetable #view-label{font-size:0}"
-        ".view-timetable #view-label::after{content:'Timetable';font-size:16px}"
+        ".view-timetable #view-label::after{content:'Timetable';font-size:var(--font-sm)}"
         ".view-timetable #page-title{font-size:0}"
         ".view-timetable #page-title::after{content:'Timetable';font-size:var(--font-2xl)}"
         "@media (max-width:768px){.view-timetable #page-title::after{font-size:var(--font-xl)}}"

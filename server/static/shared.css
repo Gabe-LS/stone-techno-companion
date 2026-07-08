@@ -244,7 +244,8 @@ body {
   .cmd-bar .cmd-group { display: none; }
   .cmd-bar .cmd-group-right { display: none !important; }
   .cmd-sep { display: none; }
-  .cmd-bar .view-label { color: #fff; font-size: var(--font-base); font-weight: 600; letter-spacing: 0.02em; display: flex; align-items: center; height: 100%; padding-left: 40px; }
+  /* Matches the chat header title (.header .header-info .title): font-sm, 600, no letter-spacing */
+  .cmd-bar .view-label { color: #fff; font-size: var(--font-sm); font-weight: 600; display: flex; align-items: center; height: 100%; padding-left: 40px; }
   .nav-icon { display: flex; }
   .hamburger { display: flex; }
   .cmd-dropdown { position: fixed; top: var(--header-h); left: 0; right: 0; z-index: var(--z-menu); background: var(--gray-900); flex-direction: column; box-shadow: var(--shadow-modal); }
