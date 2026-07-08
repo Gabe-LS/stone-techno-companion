@@ -351,6 +351,12 @@
      margin on the sticky element it vanishes when stuck, same as the lineup */
   .sticky-top { top: 28px; z-index: 30; margin-top: 21px; }
   .route-title { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; padding: var(--space-md) 0 var(--space-sm); border-bottom: 2px solid var(--color-text); }
+  .route-title-main { display: flex; align-items: center; gap: var(--space-xs); min-width: 0; }
+  .route-title-main > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dir-toggle-btn { flex-shrink: 0; background: none; border: none; padding: 6px; margin-left: 2px; cursor: pointer; color: var(--color-muted); display: flex; align-items: center; -webkit-tap-highlight-color: transparent; }
+  .dir-toggle-btn:active { color: var(--color-text); }
+  @media (hover: hover) { .dir-toggle-btn:hover { color: var(--color-text); } }
+  .dir-toggle-btn svg { width: 22px; height: 22px; display: block; }
   .live-indicator { color: var(--color-text); }
 
   @media (max-width: 768px) {
@@ -420,7 +426,10 @@
 
 <div class="sticky-top fade-after">
   <div class="route-title">
-    <span>Zollverein → Essen Hbf</span>
+    <div class="route-title-main">
+      <span id="route-title-text">Zollverein → Essen Hbf</span>
+      <button type="button" id="dir-toggle" class="dir-toggle-btn" aria-label="Show the opposite direction"></button>
+    </div>
     <div id="live-indicator" class="live-indicator">
       <div class="live-label"><span class="live-dot"></span><span>LIVE</span></div>
       <div id="live-updated" class="live-updated"></div>
@@ -442,6 +451,7 @@ var TIMETABLE_DATA = null;
   "use strict";
 
   var data = null;
+  var direction = "outbound";  // "outbound" (Zollverein->Hbf) | "inbound" (Hbf->Zollverein)
   var walkMinutes = null;
   var activeDay = 0;
   var realtimeCache = {};
@@ -452,6 +462,44 @@ var TIMETABLE_DATA = null;
   var STOP_LAT = 51.486095;
   var STOP_LNG = 7.046062;
   var WALK_SPEED_KMH = 4.5;
+
+  function curDays() {
+    return (direction === "inbound" && data.reverse) ? data.reverse.days : data.days;
+  }
+  function curRoute() {
+    return (direction === "inbound" && data.reverse) ? data.reverse.route : data.route;
+  }
+  function isOutbound() { return direction === "outbound"; }
+
+  function updateRouteTitle() {
+    var r = curRoute();
+    document.getElementById("route-title-text").textContent = r.from + " → " + r.to;
+    document.title = r.from + " → " + r.to + " · Transport";
+  }
+
+  function updateWalkUI() {
+    // The walk-to-stop feature targets the Zollverein stop, so it is only
+    // meaningful for the outbound board (walk to catch the tram home). Hide it
+    // on the inbound board, where you board at Essen Hbf.
+    document.getElementById("location-banner").style.display = isOutbound() ? "" : "none";
+  }
+
+  function toggleDirection() {
+    if (!data || !data.reverse) return;
+    direction = isOutbound() ? "inbound" : "outbound";
+    dbg("[TRANSPORT] toggle direction -> " + direction);
+    // Realtime is per-direction: a stale entry from the other direction could
+    // match by line+time+date, so drop the whole cache on switch.
+    realtimeCache = {};
+    realtimeActive = false;
+    document.getElementById("live-indicator").classList.remove("active");
+    if (activeDay >= curDays().length) activeDay = 0;
+    updateRouteTitle();
+    updateWalkUI();
+    renderTabs();
+    renderPanel();
+    fetchRealtime();
+  }
 
   function parseDate(dateStr) {
     var p = dateStr.split(".");
@@ -494,8 +542,8 @@ var TIMETABLE_DATA = null;
 
   function findTodayIndex() {
     var now = getNow();
-    for (var i = 0; i < data.days.length; i++) {
-      var d = parseDate(data.days[i].date);
+    for (var i = 0; i < curDays().length; i++) {
+      var d = parseDate(curDays()[i].date);
       if (d.day === now.day && d.month === now.month && d.year === now.year) return i;
       if (now.hours < 4) {
         var yesterday = new Date(now.year, now.month - 1, now.day - 1);
@@ -520,7 +568,7 @@ var TIMETABLE_DATA = null;
   }
 
   function fetchRealtime() {
-    var dayData = data.days[activeDay];
+    var dayData = curDays()[activeDay];
     if (!dayData) return;
 
     var now = getNow();
@@ -542,7 +590,7 @@ var TIMETABLE_DATA = null;
     var timeStr = String(now.hours).padStart(2, "0") + String(now.minutes).padStart(2, "0");
     var dateStr = String(now.day).padStart(2, "0") + "." + String(now.month).padStart(2, "0") + "." + now.year;
 
-    fetch(API_BASE + "/api/transport/departures?date=" + encodeURIComponent(dateStr) + "&time=" + timeStr + "&limit=30")
+    fetch(API_BASE + "/api/transport/departures?date=" + encodeURIComponent(dateStr) + "&time=" + timeStr + "&dir=" + direction + "&limit=30")
       .then(function (r) { return r.json(); })
       .then(function (result) {
         if (!result.departures) return;
@@ -574,8 +622,8 @@ var TIMETABLE_DATA = null;
   function renderTabs() {
     var tabs = document.getElementById("day-tabs");
     tabs.innerHTML = "";
-    for (var i = 0; i < data.days.length; i++) {
-      var d = data.days[i];
+    for (var i = 0; i < curDays().length; i++) {
+      var d = curDays()[i];
       var btn = document.createElement("button");
       btn.type = "button";
       btn.className = "day-tab" + (i === activeDay ? " active" : "");
@@ -598,7 +646,7 @@ var TIMETABLE_DATA = null;
     var panels = document.getElementById("day-panels");
     panels.innerHTML = "";
 
-    var dayData = data.days[activeDay];
+    var dayData = curDays()[activeDay];
     if (!dayData || dayData.departures.length === 0) {
       panels.innerHTML = '<div class="empty-state">No departures available</div>';
       return;
@@ -652,7 +700,7 @@ var TIMETABLE_DATA = null;
         } else if (effectiveSvcMin < now.nowServiceMinutes) {
           isPast = true;
         } else if (!nextFound) {
-          if (walkMinutes !== null) {
+          if (walkMinutes !== null && isOutbound()) {
             var leaveBy = effectiveSvcMin - walkMinutes;
             if (leaveBy < now.nowServiceMinutes) {
               isTooLate = true;
@@ -727,7 +775,7 @@ var TIMETABLE_DATA = null;
         cdEl.className = "dep-countdown";
         cdEl.textContent = "arr. in " + rt.countdown + " min";
         right.appendChild(cdEl);
-      } else if (walkMinutes !== null && !isPast && isToday) {
+      } else if (walkMinutes !== null && isOutbound() && !isPast && isToday) {
         var minsLeft = effectiveSvcMin - now.nowServiceMinutes;
         if (minsLeft > 0) {
           var walkEl = document.createElement("span");
@@ -839,6 +887,11 @@ var TIMETABLE_DATA = null;
       STOP_LAT = d.stop.lat;
       STOP_LNG = d.stop.lng;
     }
+    // Show the direction toggle only when the reverse dataset is present.
+    var toggle = document.getElementById("dir-toggle");
+    if (toggle) toggle.style.display = d.reverse ? "" : "none";
+    updateRouteTitle();
+    updateWalkUI();
     activeDay = findTodayIndex();
     renderTabs();
     renderPanel();
@@ -858,6 +911,8 @@ var TIMETABLE_DATA = null;
         });
     }
 
+    document.getElementById("dir-toggle").innerHTML = ICON_DIRECTION_SWAP;
+    document.getElementById("dir-toggle").addEventListener("click", toggleDirection);
     document.getElementById("locate-btn").addEventListener("click", onLocateClick);
 
     setInterval(function () {

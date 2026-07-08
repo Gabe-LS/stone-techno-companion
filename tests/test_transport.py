@@ -38,6 +38,7 @@ class _FakeAsyncClient:
     payload = None
     status = 200
     calls = 0
+    last_params = None
 
     def __init__(self, *a, **kw):
         pass
@@ -50,6 +51,7 @@ class _FakeAsyncClient:
 
     async def get(self, *a, **kw):
         _FakeAsyncClient.calls += 1
+        _FakeAsyncClient.last_params = kw.get("params")
         return _FakeResponse(_FakeAsyncClient.payload, _FakeAsyncClient.status)
 
 
@@ -59,6 +61,7 @@ def _clean(monkeypatch):
     _FakeAsyncClient.payload = None
     _FakeAsyncClient.status = 200
     _FakeAsyncClient.calls = 0
+    _FakeAsyncClient.last_params = None
     api._transport_cache.clear()
     api._transport_rate.clear()
     yield
@@ -123,6 +126,45 @@ class TestDepartures:
         assert ne2["delay"] == 3
         assert ne2["status"] == "MONITORED"
         assert ne2["countdown"] == 12
+
+    def test_outbound_default_uses_zollverein_stop(self):
+        _FakeAsyncClient.payload = {"departureList": [_efa_departure()]}
+        client.get("/api/transport/departures?date=10.07.2026&time=14:00")
+        assert _FakeAsyncClient.last_params["name_dm"] == "20009206"
+
+    def test_inbound_uses_hbf_stop_and_reverse_filter(self):
+        _FakeAsyncClient.payload = {
+            "departureList": [
+                _efa_departure("107", "Gelsenkirchen Hbf"),
+                _efa_departure("107", "Essen Hanielstr. Schleife"),
+                _efa_departure("107", "Essen Hauptbahnhof"),  # outbound terminus
+                _efa_departure("107", "Essen Bredeney"),  # outbound terminus
+            ]
+        }
+        r = client.get(
+            "/api/transport/departures?date=10.07.2026&time=14:00&dir=inbound"
+        )
+        assert r.status_code == 200
+        dirs = [d["direction"] for d in r.json()["departures"]]
+        assert "Gelsenkirchen Hbf" in dirs
+        assert any("Hanielstr" in d for d in dirs)
+        # Outbound termini must be filtered out of the inbound board.
+        assert all("Hauptbahnhof" not in d and "Bredeney" not in d for d in dirs)
+        # Inbound queries the Essen Hbf stop, never a client-supplied id.
+        assert _FakeAsyncClient.last_params["name_dm"] == "20009289"
+
+    def test_invalid_dir_rejected(self):
+        r = client.get(
+            "/api/transport/departures?date=10.07.2026&time=14:00&dir=sideways"
+        )
+        assert r.status_code == 400
+
+    def test_direction_has_separate_cache(self):
+        _FakeAsyncClient.payload = {"departureList": [_efa_departure()]}
+        client.get("/api/transport/departures?date=10.07.2026&time=14:00&dir=outbound")
+        client.get("/api/transport/departures?date=10.07.2026&time=14:00&dir=inbound")
+        # Same (date, time) but different dir must not collide in the cache.
+        assert _FakeAsyncClient.calls == 2
 
     def test_cache_collapses_upstream_calls(self):
         _FakeAsyncClient.payload = {"departureList": [_efa_departure()]}

@@ -1028,12 +1028,22 @@ def generate_ics(slot_id: str):
 
 _EFA_BASE = "https://efa.vrr.de/vrr/XSLT_DM_REQUEST"
 _TRANSPORT_STOP = "20009206"  # Essen Zollverein
+# Direction is a server-validated enum -> (EFA stop id, allowed destination
+# substrings). The stop id is NEVER taken from the client, so the endpoint still
+# cannot be abused as an open EFA proxy -- only these two pinned stops exist.
+# Substrings are the tram/NE2 termini that pass the OTHER stop (discovered from
+# the live EFA feed): outbound trams from Zollverein head to Bredeney/Hbf;
+# inbound trams from Essen Hbf head to Hanielstr./Gelsenkirchen and pass Zollverein.
+_TRANSPORT_DIRECTIONS = {
+    "outbound": ("20009206", ("Bredeney", "Hauptbahnhof")),  # Zollverein -> Essen Hbf
+    "inbound": ("20009289", ("Hanielstr", "Gelsenkirchen")),  # Essen Hbf -> Zollverein
+}
 # Stop coordinates, matching timetable-transport.json (walk-route destination)
 _TRANSPORT_STOP_LAT = 51.486095
 _TRANSPORT_STOP_LNG = 7.046062
 _TRANSPORT_DATE_RE = re.compile(r"^\d{2}\.\d{2}\.\d{4}$")
 _TRANSPORT_TIME_RE = re.compile(r"^\d{1,2}:\d{2}$")
-_transport_cache: dict[tuple[str, str], tuple[float, list]] = {}
+_transport_cache: dict[tuple[str, str, str], tuple[float, list]] = {}
 _transport_rate: dict[str, list[float]] = {}
 
 
@@ -1057,9 +1067,13 @@ async def transport_departures(request: Request, date: str):
     t = request.query_params.get("time") or ""
     if not _TRANSPORT_DATE_RE.match(date) or not _TRANSPORT_TIME_RE.match(t):
         raise HTTPException(400, "date (DD.MM.YYYY) and time (HH:MM) required")
+    dir_key = request.query_params.get("dir") or "outbound"
+    if dir_key not in _TRANSPORT_DIRECTIONS:
+        raise HTTPException(400, "dir must be 'outbound' or 'inbound'")
+    stop_id, dest_filters = _TRANSPORT_DIRECTIONS[dir_key]
     _check_transport_rate(request, limit=30)
 
-    key = (date, t)
+    key = (date, t, dir_key)
     now = time.monotonic()
     cached = _transport_cache.get(key)
     if cached and now - cached[0] < 55:
@@ -1072,7 +1086,7 @@ async def transport_departures(request: Request, date: str):
         "language": "de",
         "stateless": "1",
         "type_dm": "stop",
-        "name_dm": _TRANSPORT_STOP,
+        "name_dm": stop_id,
         "mode": "direct",
         "useRealtime": "1",
         "itdDateDayMonthYear": date,
@@ -1103,7 +1117,7 @@ async def transport_departures(request: Request, date: str):
         if num not in ("107", "NE2"):
             continue
         direction = line.get("direction") or ""
-        if "Bredeney" not in direction and "Hauptbahnhof" not in direction:
+        if not any(f in direction for f in dest_filters):
             continue
         dt = d.get("dateTime") or {}
         try:
