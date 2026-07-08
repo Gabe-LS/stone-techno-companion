@@ -323,6 +323,14 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 .country-item { padding: var(--space-md); cursor: pointer; font-size: var(--font-sm); display: flex; align-items: center; gap: var(--space-sm); }
 .country-item:hover, .country-item.highlighted { background: var(--color-surface); }
 .country-item .flag { font-size: 18px; }
+/* Mobile: when the keyboard opens the visualViewport handler shrinks #app, and
+   justify-content:center would clip the (now taller-than-viewport) content with
+   no way to reach it. Make the prompt a scroll container and use safe centering
+   (falls back to start when overflowing) so focused fields can scroll into view.
+   Scoped to mobile so the desktop layout is untouched. */
+@media (max-width: 767px) {
+  .profile-prompt { justify-content: safe center; overflow-y: auto; }
+}
 .profile-prompt button { width: 320px; padding: var(--space-md); background: var(--gray-900); color: #fff; border: none; border-radius: var(--radius-md); font-size: var(--font-base); cursor: pointer; font-weight: 600; font-family: inherit; }
 .avatar-upload { width: 128px; height: 128px; border-radius: 50%; background: var(--color-surface); border: 2px dashed var(--color-border); display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; position: relative; }
 .avatar-upload img { width: 100%; height: 100%; object-fit: cover; }
@@ -836,12 +844,12 @@ function renderProfilePrompt() {
       </div>
       <div class="avatar-zoom" id="avatar-zoom"><span>-</span><div class="avatar-zoom-track" id="avatar-zoom-track"><div class="avatar-zoom-thumb hidden" id="avatar-zoom-thumb"></div></div><span>+</span></div>
       <div class="profile-field">
-        <input id="username-input" placeholder="Username" maxlength="20" value="${currentUser?.username || ''}" oninput="onUsernameInput()" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <input id="username-input" placeholder="Username" maxlength="20" value="${currentUser?.username || ''}" oninput="onUsernameInput()" onfocus="_profileFieldFocus(this)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         <span class="field-status" id="username-status"></span>
         <div class="field-hint" id="username-hint">Allowed: a-z 0-9 . _ -</div>
       </div>
       <div class="profile-field">
-        <input id="displayname-input" placeholder="Display name (optional)" maxlength="30" value="${currentUser?.display_name || ''}" oninput="onDisplayNameInput()" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <input id="displayname-input" placeholder="Display name (optional)" maxlength="30" value="${currentUser?.display_name || ''}" oninput="onDisplayNameInput()" onfocus="_profileFieldFocus(this)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         <span class="field-status" id="displayname-status"></span>
         <div class="field-hint" id="displayname-hint">Shown in chat instead of username</div>
       </div>
@@ -860,6 +868,15 @@ function renderProfilePrompt() {
   _profileAvatarUrl = currentUser?.avatar_url || '';
   document.getElementById('username-input').focus();
   updateProfilePreview();
+}
+
+function _profileFieldFocus(el) {
+  // Mobile only: after the keyboard opens and the visualViewport handler
+  // resizes #app, scroll the focused field to the centre of the visible area
+  // (.profile-prompt is a scroll container on mobile). No-op on desktop, where
+  // the field is already visible and a scroll would be a jarring jump.
+  if (!isMobile) return;
+  setTimeout(() => { try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {} }, 300);
 }
 
 function onUsernameInput() {
@@ -963,6 +980,10 @@ function openCountryPicker() {
   input.focus();
   let _hlIdx = 0;
   renderCountryList('', 0);
+  // Centre the picker (input + open list) in the visible area once the keyboard
+  // has opened, so the results list isn't hidden behind it. The list is already
+  // rendered above, so the picker has its full height when we scroll.
+  if (isMobile) setTimeout(() => { try { picker.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {} }, 300);
   input.oninput = () => { _hlIdx = 0; renderCountryList(input.value, _hlIdx); };
   input.onkeydown = (e) => {
     if (e.key === 'Escape') { closeCountryPicker(); return; }
