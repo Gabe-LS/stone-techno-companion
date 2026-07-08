@@ -2346,6 +2346,12 @@ def _validate_e2ee_jwk(public_key: str) -> None:
     """Validate a P-256 public key JWK string. Raises HTTPException 422 on invalid input."""
     if not isinstance(public_key, str):
         raise HTTPException(422, "public_key must be a string")
+    # A P-256 public JWK serializes to ~150 bytes; cap well above that but far
+    # below the 110MB global body limit (sized for media uploads). Without this
+    # an authenticated client could store near-body-limit blobs in public_key,
+    # a DB-bloat vector (the device-count prune trims rows, not bytes).
+    if len(public_key) > 1024:
+        raise HTTPException(422, "Invalid JWK: public_key too large")
     try:
         jwk = json.loads(public_key)
     except Exception:

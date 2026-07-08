@@ -881,6 +881,17 @@ class TestE2eeDeviceKeys:
         )
         assert r.status_code == 422
 
+    def test_jwk_oversized_rejected(self, auth_client):
+        # K2: public_key over the length cap is rejected before json.loads,
+        # so it can't be parsed or stored (DB-bloat guard).
+        big = "A" * 2000
+        jwk = json.dumps({"kty": "EC", "crv": "P-256", "x": big, "y": big})
+        assert len(jwk) > 1024
+        r = auth_client.put(
+            "/chat/api/keys", json={"device_id": _DEVICE_A, "public_key": jwk}
+        )
+        assert r.status_code == 422
+
     def test_key_rotated_broadcast_on_new_device_and_rekey(
         self, auth_client, user1, user2, session2
     ):
