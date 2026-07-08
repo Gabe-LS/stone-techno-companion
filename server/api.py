@@ -1041,6 +1041,13 @@ _TRANSPORT_DIRECTIONS = {
 # Stop coordinates, matching timetable-transport.json (walk-route destination)
 _TRANSPORT_STOP_LAT = 51.486095
 _TRANSPORT_STOP_LNG = 7.046062
+# Walk-route target = the DEPARTURE stop of the viewed direction (server-pinned
+# per dir, never a client-supplied coordinate). Outbound departs Zollverein;
+# inbound departs Essen Hbf.
+_TRANSPORT_STOP_COORDS = {
+    "outbound": (51.486095, 7.046062),  # Zollverein
+    "inbound": (51.449732, 7.012213),  # Essen Hbf
+}
 _TRANSPORT_DATE_RE = re.compile(r"^\d{2}\.\d{2}\.\d{4}$")
 _TRANSPORT_TIME_RE = re.compile(r"^\d{1,2}:\d{2}$")
 _transport_cache: dict[tuple[str, str, str], tuple[float, list]] = {}
@@ -1164,6 +1171,10 @@ async def transport_walk(request: Request, lat: float, lng: float):
     a third party directly (OSRM sees only the VPS IP). Coordinates are used
     transiently and never stored or logged. Bounded to the Essen area so this
     cannot be abused as a generic routing proxy."""
+    dir_key = request.query_params.get("dir") or "outbound"
+    if dir_key not in _TRANSPORT_STOP_COORDS:
+        raise HTTPException(400, "dir must be 'outbound' or 'inbound'")
+    tgt_lat, tgt_lng = _TRANSPORT_STOP_COORDS[dir_key]
     if abs(lat - _TRANSPORT_STOP_LAT) > 0.35 or abs(lng - _TRANSPORT_STOP_LNG) > 0.5:
         raise HTTPException(400, "Out of service area")
     _check_transport_rate(request, limit=10)
@@ -1175,7 +1186,7 @@ async def transport_walk(request: Request, lat: float, lng: float):
     # (5.5 km / 9 min for a 50-minute walk), so never use it here.
     url = (
         f"https://routing.openstreetmap.de/routed-foot/route/v1/foot/"
-        f"{lng},{lat};{_TRANSPORT_STOP_LNG},{_TRANSPORT_STOP_LAT}?overview=false"
+        f"{lng},{lat};{tgt_lng},{tgt_lat}?overview=false"
     )
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:

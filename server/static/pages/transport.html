@@ -453,6 +453,7 @@ var TIMETABLE_DATA = null;
   var data = null;
   var direction = "outbound";  // "outbound" (Zollverein->Hbf) | "inbound" (Hbf->Zollverein)
   var walkMinutes = null;
+  var lastGps = null;  // last located GPS, so a direction switch recomputes walk to the new stop
   var activeDay = 0;
   var realtimeCache = {};
   var realtimeActive = false;
@@ -469,6 +470,9 @@ var TIMETABLE_DATA = null;
   function curRoute() {
     return (direction === "inbound" && data.reverse) ? data.reverse.route : data.route;
   }
+  function curStop() {
+    return (direction === "inbound" && data.reverse && data.reverse.stop) ? data.reverse.stop : data.stop;
+  }
   function isOutbound() { return direction === "outbound"; }
 
   function updateRouteTitle() {
@@ -477,11 +481,17 @@ var TIMETABLE_DATA = null;
     document.title = r.from + " → " + r.to + " · Transport";
   }
 
-  function updateWalkUI() {
-    // The walk-to-stop feature targets the Zollverein stop, so it is only
-    // meaningful for the outbound board (walk to catch the tram home). Hide it
-    // on the inbound board, where you board at Essen Hbf.
-    document.getElementById("location-banner").style.display = isOutbound() ? "" : "none";
+  function refreshWalkForDirection() {
+    // The walk target is the current direction's departure stop. Reuse the
+    // cached GPS to recompute against the new stop; otherwise reset the banner
+    // so the user re-locates against it.
+    if (lastGps) {
+      updateLocation(lastGps.lat, lastGps.lng);
+    } else {
+      walkMinutes = null;
+      document.querySelector(".location-text").textContent = "Walk time unknown";
+      document.getElementById("locate-btn").textContent = "Locate me";
+    }
   }
 
   function toggleDirection() {
@@ -495,7 +505,7 @@ var TIMETABLE_DATA = null;
     document.getElementById("live-indicator").classList.remove("active");
     if (activeDay >= curDays().length) activeDay = 0;
     updateRouteTitle();
-    updateWalkUI();
+    refreshWalkForDirection();
     renderTabs();
     renderPanel();
     fetchRealtime();
@@ -700,7 +710,7 @@ var TIMETABLE_DATA = null;
         } else if (effectiveSvcMin < now.nowServiceMinutes) {
           isPast = true;
         } else if (!nextFound) {
-          if (walkMinutes !== null && isOutbound()) {
+          if (walkMinutes !== null) {
             var leaveBy = effectiveSvcMin - walkMinutes;
             if (leaveBy < now.nowServiceMinutes) {
               isTooLate = true;
@@ -775,7 +785,7 @@ var TIMETABLE_DATA = null;
         cdEl.className = "dep-countdown";
         cdEl.textContent = "arr. in " + rt.countdown + " min";
         right.appendChild(cdEl);
-      } else if (walkMinutes !== null && isOutbound() && !isPast && isToday) {
+      } else if (walkMinutes !== null && !isPast && isToday) {
         var minsLeft = effectiveSvcMin - now.nowServiceMinutes;
         if (minsLeft > 0) {
           var walkEl = document.createElement("span");
@@ -803,7 +813,7 @@ var TIMETABLE_DATA = null;
   }
 
   function fetchWalkRoute(lat, lng) {
-    var url = API_BASE + "/api/transport/walk?lat=" + lat + "&lng=" + lng;
+    var url = API_BASE + "/api/transport/walk?lat=" + lat + "&lng=" + lng + "&dir=" + direction;
     return fetch(url)
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
@@ -826,12 +836,13 @@ var TIMETABLE_DATA = null;
     walkMinutes = durationS ? Math.ceil(durationS / 60) : Math.ceil((distanceM / 1000) / WALK_SPEED_KMH * 60);
     var banner = document.getElementById("location-banner");
     banner.querySelector(".location-text").textContent =
-      fmtDist(distanceM) + " / " + fmtNum(walkMinutes) + " min to stop";
+      fmtDist(distanceM) + " / " + fmtNum(walkMinutes) + " min to " + curRoute().from;
     document.getElementById("locate-btn").textContent = "Update";
     renderPanel();
   }
 
   function updateLocation(lat, lng) {
+    lastGps = { lat: lat, lng: lng };
     var banner = document.getElementById("location-banner");
     banner.querySelector(".location-text").textContent = "Calculating route...";
 
@@ -839,7 +850,8 @@ var TIMETABLE_DATA = null;
       if (result) {
         applyWalkData(result.distanceM, result.durationS);
       } else {
-        var dist = haversineKm(lat, lng, STOP_LAT, STOP_LNG);
+        var st = curStop();
+        var dist = haversineKm(lat, lng, st.lat, st.lng);
         if (dist > 20) {
           // A "walk to the stop" is meaningless from this far away; a
           // straight-line figure (e.g. 687 km from Milan) only confuses.
@@ -849,7 +861,7 @@ var TIMETABLE_DATA = null;
         } else {
           walkMinutes = Math.ceil((dist / WALK_SPEED_KMH) * 60);
           banner.querySelector(".location-text").textContent =
-            "~" + fmtDist(dist * 1000) + " / ~" + fmtNum(walkMinutes) + " min";
+            "~" + fmtDist(dist * 1000) + " / ~" + fmtNum(walkMinutes) + " min to " + curRoute().from;
         }
         document.getElementById("locate-btn").textContent = "Update";
         renderPanel();
@@ -891,7 +903,6 @@ var TIMETABLE_DATA = null;
     var toggle = document.getElementById("dir-toggle");
     if (toggle) toggle.style.display = d.reverse ? "" : "none";
     updateRouteTitle();
-    updateWalkUI();
     activeDay = findTodayIndex();
     renderTabs();
     renderPanel();

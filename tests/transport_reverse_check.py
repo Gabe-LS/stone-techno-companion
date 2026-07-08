@@ -46,7 +46,7 @@ try:
         if not any(("Hanielstr" in d or "Gelsenkirchen" in d) for d in in_dests): fails.append("no inbound (Hanielstr/Gelsenkirchen) destinations after toggle")
         if any(("Bredeney" in d or "Hauptbahnhof" in d) for d in in_dests): fails.append("outbound destinations leaked into inbound board")
         banner_in = pg.eval_on_selector("#location-banner","e=>getComputedStyle(e).display")
-        if banner_in != "none": fails.append(f"location banner not hidden on inbound ({banner_in})")
+        if banner_in == "none": fails.append("location banner should be VISIBLE on inbound (walk target = Essen Hbf)")
         # toggle back
         pg.click("#dir-toggle"); pg.wait_for_timeout(400)
         title2 = pg.eval_on_selector("#route-title-text","e=>e.textContent")
@@ -60,4 +60,4 @@ print("\n=== transport reverse toggle check ===")
 if fails:
     for f in fails: print("  FAIL", f)
     print("RESULT: FAIL"); sys.exit(1)
-print("  icon renders, title flips, board swaps directions, banner hides inbound, restores on toggle-back\nRESULT: PASS")
+print("  icon renders, title flips, board swaps directions, banner visible both directions, restores on toggle-back\nRESULT: PASS")

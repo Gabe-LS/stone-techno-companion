@@ -39,6 +39,7 @@ class _FakeAsyncClient:
     status = 200
     calls = 0
     last_params = None
+    last_url = None
 
     def __init__(self, *a, **kw):
         pass
@@ -52,6 +53,7 @@ class _FakeAsyncClient:
     async def get(self, *a, **kw):
         _FakeAsyncClient.calls += 1
         _FakeAsyncClient.last_params = kw.get("params")
+        _FakeAsyncClient.last_url = a[0] if a else None
         return _FakeResponse(_FakeAsyncClient.payload, _FakeAsyncClient.status)
 
 
@@ -62,6 +64,7 @@ def _clean(monkeypatch):
     _FakeAsyncClient.status = 200
     _FakeAsyncClient.calls = 0
     _FakeAsyncClient.last_params = None
+    _FakeAsyncClient.last_url = None
     api._transport_cache.clear()
     api._transport_rate.clear()
     yield
@@ -211,6 +214,20 @@ class TestWalk:
         _FakeAsyncClient.payload = {"code": "NoRoute", "routes": []}
         r = client.get("/api/transport/walk?lat=51.49&lng=7.05")
         assert r.status_code == 502
+
+    def test_walk_dir_routes_to_direction_departure_stop(self):
+        _FakeAsyncClient.payload = {
+            "code": "Ok",
+            "routes": [{"distance": 100, "duration": 90}],
+        }
+        client.get("/api/transport/walk?lat=51.49&lng=7.05&dir=outbound")
+        assert "7.046062,51.486095" in _FakeAsyncClient.last_url  # Zollverein
+        client.get("/api/transport/walk?lat=51.49&lng=7.05&dir=inbound")
+        assert "7.012213,51.449732" in _FakeAsyncClient.last_url  # Essen Hbf
+
+    def test_walk_invalid_dir_rejected(self):
+        r = client.get("/api/transport/walk?lat=51.49&lng=7.05&dir=nope")
+        assert r.status_code == 400
 
     def test_rate_limited(self):
         _FakeAsyncClient.payload = {

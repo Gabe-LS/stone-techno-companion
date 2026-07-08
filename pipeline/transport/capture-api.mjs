@@ -184,6 +184,7 @@ const transportJson = {
   days: daysFrom(outbound),
   reverse: {
     route: { from: 'Essen Hbf', to: 'Zollverein', fromId: ESSEN_HBF_ID, toId: ZOLLVEREIN_ID },
+    stop: { lat: 51.449732, lng: 7.012213 },  // Essen Hbf (inbound departure stop)
     days: daysFrom(inbound),
   },
 };
