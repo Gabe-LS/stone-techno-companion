@@ -353,6 +353,8 @@
   .route-title { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; padding: var(--space-md) 0 var(--space-sm); border-bottom: 2px solid var(--color-text); }
   .route-title-main { display: flex; align-items: center; gap: var(--space-xs); min-width: 0; }
   .route-title-main > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .route-arrow { display: inline-flex; align-items: center; vertical-align: middle; margin: 0 0.14em; }
+  .route-arrow svg { width: 0.6em; height: 0.6em; }
   .dir-toggle-btn { flex-shrink: 0; background: none; border: none; padding: 6px; margin-left: 2px; cursor: pointer; color: var(--color-muted); display: flex; align-items: center; -webkit-tap-highlight-color: transparent; }
   .dir-toggle-btn:active { color: var(--color-text); }
   @media (hover: hover) { .dir-toggle-btn:hover { color: var(--color-text); } }
@@ -427,7 +429,7 @@
 <div class="sticky-top fade-after">
   <div class="route-title">
     <div class="route-title-main">
-      <span id="route-title-text">Zollverein → Essen Hbf</span>
+      <span id="route-title-text">Zollverein <span class="route-arrow"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"/></svg></span> Essen Hbf</span>
       <button type="button" id="dir-toggle" class="dir-toggle-btn" aria-label="Show the opposite direction"></button>
     </div>
     <div id="live-indicator" class="live-indicator">
@@ -477,7 +479,8 @@ var TIMETABLE_DATA = null;
 
   function updateRouteTitle() {
     var r = curRoute();
-    document.getElementById("route-title-text").textContent = r.from + " → " + r.to;
+    document.getElementById("route-title-text").innerHTML =
+      escapeHtml(r.from) + ' <span class="route-arrow">' + ICON_ARROW_RIGHT + '</span> ' + escapeHtml(r.to);
     document.title = r.from + " → " + r.to + " · Transport";
   }
 

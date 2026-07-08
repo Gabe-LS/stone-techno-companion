@@ -29,6 +29,7 @@ try:
         # icon present
         has_svg = pg.eval_on_selector("#dir-toggle", "el => !!el.querySelector('svg')")
         if not has_svg: fails.append("dir-toggle has no SVG icon")
+        if not pg.eval_on_selector("#route-title-text","el=>!!el.querySelector('.route-arrow svg')"): fails.append("arrow SVG missing initially")
         title0 = pg.eval_on_selector("#route-title-text","e=>e.textContent")
         print("initial title:", repr(title0))
         if "Zollverein" not in title0 or "Essen Hbf" not in title0: fails.append(f"bad initial title {title0}")
@@ -41,6 +42,7 @@ try:
         title1 = pg.eval_on_selector("#route-title-text","e=>e.textContent")
         print("toggled title:", repr(title1))
         if "Essen Hbf" not in title1 or "Zollverein" not in title1 or title1==title0: fails.append(f"title did not flip: {title1}")
+        if not pg.eval_on_selector("#route-title-text","el=>!!el.querySelector('.route-arrow svg')"): fails.append("arrow SVG missing after toggle")
         in_dests = dests(pg)
         print("inbound dests sample:", in_dests[:5])
         if not any(("Hanielstr" in d or "Gelsenkirchen" in d) for d in in_dests): fails.append("no inbound (Hanielstr/Gelsenkirchen) destinations after toggle")
