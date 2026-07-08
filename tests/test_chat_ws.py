@@ -739,6 +739,39 @@ class TestE2eeSendMessage:
         assert rejected[0]["reason"] == "Invalid media URL."
         assert get_room_messages(db, room_id) == []
 
+    @pytest.mark.asyncio
+    async def test_plaintext_media_url_ignores_injected_top_level_field(
+        self, db, user1, user2, session1, event_id
+    ):
+        # Regression (M1): for a NON-E2EE image, the stored media_url must come
+        # from the validated content.url, never from a client-supplied
+        # top-level media_url. Otherwise an attacker could point media_url at
+        # another user's file and plant a phantom reference that blocks that
+        # file from ever being unlinked (owner delete / TTL / admin delete).
+        room_id = find_or_create_dm(db, event_id, user1["id"], user2["id"])
+        own_file = "/chat/uploads/" + ("a" * 32) + ".webp"
+        victim_file = "/chat/uploads/" + ("b" * 32) + ".webp"
+
+        ws = FakeWebSocket()
+        ws.to_receive = [
+            json.dumps(
+                {
+                    "event": "send_message",
+                    "room_id": room_id,
+                    "type": "image",
+                    "content": json.dumps({"url": own_file}),
+                    "media_url": victim_file,  # crafted, points at another file
+                    "temp_id": "t7",
+                }
+            )
+        ]
+        await _run_ws(ws, session1["token"], event_id, db)
+
+        msgs = get_room_messages(db, room_id)
+        assert len(msgs) == 1
+        assert msgs[0]["media_url"] == own_file
+        assert msgs[0]["media_url"] != victim_file
+
 
 class TestDmModerationSkipped:
     @pytest.mark.asyncio

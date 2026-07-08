@@ -1674,17 +1674,30 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
 
                 _media_url = None
                 if msg_type in ("image", "video"):
-                    _explicit = data.get("media_url")
-                    if isinstance(_explicit, str) and _UPLOAD_URL_RE.match(_explicit):
-                        _media_url = _explicit
+                    if is_e2ee_msg:
+                        # The real URL is encrypted inside `content`, so the
+                        # server cannot read it. The client sends it in the
+                        # top-level media_url field ONLY so TTL/delete can find
+                        # the file to unlink. This is unavoidably client-trusted
+                        # for E2EE DMs; it is bounded by the orphan check in
+                        # _unlink_media_if_orphaned (a phantom ref only blocks a
+                        # delete, never causes one).
+                        _explicit = data.get("media_url")
+                        if isinstance(_explicit, str) and _UPLOAD_URL_RE.match(_explicit):
+                            _media_url = _explicit
                     else:
+                        # Non-E2EE: derive solely from the already-validated
+                        # content.url (checked above). Never trust a top-level
+                        # media_url here -- a crafted one pointing at another
+                        # user's file would plant a phantom reference that keeps
+                        # that file from being unlinked on the owner's delete,
+                        # TTL expiry, or admin delete.
                         try:
                             _candidate = json.loads(content).get("url") or ""
                         except Exception:
                             _candidate = ""
-                        _media_url = (
-                            _candidate if _UPLOAD_URL_RE.match(_candidate) else None
-                        )
+                        if _UPLOAD_URL_RE.match(_candidate):
+                            _media_url = _candidate
 
                 room_ttl = send_room["ttl_minutes"]
                 # Moderated messages are held 'pending' so room history never
