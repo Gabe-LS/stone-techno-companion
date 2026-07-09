@@ -637,7 +637,7 @@ function userRow(u) {
   if (isSuper) menu += sep + `<button class="dropdown-item danger" onclick="adminDeleteUser('${id}')">Delete user</button>`;
   return `<tr class="${expandedUser === u.id ? 'expanded' : ''}" onclick="toggleUser('${id}')" style="cursor:pointer">
     <td class="col-avatar"><img class="avatar" src="/chat/api/avatar/${id}?v=1" onerror="this.style.visibility='hidden'"></td>
-    <td>${esc(u.display_name || u.id)}</td>
+    <td>${esc(u.display_name || u.username || u.id)}</td>
     <td style="color:var(--text-sec)">${esc(u.username ? '@' + u.username : '--')}</td>
     <td class="col-narrow">${esc(u.country || '--')}</td>
     <td class="col-narrow">${(u.providers||[]).map(p => '<span class="pill pill-gray">' + esc(p) + '</span>').join(' ')}</td>
