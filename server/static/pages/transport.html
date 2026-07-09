@@ -6,6 +6,7 @@
 <meta name="theme-color" content="#111">
 <link rel="stylesheet" href="/shared.css">
 <script src="/shared.js"></script>
+<script defer src="https://analytics.deftlab.dev/script.js" data-website-id="8f79ad80-e080-421d-91c6-45b7bfc460d2" data-domains="stonetechno.deftlab.dev" data-auto-track="true" data-performance="true"></script>
 <title>107 / NE2 — Zollverein → Hbf</title>
 <style>
   :root {
@@ -478,6 +479,8 @@ var TIMETABLE_DATA = null;
 (function () {
   "use strict";
 
+  function track(event, data) { if (typeof umami !== 'undefined') umami.track(event, data); }
+
   var data = null;
   var direction = "outbound";  // "outbound" (Zollverein->Hbf) | "inbound" (Hbf->Zollverein)
   var walkMinutes = null;
@@ -574,6 +577,7 @@ var TIMETABLE_DATA = null;
     if (!data || !curBase().reverse) return;
     direction = isOutbound() ? "inbound" : "outbound";
     dbg("[TRANSPORT] toggle direction -> " + direction);
+    track('transport-direction', {route: routeSlug()});
     // Keep the URL in sync so the current view is shareable/reloadable.
     var sp = new URLSearchParams(window.location.search);
     sp.set("route", routeSlug());
@@ -733,6 +737,7 @@ var TIMETABLE_DATA = null;
   function onTabClick(e) {
     var idx = parseInt(e.currentTarget.dataset.index, 10);
     activeDay = idx;
+    track('transport-day', {day: e.currentTarget.textContent.trim()});
     renderTabs();
     renderPanel();
     fetchRealtime();
@@ -1011,6 +1016,7 @@ var TIMETABLE_DATA = null;
     btn.textContent = "...";
     btn.disabled = true;
 
+    track('transport-locate');
     navigator.geolocation.getCurrentPosition(
       function (pos) {
         btn.disabled = false;
