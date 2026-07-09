@@ -56,30 +56,18 @@
 
 
   .live-indicator {
-    display: none;
-    align-items: center;
-    gap: 0.35rem;
-    font-size: var(--font-xs);
-    font-weight: 600;
-    color: #fff;
-    opacity: 0.9;
-    flex-direction: column;
-    align-items: flex-end;
-  }
-
-  .live-indicator.active { display: flex; }
-
-  .live-label {
     display: flex;
+    visibility: hidden;
     align-items: center;
-    gap: 0.35rem;
+    justify-content: center;
+    gap: 0.4rem;
+    font-size: var(--font-xs);
+    color: var(--color-text);
+    opacity: 0.7;
+    margin-top: var(--space-sm);
   }
 
-  .live-updated {
-    font-size: var(--font-xs);
-    font-weight: 400;
-    opacity: 0.75;
-  }
+  .live-indicator.active { visibility: visible; }
 
   .live-dot {
     width: 6px;
@@ -345,7 +333,7 @@
     white-space: nowrap;
   }
   .dep-arr-label { color: var(--color-text-secondary); font-size: var(--font-xs); }
-  .dep-arr.delayed { color: var(--color-delay); font-weight: 600; }
+  .dep-arr.delayed { color: var(--color-delay); }
   .dep-item.is-past .dep-arr,
   .dep-item.is-past .dep-arr-label { color: var(--gray-500); }
 
@@ -390,8 +378,6 @@
   /* Nudge to the text's optical middle so it lines up with the chevron, which
      sits on vertical-align:middle (below the flex line-box centre). */
   .dir-toggle-btn svg { height: 0.42em; width: auto; display: block; transform: translateY(0.11em); }
-  .live-indicator { color: var(--color-text); }
-
   @media (max-width: 768px) {
     body { padding: 0 var(--space-md) var(--space-xl); }
     .cmd-bar { margin-left: -12px; margin-right: -12px; }
@@ -472,16 +458,16 @@
       <span id="route-title-text">Zollverein <span class="route-arrow"><svg viewBox="7 3 10 18" fill="currentColor" aria-hidden="true"><path stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" fill-rule="evenodd" clip-rule="evenodd" d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"/></svg></span> Essen Hbf</span>
       <button type="button" id="dir-toggle" class="dir-toggle-btn" aria-label="Show the opposite direction"></button>
     </div>
-    <div id="live-indicator" class="live-indicator">
-      <div class="live-label"><span class="live-dot"></span><span>LIVE</span></div>
-      <div id="live-updated" class="live-updated"></div>
-    </div>
   </div>
   <div id="location-banner" class="location-banner">
     <span class="location-text">Walk time unknown</span>
     <button id="locate-btn" type="button">Locate me</button>
   </div>
   <div id="day-tabs" class="day-tab-bar"></div>
+  <div id="live-indicator" class="live-indicator">
+    <span class="live-dot"></span>
+    <span id="live-updated" class="live-updated">&nbsp;</span>
+  </div>
 </div>
 <div id="day-panels"></div>
 
@@ -693,7 +679,7 @@ var TIMETABLE_DATA = null;
         var hh = String(ts.getHours()).padStart(2, "0");
         var mi = String(ts.getMinutes()).padStart(2, "0");
         document.getElementById("live-updated").textContent =
-          "updated " + dd + "/" + mm + "/" + yyyy + " at " + hh + ":" + mi;
+          "Updated " + dd + "/" + mm + "/" + yyyy + " at " + hh + ":" + mi;
 
         realtimeSpillover = [];
         for (var i = 0; i < result.departures.length; i++) {
@@ -950,7 +936,10 @@ var TIMETABLE_DATA = null;
 
     if (scrollTarget) {
       setTimeout(function () {
-        scrollTarget.scrollIntoView({ block: "center", behavior: "smooth" });
+        var sticky = document.querySelector(".sticky-top");
+        var stickyH = sticky ? sticky.offsetHeight + (parseFloat(getComputedStyle(sticky).top) || 0) : 0;
+        var targetTop = window.scrollY + scrollTarget.getBoundingClientRect().top;
+        window.scrollTo({ top: targetTop - stickyH - 30, behavior: "smooth" });
       }, 100);
     }
   }
