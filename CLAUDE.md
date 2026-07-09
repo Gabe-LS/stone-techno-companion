@@ -138,7 +138,7 @@ Key design decisions:
 | `tests/test_transport.py` | 20 tests: departures proxy — tram departure-monitor + DUS Airport journey-planner mapping (filtering, cache, rate limits, walk bounds/targets). Plus standalone Playwright `transport_{reverse,duesseldorf,duesseldorf_realtime,routes}_check.py` |
 | `tests/stress_test/run.py` | Chat stress test — 200 concurrent WS users, multi-room + DMs, burst testing, media uploads, latency/throughput/resource metrics, moderation cost estimation |
 | `monitor.sh` | Hourly health monitor: external HTTP/TLS/latency probes + SSH-based VPS internals, ntfy.sh phone alerts (see "Monitoring") |
-| `monitoring/qnap/` | Container Station setup to run `monitor.sh` from the always-on QNAP NAS (Alpine + cron; script and SSH key bind-mounted) |
+| `monitoring/qnap/` | Container Station setup to run `monitor.sh` from the always-on QNAP NAS (Alpine + cron; SSH key bind-mounted, script auto-fetched from GitHub) |
 
 ### Deploy
 
@@ -158,7 +158,7 @@ python pipeline/stone_techno_companion.py --render-only --deploy
 
 `monitor.sh` checks the live app from the outside (HTTP status of lineup/chat/static/transport/POIs, a WebSocket upgrade probe, TLS expiry, latency) and the VPS from the inside over SSH (container health + restarts, disk, memory, load, DB `quick_check`, VAPID startup log line, OpenAI moderation reachability from inside the container, error-log counts). One OK/WARN/FAIL line per check; any FAIL pushes a phone alert via ntfy.sh (private topic in the script; test with `./monitor.sh --test-alert`). `--quiet` prints nothing when all OK (the cron log only grows on problems, self-rotated at ~512 KB).
 
-It runs hourly from the always-on QNAP NAS via Container Station, see `monitoring/qnap/` (Alpine image; `monitor.sh` and the SSH key are bind-mounted, so updating the script means re-copying the file, no rebuild). Portability invariants (each fixed after a false alarm): the WS probe must use `--http1.1` (HTTP/2 drops Upgrade headers and the SPA catch-all answers 200), TLS date parsing needs the python3 fallback (BusyBox date in the Alpine container parses neither BSD nor GNU syntax), and the in-container moderation check needs `docker exec -i` (without it stdin never reaches the heredoc script).
+It runs hourly from the always-on QNAP NAS via Container Station, see `monitoring/qnap/` (Alpine image; SSH key bind-mounted). The container auto-updates `monitor.sh` from GitHub before each cron run (`run-monitor.sh` wrapper: curl raw file, fall back to cached copy on failure), so pushing a fix to the repo is enough (no manual copy, no rebuild). If the repo is private, set `GITHUB_TOKEN` in the compose file. Portability invariants (each fixed after a false alarm): the WS probe must use `--http1.1` (HTTP/2 drops Upgrade headers and the SPA catch-all answers 200), TLS date parsing needs the python3 fallback (BusyBox date in the Alpine container parses neither BSD nor GNU syntax), and the in-container moderation check needs `docker exec -i` (without it stdin never reaches the heredoc script).
 
 ## Generated Artifacts (gitignored)
 

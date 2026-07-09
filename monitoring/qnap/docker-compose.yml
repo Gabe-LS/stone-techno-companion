@@ -7,12 +7,12 @@ services:
       # Festival timezone: keeps the transport departures probe querying the
       # correct local date/time.
       TZ: Europe/Berlin
-      # Hourly at minute 0, same cadence as the Mac cron. Override if needed.
+      # Hourly at minute 0. Override if needed.
       CRON_SCHEDULE: "0 * * * *"
+      # Optional: set if the repo is private. A read-only personal access
+      # token (classic, repo scope) or fine-grained token (contents: read).
+      # GITHUB_TOKEN: "ghp_..."
     volumes:
-      # The monitor script, copied next to this compose file (see README).
-      # Mounted read-only so updating it never needs an image rebuild.
-      - ./monitor.sh:/app/monitor.sh:ro
       # SSH key dir (id_ed25519 + optional config/known_hosts). Read-only;
       # the entrypoint copies keys inside with ssh-safe permissions.
       - ./ssh:/keys:ro

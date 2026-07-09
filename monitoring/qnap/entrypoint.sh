@@ -1,11 +1,10 @@
 #!/bin/sh
 # Container entrypoint for the Stone Techno health monitor on QNAP.
 #
-# Copies the SSH key from the read-only bind mount into the container with
-# strict permissions (QNAP share permissions are often too open for ssh,
-# which refuses group/world-readable private keys), installs the cron
-# schedule, runs one immediate check so a broken setup surfaces in
-# `docker logs` right away, then hands over to crond in the foreground.
+# Fetches the latest monitor.sh from GitHub, copies SSH keys with strict
+# permissions, installs the cron schedule, runs one immediate check so a
+# broken setup surfaces in `docker logs` right away, then hands over to
+# crond in the foreground.
 set -eu
 
 mkdir -p /root/.ssh /app/logs
@@ -35,10 +34,11 @@ EOF
 fi
 
 CRON_SCHEDULE="${CRON_SCHEDULE:-0 * * * *}"
-echo "$CRON_SCHEDULE /app/monitor.sh --quiet >> /app/logs/monitor.log 2>&1" | crontab -
+echo "$CRON_SCHEDULE /app/run-monitor.sh --quiet >> /app/logs/monitor.log 2>&1" | crontab -
 echo "Installed cron schedule: $CRON_SCHEDULE"
 
-echo "Running one immediate check..."
-/app/monitor.sh || true
+# Fetch + run once on startup so docker logs shows any issue immediately.
+echo "Running one immediate check (fetches latest monitor.sh from GitHub)..."
+/app/run-monitor.sh || true
 
 exec crond -f -l 8
