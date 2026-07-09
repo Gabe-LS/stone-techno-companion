@@ -175,8 +175,11 @@ class TestDepartures:
             r = client.get("/api/transport/departures?date=10.07.2026&time=14:00")
             assert r.status_code == 200
         assert _FakeAsyncClient.calls == 1
-        # A different minute bucket is a fresh upstream call
-        client.get("/api/transport/departures?date=10.07.2026&time=14:01")
+        # Same date+dir with a different time still hits the cache (no time in key)
+        client.get("/api/transport/departures?date=10.07.2026&time=14:05")
+        assert _FakeAsyncClient.calls == 1
+        # A different date is a fresh upstream call
+        client.get("/api/transport/departures?date=11.07.2026&time=14:05")
         assert _FakeAsyncClient.calls == 2
 
     def test_upstream_error_without_cache_is_502(self):

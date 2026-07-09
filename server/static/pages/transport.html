@@ -218,23 +218,22 @@
   }
 
   .dep-item.is-next .dep-time { color: var(--transport-next-text); font-weight: 700; }
+  .dep-item.is-next .dep-time.delayed { color: var(--color-delay); }
 
   .dep-item.is-canceled {
     background: var(--color-canceled-bg);
     color: var(--color-accent);
   }
 
-  .dep-item.is-canceled .dep-time-scheduled {
+  .dep-item.is-canceled .dep-time {
     text-decoration: line-through;
     color: var(--color-accent);
     opacity: 0.5;
   }
 
   .dep-time-col {
-    display: flex;
-    flex-direction: column;
     flex-shrink: 0;
-    min-width: 2.8rem;
+    width: 3.2rem;
   }
 
   .dep-time {
@@ -243,22 +242,10 @@
     font-variant-numeric: tabular-nums;
     color: var(--color-text);
   }
-  @media (max-width: 768px) { .dep-time { font-size: var(--font-base); } }
+  @media (max-width: 768px) { .dep-time { font-size: var(--font-base); } .dep-time-col { width: 2.8rem; } }
 
-  .dep-time-scheduled {
-    font-size: var(--font-xs);
-    font-variant-numeric: tabular-nums;
-    color: var(--gray-500);
-    text-decoration: line-through;
-    line-height: 1.2;
-  }
-
-  .dep-time-real {
-    font-size: var(--font-sm);
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
+  .dep-time.delayed {
     color: var(--color-delay);
-    line-height: 1.2;
   }
 
   .line-badge {
@@ -267,9 +254,9 @@
     justify-content: center;
     font-size: var(--font-xs);
     font-weight: 700;
-    padding: var(--space-xs) var(--space-sm);
+    padding: var(--space-xs) 0;
     border-radius: var(--radius-sm);
-    min-width: 2.25rem;
+    width: 2.75rem;
     flex-shrink: 0;
     position: relative;
   }
@@ -358,8 +345,7 @@
     white-space: nowrap;
   }
   .dep-arr-label { color: var(--color-text-secondary); font-size: var(--font-xs); }
-  .dep-arr-sched { text-decoration: line-through; color: var(--gray-500); margin-right: 4px; }
-  .dep-arr-real { color: var(--color-delay); font-weight: 600; }
+  .dep-arr.delayed { color: var(--color-delay); font-weight: 600; }
   .dep-item.is-past .dep-arr,
   .dep-item.is-past .dep-arr-label { color: var(--gray-500); }
 
@@ -512,8 +498,9 @@ var TIMETABLE_DATA = null;
   var lastGps = null;  // last located GPS, so a direction switch recomputes walk to the new stop
   var activeDay = 0;
   var realtimeCache = {};
+  var realtimeSpillover = [];
   var realtimeActive = false;
-  var POLL_INTERVAL = 60000;
+  var POLL_INTERVAL = 90000;
   var API_BASE = "";
   // ?route= encodes both the itinerary and the direction as one slug. Default
   // is zollverein-essen. The bare "duesseldorf" is kept for older links.
@@ -608,6 +595,7 @@ var TIMETABLE_DATA = null;
     // Realtime is per-direction: a stale entry from the other direction could
     // match by line+time+date, so drop the whole cache on switch.
     realtimeCache = {};
+    realtimeSpillover = [];
     realtimeActive = false;
     document.getElementById("live-indicator").classList.remove("active");
     if (activeDay >= curDays().length) activeDay = 0;
@@ -629,11 +617,6 @@ var TIMETABLE_DATA = null;
     return parseInt(p[0], 10) * 60 + parseInt(p[1], 10);
   }
 
-  function serviceDayMinutes(dep) {
-    var m = depToMinutes(dep);
-    return m < 240 ? m + 1440 : m;
-  }
-
   function getNow() {
     var params = new URLSearchParams(window.location.search);
     var now;
@@ -652,9 +635,7 @@ var TIMETABLE_DATA = null;
       day: now.getDate(),
       hours: now.getHours(),
       minutes: now.getMinutes(),
-      nowServiceMinutes: now.getHours() < 4
-        ? now.getHours() * 60 + now.getMinutes() + 1440
-        : now.getHours() * 60 + now.getMinutes()
+      nowMinutes: now.getHours() * 60 + now.getMinutes()
     };
   }
 
@@ -663,10 +644,6 @@ var TIMETABLE_DATA = null;
     for (var i = 0; i < curDays().length; i++) {
       var d = parseDate(curDays()[i].date);
       if (d.day === now.day && d.month === now.month && d.year === now.year) return i;
-      if (now.hours < 4) {
-        var yesterday = new Date(now.year, now.month - 1, now.day - 1);
-        if (d.day === yesterday.getDate() && d.month === yesterday.getMonth() + 1 && d.year === yesterday.getFullYear()) return i;
-      }
     }
     return 0;
   }
@@ -693,12 +670,6 @@ var TIMETABLE_DATA = null;
     var pd = parseDate(dayData.date);
 
     var isToday = pd.day === now.day && pd.month === now.month && pd.year === now.year;
-    if (now.hours < 4) {
-      var yesterday = new Date(now.year, now.month - 1, now.day - 1);
-      if (pd.day === yesterday.getDate() && pd.month === yesterday.getMonth() + 1 && pd.year === yesterday.getFullYear()) {
-        isToday = true;
-      }
-    }
     if (!isToday) {
       realtimeActive = false;
       document.getElementById("live-indicator").classList.remove("active");
@@ -708,7 +679,7 @@ var TIMETABLE_DATA = null;
     var timeStr = String(now.hours).padStart(2, "0") + ":" + String(now.minutes).padStart(2, "0");
     var dateStr = String(now.day).padStart(2, "0") + "." + String(now.month).padStart(2, "0") + "." + now.year;
 
-    fetch(API_BASE + "/api/transport/departures?date=" + encodeURIComponent(dateStr) + "&time=" + encodeURIComponent(timeStr) + "&dir=" + direction + "&route=" + route + "&limit=30")
+    fetch(API_BASE + "/api/transport/departures?date=" + encodeURIComponent(dateStr) + "&time=" + encodeURIComponent(timeStr) + "&dir=" + direction + "&route=" + route + "&limit=5")
       .then(function (r) { return r.json(); })
       .then(function (result) {
         if (!result.departures) return;
@@ -724,10 +695,14 @@ var TIMETABLE_DATA = null;
         document.getElementById("live-updated").textContent =
           "updated " + dd + "/" + mm + "/" + yyyy + " at " + hh + ":" + mi;
 
+        realtimeSpillover = [];
         for (var i = 0; i < result.departures.length; i++) {
           var rt = result.departures[i];
           var key = rtKey(rt.line, rt.scheduled, rt.scheduledDate);
           realtimeCache[key] = rt;
+          if (rt.scheduledDate && rt.scheduledDate !== dateStr && rt.real) {
+            realtimeSpillover.push(rt);
+          }
         }
         renderPanel();
       })
@@ -798,29 +773,49 @@ var TIMETABLE_DATA = null;
     var now = getNow();
     var parsedDate = parseDate(dayData.date);
     var isToday = parsedDate.day === now.day && parsedDate.month === now.month && parsedDate.year === now.year;
-    if (now.hours < 4) {
-      var yesterday = new Date(now.year, now.month - 1, now.day - 1);
-      if (parsedDate.day === yesterday.getDate() && parsedDate.month === yesterday.getMonth() + 1 && parsedDate.year === yesterday.getFullYear()) {
-        isToday = true;
+    var nowMin = now.nowMinutes;
+
+    // Build entries with effective times, then sort by effective departure.
+    // Next-day overflow entries get +1440 so they sort after same-day departures.
+    var entries = [];
+    for (var i = 0; i < dayData.departures.length; i++) {
+      var dep = dayData.departures[i];
+      var offset = dep.nextDay ? 1440 : 0;
+      var depMin = depToMinutes(dep.dep) + offset;
+      var rt = realtimeCache[rtKey(dep.line, dep.dep, dayData.date)];
+      var isCanceled = rt && rt.status === "CANCELED";
+      var effectiveMin = depMin;
+      if (rt && rt.real && !isCanceled) {
+        var rtMin = depToMinutes(rt.real) + offset;
+        if (depMin - rtMin > 720) rtMin += 1440;
+        effectiveMin = rtMin;
+      }
+      entries.push({ dep: dep, rt: rt, depMin: depMin, effectiveMin: effectiveMin, isCanceled: isCanceled });
+    }
+
+    // Inject previous-day departures delayed into today.
+    if (isToday) {
+      for (var si = 0; si < realtimeSpillover.length; si++) {
+        var sp = realtimeSpillover[si];
+        var spDep = { dep: sp.scheduled, line: sp.line, direction: sp.direction || "", platform: sp.platform };
+        var spEffective = depToMinutes(sp.real);
+        entries.push({ dep: spDep, rt: sp, depMin: depToMinutes(sp.scheduled), effectiveMin: spEffective, isCanceled: sp.status === "CANCELED" });
       }
     }
+
+    entries.sort(function (a, b) { return a.effectiveMin - b.effectiveMin; });
 
     var nextFound = false;
     var scrollTarget = null;
 
-    for (var i = 0; i < dayData.departures.length; i++) {
-      var dep = dayData.departures[i];
-      var svcMin = serviceDayMinutes(dep.dep);
-
-      var rt = realtimeCache[rtKey(dep.line, dep.dep, dayData.date)];
-      var isCanceled = rt && rt.status === "CANCELED";
+    for (var ei = 0; ei < entries.length; ei++) {
+      var e = entries[ei];
+      var dep = e.dep;
+      var rt = e.rt;
+      var isCanceled = e.isCanceled;
+      var effectiveMin = e.effectiveMin;
       var hasDelay = rt && rt.delay > 0 && !isCanceled;
       var isOnTime = rt && rt.realtime && rt.delay === 0 && !isCanceled;
-
-      var effectiveSvcMin = svcMin;
-      if (rt && rt.real && !isCanceled) {
-        effectiveSvcMin = serviceDayMinutes(rt.real);
-      }
 
       var li = document.createElement("li");
       li.className = "dep-item";
@@ -832,12 +827,12 @@ var TIMETABLE_DATA = null;
       if (isToday) {
         if (isCanceled) {
           isPast = true;
-        } else if (effectiveSvcMin < now.nowServiceMinutes) {
+        } else if (effectiveMin < nowMin) {
           isPast = true;
         } else if (!nextFound) {
           if (walkMinutes !== null) {
-            var leaveBy = effectiveSvcMin - walkMinutes;
-            if (leaveBy < now.nowServiceMinutes) {
+            var leaveBy = effectiveMin - walkMinutes;
+            if (leaveBy < nowMin) {
               isTooLate = true;
             } else {
               isNext = true;
@@ -861,21 +856,15 @@ var TIMETABLE_DATA = null;
       var timeCol = document.createElement("div");
       timeCol.className = "dep-time-col";
 
+      var timeEl = document.createElement("span");
+      timeEl.className = "dep-time";
       if (hasDelay && rt.real) {
-        var schedSpan = document.createElement("span");
-        schedSpan.className = "dep-time-scheduled";
-        schedSpan.textContent = dep.dep;
-        var realSpan = document.createElement("span");
-        realSpan.className = "dep-time-real";
-        realSpan.textContent = rt.real;
-        timeCol.appendChild(schedSpan);
-        timeCol.appendChild(realSpan);
+        timeEl.classList.add("delayed");
+        timeEl.textContent = rt.real;
       } else {
-        var timeEl = document.createElement("span");
-        timeEl.className = "dep-time";
         timeEl.textContent = dep.dep;
-        timeCol.appendChild(timeEl);
       }
+      timeCol.appendChild(timeEl);
 
       var badge = document.createElement("span");
       badge.className = "line-badge " + (dep.badge ? "l-" + dep.badge : "l-" + dep.line);
@@ -895,8 +884,6 @@ var TIMETABLE_DATA = null;
       dest.textContent = dep.direction.replace("Essen ", "");
       middle.appendChild(dest);
 
-      // Airport trains: platform (from schedule, live overrides) + the live
-      // train number under the headsign.
       if (route === "duesseldorf") {
         var plat = (rt && rt.platform) || dep.platform;
         var subParts = [];
@@ -920,7 +907,6 @@ var TIMETABLE_DATA = null;
       var right = document.createElement("div");
       right.className = "dep-right";
 
-      // Airport trains: always show the arrival time (live-adjusted when late).
       if (route === "duesseldorf" && dep.arr) {
         var arrEl = document.createElement("span");
         arrEl.className = "dep-arr";
@@ -929,14 +915,8 @@ var TIMETABLE_DATA = null;
         arrLbl.textContent = "arr ";
         arrEl.appendChild(arrLbl);
         if (rt && rt.arrReal && rt.arrDelay > 0 && !isCanceled) {
-          var arrS = document.createElement("span");
-          arrS.className = "dep-arr-sched";
-          arrS.textContent = dep.arr;
-          var arrR = document.createElement("span");
-          arrR.className = "dep-arr-real";
-          arrR.textContent = rt.arrReal;
-          arrEl.appendChild(arrS);
-          arrEl.appendChild(arrR);
+          arrEl.classList.add("delayed");
+          arrEl.appendChild(document.createTextNode(rt.arrReal));
         } else {
           arrEl.appendChild(document.createTextNode(dep.arr));
         }
@@ -949,7 +929,7 @@ var TIMETABLE_DATA = null;
         cdEl.textContent = "arr. in " + rt.countdown + " min";
         right.appendChild(cdEl);
       } else if (walkMinutes !== null && !isPast && isToday) {
-        var minsLeft = effectiveSvcMin - now.nowServiceMinutes;
+        var minsLeft = effectiveMin - nowMin;
         if (minsLeft > 0) {
           var walkEl = document.createElement("span");
           walkEl.className = "dep-walk";

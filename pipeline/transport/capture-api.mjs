@@ -76,23 +76,21 @@ try {
 }
 
 // If EFA works, build the full timetable
-async function buildDayTimetable(stopId, termini, date, nextDate) {
+async function buildDayTimetable(stopId, termini, date) {
   const allDeps = new Map();
 
   // One departure-monitor fetch returns the next N departures across ALL lines
-  // at the stop, so a single limit=500 call from 04:00 only spans ~4h at a big
+  // at the stop, so a single limit=500 call from 00:00 only spans ~4h at a big
   // hub like Essen Hbf (confirmed empirically). Window the day in ~3h steps and
   // merge -- the dedup Map below collapses overlaps -- so both the small
   // Zollverein stop and the huge Essen Hbf get full-day coverage.
-  const startTimes = ['0400', '0700', '1000', '1300', '1600', '1900', '2200'];
-  const results = await Promise.all([
-    ...startTimes.map((t) => fetchDepartures(stopId, date, t, 500)),
-    fetchDepartures(stopId, nextDate, '0100', 500),
-  ]);
+  const startTimes = ['0000', '0300', '0600', '0900', '1200', '1500', '1800', '2100'];
+  const results = await Promise.all(
+    startTimes.map((t) => fetchDepartures(stopId, date, t, 500))
+  );
   const allDepartures = results.flatMap((r) => r.departureList || []);
 
   const calDateNum = date.split('.').reverse().join('');
-  const nextDateNum = nextDate.split('.').reverse().join('');
 
   for (const dep of allDepartures) {
     const line = dep.servingLine;
@@ -108,10 +106,7 @@ async function buildDayTimetable(stopId, termini, date, nextDate) {
     const depDateNum = `${dt.year}${String(dt.month).padStart(2, '0')}${String(dt.day).padStart(2, '0')}`;
     const depHour = parseInt(dt.hour);
 
-    if (depDateNum < calDateNum) continue;
-    if (depDateNum === calDateNum && depHour < 4) continue;
-    if (depDateNum > nextDateNum) continue;
-    if (depDateNum === nextDateNum && depHour >= 4) continue;
+    if (depDateNum !== calDateNum) continue;
 
     if (allDeps.has(key)) continue;
 
@@ -129,7 +124,7 @@ async function buildDayTimetable(stopId, termini, date, nextDate) {
       direction: dir,
       duration: durationMin,
       platform: dep.platform,
-      sortKey: depDateNum === calDateNum ? depMinutes : depMinutes + 24 * 60,
+      sortKey: depMinutes,
     });
   }
 
@@ -138,9 +133,9 @@ async function buildDayTimetable(stopId, termini, date, nextDate) {
 }
 
 const dates = [
-  { date: '10.07.2026', next: '11.07.2026', label: '10.07.2026', day: 'Friday' },
-  { date: '11.07.2026', next: '12.07.2026', label: '11.07.2026', day: 'Saturday' },
-  { date: '12.07.2026', next: '13.07.2026', label: '12.07.2026', day: 'Sunday' },
+  { date: '10.07.2026', label: '10.07.2026', day: 'Friday' },
+  { date: '11.07.2026', label: '11.07.2026', day: 'Saturday' },
+  { date: '12.07.2026', label: '12.07.2026', day: 'Sunday' },
 ];
 // The Düsseldorf airport trains also cover Thursday (the arrival day before the
 // festival); the Zollverein tram board stays Fri-Sun only.
@@ -156,25 +151,27 @@ const DIRECTIONS = {
 
 async function buildDirection(cfg) {
   const out = {};
-  for (const { date, next, label } of dates) {
-    out[label] = { trips: await buildDayTimetable(cfg.stopId, cfg.termini, date, next) };
+  for (const { date, label } of dates) {
+    out[label] = { trips: await buildDayTimetable(cfg.stopId, cfg.termini, date) };
   }
   return out;
 }
 
+function mapTrip(t, nextDay) {
+  const o = { dep: t.depTime, arr: t.arrTime, line: t.line, direction: t.direction, duration: t.duration, platform: t.platform };
+  if (nextDay) o.nextDay = true;
+  return o;
+}
+
 function daysFrom(built) {
-  return dates.map(({ label, day }) => ({
-    day,
-    date: label,
-    departures: built[label].trips.map(t => ({
-      dep: t.depTime,
-      arr: t.arrTime,
-      line: t.line,
-      direction: t.direction,
-      duration: t.duration,
-      platform: t.platform,
-    })),
-  }));
+  return dates.map(({ label, day }, i) => {
+    const deps = built[label].trips.map(t => mapTrip(t, false));
+    if (i < dates.length - 1) {
+      const next = built[dates[i + 1].label].trips.slice(0, 5);
+      deps.push(...next.map(t => mapTrip(t, true)));
+    }
+    return { day, date: label, departures: deps };
+  });
 }
 
 console.log('\n=== Outbound: Zollverein -> Essen Hbf ===');
@@ -225,12 +222,11 @@ async function fetchTripsPage(originId, destId, dateNum, time) {
   return res.json();
 }
 
-async function buildDuesseldorfDay(originId, destId, date, nextDate) {
+async function buildDuesseldorfDay(originId, destId, date) {
   const dateNum = date.split('.').reverse().join('');
-  const nextNum = nextDate.split('.').reverse().join('');
   const deps = new Map();
   let curDate = dateNum;
-  let curTime = '0400';
+  let curTime = '0000';
   for (let page = 0; page < 50; page++) {
     let d;
     try { d = await fetchTripsPage(originId, destId, curDate, curTime); } catch (e) { break; }
@@ -248,11 +244,7 @@ async function buildDuesseldorfDay(originId, destId, date, nextDate) {
       const line = (train && (train.transportation.disassembledName || train.transportation.number)) || '';
       if (!/^(RE|RB|S)/.test(line)) continue; // regional/S-Bahn only (skip long-distance ICE/IC train numbers)
       const b = berlinParts(depIso);
-      const depH = parseInt(b.hh, 10);
-      if (b.dateNum < dateNum) continue;
-      if (b.dateNum === dateNum && depH < 4) continue;
-      if (b.dateNum > nextNum) continue;
-      if (b.dateNum === nextNum && depH >= 4) continue;
+      if (b.dateNum !== dateNum) continue;
       if (deps.has(depIso)) continue;
       const arrIso = l.destination && l.destination.arrivalTimePlanned;
       const ab = arrIso ? berlinParts(arrIso) : null;
@@ -270,7 +262,7 @@ async function buildDuesseldorfDay(originId, destId, date, nextDate) {
     }
     if (!lastIso) break;
     const lb = berlinParts(lastIso);
-    if (lb.dateNum > nextNum || (lb.dateNum === nextNum && parseInt(lb.hh, 10) >= 4)) break;
+    if (lb.dateNum > dateNum) break;
     let mi = parseInt(lb.mm, 10) + 1;
     let h = parseInt(lb.hh, 10);
     let Y = +lb.dateNum.slice(0, 4);
@@ -281,25 +273,34 @@ async function buildDuesseldorfDay(originId, destId, date, nextDate) {
     curDate = `${Y}${String(M).padStart(2, '0')}${String(D).padStart(2, '0')}`;
     curTime = `${String(h).padStart(2, '0')}${String(mi).padStart(2, '0')}`;
   }
-  const svc = (t) => { const [h, m] = t.dep.split(':').map(Number); const x = h * 60 + m; return x < 240 ? x + 1440 : x; };
-  return [...deps.values()].sort((a, b) => svc(a) - svc(b));
+  const toMin = (t) => { const [h, m] = t.dep.split(':').map(Number); return h * 60 + m; };
+  return [...deps.values()].sort((a, b) => toMin(a) - toMin(b));
+}
+
+function appendOverflow(days) {
+  for (let i = 0; i < days.length - 1; i++) {
+    const next5 = days[i + 1].departures.filter(d => !d.nextDay).slice(0, 5);
+    days[i].departures.push(...next5.map(d => Object.assign({}, d, { nextDay: true })));
+  }
 }
 
 console.log('\n=== DUS Airport -> Essen Hbf (regional) ===');
 const duesDays = [];
-for (const { date, next, label, day } of duesDates) {
-  const trips = await buildDuesseldorfDay(DFLUG_ID, ESSEN_HBF_ID, date, next);
+for (const { date, label, day } of duesDates) {
+  const trips = await buildDuesseldorfDay(DFLUG_ID, ESSEN_HBF_ID, date);
   console.log(`  ${label}: ${trips.length} direct regional trips`);
   duesDays.push({ day, date: label, departures: trips });
 }
+appendOverflow(duesDays);
 
 console.log('\n=== Essen Hbf -> DUS Airport (regional) ===');
 const duesRevDays = [];
-for (const { date, next, label, day } of duesDates) {
-  const trips = await buildDuesseldorfDay(ESSEN_HBF_ID, DFLUG_ID, date, next);
+for (const { date, label, day } of duesDates) {
+  const trips = await buildDuesseldorfDay(ESSEN_HBF_ID, DFLUG_ID, date);
   console.log(`  ${label}: ${trips.length} direct regional trips`);
   duesRevDays.push({ day, date: label, departures: trips });
 }
+appendOverflow(duesRevDays);
 
 const transportJson = {
   route: { from: 'Zollverein', to: 'Essen Hbf', fromId: ZOLLVEREIN_ID, toId: ESSEN_HBF_ID },

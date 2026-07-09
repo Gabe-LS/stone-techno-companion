@@ -1058,7 +1058,8 @@ _TRANSPORT_DUES_TRIP = {
 }
 _TRANSPORT_DATE_RE = re.compile(r"^\d{2}\.\d{2}\.\d{4}$")
 _TRANSPORT_TIME_RE = re.compile(r"^\d{1,2}:\d{2}$")
-_transport_cache: dict[tuple[str, str, str], tuple[float, list]] = {}
+_transport_cache: dict[tuple[str, str], tuple[float, list]] = {}
+_transport_locks: dict[tuple[str, str], asyncio.Lock] = {}
 _transport_rate: dict[str, list[float]] = {}
 
 
@@ -1211,14 +1212,71 @@ async def transport_departures(request: Request, date: str):
         if dir_key not in _TRANSPORT_DUES_TRIP:
             raise HTTPException(400, "dir must be 'outbound' or 'inbound'")
         _check_transport_rate(request, limit=30)
-        key = (date, t, f"dues:{dir_key}")
+        key = (date, f"dues:{dir_key}")
         now = time.monotonic()
         cached = _transport_cache.get(key)
-        if cached and now - cached[0] < 55:
+        if cached and now - cached[0] < 90:
             return {"departures": cached[1], "ts": datetime.now(timezone.utc).isoformat()}
-        origin_id, dest_id = _TRANSPORT_DUES_TRIP[dir_key]
+        lock = _transport_locks.setdefault(key, asyncio.Lock())
+        async with lock:
+            cached = _transport_cache.get(key)
+            if cached and now - cached[0] < 90:
+                return {"departures": cached[1], "ts": datetime.now(timezone.utc).isoformat()}
+            origin_id, dest_id = _TRANSPORT_DUES_TRIP[dir_key]
+            try:
+                deps = await _duesseldorf_trip_realtime(origin_id, dest_id, date, t)
+            except Exception:
+                if cached:
+                    return {
+                        "departures": cached[1],
+                        "ts": datetime.now(timezone.utc).isoformat(),
+                        "stale": True,
+                    }
+                raise HTTPException(502, "Departure service unavailable")
+            _transport_cache[key] = (time.monotonic(), deps)
+            if len(_transport_cache) > 50:
+                oldest = min(_transport_cache, key=lambda k: _transport_cache[k][0])
+                del _transport_cache[oldest]
+        return {"departures": deps, "ts": datetime.now(timezone.utc).isoformat()}
+
+    if dir_key not in _TRANSPORT_DIRECTIONS:
+        raise HTTPException(400, "dir must be 'outbound' or 'inbound'")
+    stop_id, dest_filters = _TRANSPORT_DIRECTIONS[dir_key]
+    _check_transport_rate(request, limit=30)
+
+    key = (date, dir_key)
+    now = time.monotonic()
+    cached = _transport_cache.get(key)
+    if cached and now - cached[0] < 90:
+        return {"departures": cached[1], "ts": datetime.now(timezone.utc).isoformat()}
+
+    lock = _transport_locks.setdefault(key, asyncio.Lock())
+    async with lock:
+        cached = _transport_cache.get(key)
+        if cached and now - cached[0] < 90:
+            return {"departures": cached[1], "ts": datetime.now(timezone.utc).isoformat()}
+
+        import httpx
+
+        params = {
+            "outputFormat": "JSON",
+            "language": "de",
+            "stateless": "1",
+            "type_dm": "stop",
+            "name_dm": stop_id,
+            "mode": "direct",
+            "useRealtime": "1",
+            "itdDateDayMonthYear": date,
+            "itdTime": t,
+            "limit": "30",
+        }
         try:
-            deps = await _duesseldorf_trip_realtime(origin_id, dest_id, date, t)
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                r = await client.get(
+                    _EFA_BASE, params=params, headers={"User-Agent": "Mozilla/5.0"}
+                )
+                r.raise_for_status()
+                data = r.json()
         except Exception:
             if cached:
                 return {
@@ -1227,99 +1285,52 @@ async def transport_departures(request: Request, date: str):
                     "stale": True,
                 }
             raise HTTPException(502, "Departure service unavailable")
-        _transport_cache[key] = (now, deps)
+
+        deps = []
+        for d in data.get("departureList") or []:
+            line = d.get("servingLine", {})
+            num = line.get("number")
+            if num not in ("107", "NE2"):
+                continue
+            direction = line.get("direction") or ""
+            if not any(f in direction for f in dest_filters):
+                continue
+            dt = d.get("dateTime") or {}
+            try:
+                entry = {
+                    "line": num,
+                    "direction": direction,
+                    "platform": d.get("platform"),
+                    "scheduled": f"{int(dt['hour']):02d}:{int(dt['minute']):02d}",
+                    "scheduledDate": f"{int(dt['day']):02d}.{int(dt['month']):02d}.{dt['year']}",
+                    "realtime": line.get("realtime") == "1",
+                }
+            except (KeyError, ValueError, TypeError):
+                continue
+            rt = d.get("realDateTime")
+            if rt:
+                try:
+                    entry["real"] = f"{int(rt['hour']):02d}:{int(rt['minute']):02d}"
+                except (KeyError, ValueError, TypeError):
+                    pass
+            if line.get("delay") is not None:
+                try:
+                    entry["delay"] = int(line["delay"])
+                except (ValueError, TypeError):
+                    pass
+            if d.get("realtimeTripStatus"):
+                entry["status"] = d["realtimeTripStatus"]
+            if d.get("countdown") is not None:
+                try:
+                    entry["countdown"] = int(d["countdown"])
+                except (ValueError, TypeError):
+                    pass
+            deps.append(entry)
+
+        _transport_cache[key] = (time.monotonic(), deps)
         if len(_transport_cache) > 50:
             oldest = min(_transport_cache, key=lambda k: _transport_cache[k][0])
             del _transport_cache[oldest]
-        return {"departures": deps, "ts": datetime.now(timezone.utc).isoformat()}
-
-    if dir_key not in _TRANSPORT_DIRECTIONS:
-        raise HTTPException(400, "dir must be 'outbound' or 'inbound'")
-    stop_id, dest_filters = _TRANSPORT_DIRECTIONS[dir_key]
-    _check_transport_rate(request, limit=30)
-
-    key = (date, t, dir_key)
-    now = time.monotonic()
-    cached = _transport_cache.get(key)
-    if cached and now - cached[0] < 55:
-        return {"departures": cached[1], "ts": datetime.now(timezone.utc).isoformat()}
-
-    import httpx
-
-    params = {
-        "outputFormat": "JSON",
-        "language": "de",
-        "stateless": "1",
-        "type_dm": "stop",
-        "name_dm": stop_id,
-        "mode": "direct",
-        "useRealtime": "1",
-        "itdDateDayMonthYear": date,
-        "itdTime": t,
-        "limit": "30",
-    }
-    try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            r = await client.get(
-                _EFA_BASE, params=params, headers={"User-Agent": "Mozilla/5.0"}
-            )
-            r.raise_for_status()
-            data = r.json()
-    except Exception:
-        # Serve a stale cache entry rather than nothing if upstream hiccups
-        if cached:
-            return {
-                "departures": cached[1],
-                "ts": datetime.now(timezone.utc).isoformat(),
-                "stale": True,
-            }
-        raise HTTPException(502, "Departure service unavailable")
-
-    deps = []
-    for d in data.get("departureList") or []:
-        line = d.get("servingLine", {})
-        num = line.get("number")
-        if num not in ("107", "NE2"):
-            continue
-        direction = line.get("direction") or ""
-        if not any(f in direction for f in dest_filters):
-            continue
-        dt = d.get("dateTime") or {}
-        try:
-            entry = {
-                "line": num,
-                "direction": direction,
-                "platform": d.get("platform"),
-                "scheduled": f"{int(dt['hour']):02d}:{int(dt['minute']):02d}",
-                "scheduledDate": f"{int(dt['day']):02d}.{int(dt['month']):02d}.{dt['year']}",
-                "realtime": line.get("realtime") == "1",
-            }
-        except (KeyError, ValueError, TypeError):
-            continue
-        rt = d.get("realDateTime")
-        if rt:
-            try:
-                entry["real"] = f"{int(rt['hour']):02d}:{int(rt['minute']):02d}"
-            except (KeyError, ValueError, TypeError):
-                pass
-        if line.get("delay") is not None:
-            try:
-                entry["delay"] = int(line["delay"])
-            except (ValueError, TypeError):
-                pass
-        if d.get("realtimeTripStatus"):
-            entry["status"] = d["realtimeTripStatus"]
-        if d.get("countdown") is not None:
-            try:
-                entry["countdown"] = int(d["countdown"])
-            except (ValueError, TypeError):
-                pass
-        deps.append(entry)
-
-    _transport_cache[key] = (now, deps)
-    if len(_transport_cache) > 50:
-        oldest = min(_transport_cache, key=lambda k: _transport_cache[k][0])
-        del _transport_cache[oldest]
     return {"departures": deps, "ts": datetime.now(timezone.utc).isoformat()}
 
 
