@@ -1,0 +1,1409 @@
+openapi: 3.1.0
+info:
+  title: Stone Techno Companion API (non-chat surface)
+  version: 0.1.0
+  description: >-
+    This document describes CURRENT behavior as-built for the non-chat HTTP surface of
+    `server/api.py` (favorites/picks, schedule, session and cross-device PIN sync, push
+    subscriptions, ICS export, the public-transport departures/walk proxy, the DOP tile
+    proxy, and static file routes). It is bug-compatible: every quirk, inconsistency, and
+    accidental behavior found in the code is documented as-is, marked "AS-BUILT:" in the
+    relevant operation or parameter description, and is NOT fixed or idealized here. This
+    is the contract the Next.js front (Stage 3 of the platform migration) consumes; any
+    future change to the real API must update this file in the same PR (contract-first).
+
+    Out of scope: the chat REST API (`server/chat_api.py`), all WebSocket endpoints (see
+    `docs/api/README.md` for a prose appendix), and the future lineup-data read API
+    (designed separately in `docs/api/lineup-data-api.md`).
+  contact:
+    name: Stone Techno Companion
+servers:
+  - url: https://stonetechno.deftlab.dev
+    description: Production
+  - url: https://localhost:64728
+    description: Local dev (uvicorn with mkcert TLS certs, see CLAUDE.md)
+
+tags:
+  - name: sync
+    description: >-
+      Session creation, lookup, and cross-device sync via ephemeral 6-digit PINs.
+      Sessions hold both `picks` (favorited artist ids) and `schedule` (scheduled slot
+      ids) as JSON arrays in a single SQLite row.
+  - name: favorites
+    description: Add/remove an artist to/from a session's favorites ("picks").
+  - name: schedule
+    description: Add/remove a timetable slot to/from a session's personal schedule.
+  - name: push
+    description: Web Push subscription lifecycle for the lineup/timetable push scheduler.
+  - name: ics
+    description: Per-slot calendar export.
+  - name: transport
+    description: >-
+      Realtime departure-board proxy (Zollverein tram + Dusseldorf Airport regional
+      trains) and a walking-directions proxy, both server-pinned to fixed
+      origins/destinations so they cannot be abused as open proxies.
+  - name: static
+    description: >-
+      Static asset routes, the SPA catch-all, clean-URL static pages, and the
+      unmatched-API 404 catch-all.
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: stc_session
+      description: >-
+        128-bit URL-safe session token. Set by `/api/session`, `/api/sync/{pin}`, and
+        `/api/session/{code}` (only when `{code}` resolves to a session id, not a
+        read-only share token). httpOnly, Secure (AS-BUILT: always `Secure=True`
+        regardless of environment, so local dev must be served over HTTPS, which the
+        project's mkcert setup already requires), `SameSite=Lax`, `path=/`,
+        `max-age=7776000` (90 days).
+
+  parameters:
+    codeParam:
+      name: code
+      in: path
+      required: true
+      description: >-
+        A session id OR a read-only share token (both are 22-char URL-safe tokens
+        indistinguishable by shape; the server tries session id first, falls back to
+        share token, and 404s if neither matches). Mutating endpoints reject a share
+        token with 403 "Read-only session".
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9_-]{6,32}$"
+        example: "Z8x1c9F3qi9YB2hV6tQqbA"
+
+  schemas:
+    Error:
+      type: object
+      description: >-
+        AS-BUILT: two distinct shapes exist under the same `detail` key. Errors raised
+        via `HTTPException(status, "message")` (the majority in this file) return
+        `detail` as a plain string. Errors raised by FastAPI's own request parsing
+        (e.g. a non-integer `z`/`x`/`y` path segment on the DOP tile route) return
+        `detail` as an array of Pydantic-style error objects instead.
+      properties:
+        detail:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: object
+      required: [detail]
+
+    SessionCreateResponse:
+      type: object
+      properties:
+        session_id:
+          type: string
+          example: "Z8x1c9F3qi9YB2hV6tQqbA"
+        share_token:
+          type: string
+          example: "kM3vQ7pXe1sT9dW2rY6bZa"
+      required: [session_id, share_token]
+
+    SyncPinResponse:
+      type: object
+      properties:
+        pin:
+          type: string
+          pattern: "^\\d{6}$"
+          example: "482913"
+      required: [pin]
+
+    SessionStateResponse:
+      type: object
+      description: >-
+        Shared response shape for `/api/sync/{pin}`, `/api/me`, and
+        `/api/session/{code}`. `picks` and `schedule` are flat JSON arrays of opaque id
+        strings (artist UUIDs and schedule-slot UUIDs respectively) with no
+        server-side dedup guarantee beyond the `UNION`/`json_group_array` SQL used on
+        write (order is whatever SQLite's `json_group_array` produces, not
+        insertion order).
+      properties:
+        picks:
+          type: array
+          items:
+            type: string
+          example: ["3fa85f64-5717-4562-b3fc-2c963f66afa6"]
+        schedule:
+          type: array
+          items:
+            type: string
+          example: ["9c858901-8a57-4791-81fe-4c455b099bc9"]
+        readonly:
+          type: boolean
+          description: >-
+            True only when `{code}` resolved via the share_token branch of
+            `_find_session`. `/api/sync/{pin}` and `/api/me` always return `false`
+            (they only ever resolve a full session id, never a share token).
+        session_id:
+          type: [string, "null"]
+          description: >-
+            AS-BUILT: null when `readonly` is true (on `/api/session/{code}` looked
+            up via share token). Always present (non-null) on `/api/sync/{pin}` and
+            `/api/me`.
+        share_token:
+          type: string
+      required: [picks, schedule, readonly, share_token]
+
+    PushSubscribeRequest:
+      type: object
+      description: >-
+        Raw request body, parsed via `await request.json()` with no Pydantic model.
+        AS-BUILT: a malformed (non-JSON) body is not caught -- it raises inside
+        `request.json()` and surfaces as an unhandled 500, not a 422.
+      properties:
+        endpoint:
+          type: string
+          format: uri
+          description: >-
+            Must be `https://` and its hostname must end in one of
+            `.googleapis.com`, `.push.services.mozilla.com`, `.push.apple.com`, or
+            `.notify.windows.com` (`_is_valid_push_endpoint`), otherwise 422.
+          example: "https://fcm.googleapis.com/fcm/send/eXaMpLe-endpoint-id"
+        keys:
+          type: object
+          properties:
+            p256dh:
+              type: string
+            auth:
+              type: string
+          required: [p256dh, auth]
+      required: [endpoint, keys]
+
+    PushUnsubscribeRequest:
+      type: object
+      properties:
+        endpoint:
+          type: string
+          format: uri
+      required: [endpoint]
+
+    PushStatusResponse:
+      type: object
+      properties:
+        subscribed:
+          type: boolean
+      required: [subscribed]
+
+    VapidKeyResponse:
+      type: object
+      properties:
+        public_key:
+          type: string
+      required: [public_key]
+
+    TransportZollvereinEntry:
+      type: object
+      description: One tram 107 / NE2 departure, shape from the VRR EFA departure monitor.
+      properties:
+        line:
+          type: string
+          enum: ["107", "NE2"]
+        direction:
+          type: string
+          example: "Essen Bredeney"
+        platform:
+          type: [string, "null"]
+        scheduled:
+          type: string
+          example: "23:41"
+        scheduledDate:
+          type: string
+          example: "13.07.2026"
+        realtime:
+          type: boolean
+        real:
+          type: string
+          description: Present only if the upstream feed returned a realtime estimate.
+          example: "23:43"
+        delay:
+          type: integer
+          description: Minutes, present only if the upstream feed returned a delay value.
+        status:
+          type: string
+          description: Present only if the upstream `realtimeTripStatus` field was set.
+        countdown:
+          type: integer
+          description: Minutes until departure, present only if the upstream field was set.
+      required: [line, direction, scheduled, scheduledDate, realtime]
+
+    TransportDuesseldorfEntry:
+      type: object
+      description: >-
+        One direct (maxChanges=0) RE/RB/S trip Dusseldorf Airport <-> Essen Hbf, shaped
+        to overlay identically with TransportZollvereinEntry on the client even though
+        it comes from the VRR journey planner (XML_TRIP_REQUEST2), not the departure
+        monitor.
+      properties:
+        line:
+          type: string
+          example: "RE1"
+        scheduled:
+          type: string
+          example: "14:05"
+        scheduledDate:
+          type: string
+          example: "13.07.2026"
+        realtime:
+          type: boolean
+        platform:
+          type: [string, "null"]
+        trainNumber:
+          type: [string, "null"]
+        arr:
+          type: [string, "null"]
+          description: Scheduled arrival time, HH:MM Europe/Berlin.
+        real:
+          type: string
+          description: Realtime departure estimate, present only if the upstream returned one.
+        delay:
+          type: integer
+          description: Minutes, present only alongside `real`.
+        arrReal:
+          type: string
+          description: Realtime arrival estimate, present only if the upstream returned one.
+        arrDelay:
+          type: integer
+          description: Minutes, present only alongside `arrReal`.
+      required: [line, scheduled, scheduledDate, realtime]
+
+    TransportDeparturesResponse:
+      type: object
+      properties:
+        departures:
+          type: array
+          items:
+            oneOf:
+              - $ref: "#/components/schemas/TransportZollvereinEntry"
+              - $ref: "#/components/schemas/TransportDuesseldorfEntry"
+        ts:
+          type: string
+          format: date-time
+          description: Server response timestamp in UTC ISO-8601, not the data's own freshness time.
+        stale:
+          type: boolean
+          description: >-
+            Present (true) only when the live upstream call failed and a cached
+            response older than the 90s TTL was served as a fallback. Absent
+            (not `false`) on a fresh or in-window-cached response.
+      required: [departures, ts]
+
+    TransportWalkResponse:
+      type: object
+      properties:
+        distanceM:
+          type: number
+          example: 812.4
+        durationS:
+          type: number
+          example: 645
+      required: [distanceM, durationS]
+
+  responses:
+    ValidationError:
+      description: Request failed a server-side format check (not FastAPI's automatic type coercion).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RateLimited:
+      description: >-
+        Rate limit exceeded for this IP + bucket. `Retry-After` is a fixed literal
+        "60" (AS-BUILT: not computed from the actual window remaining).
+      headers:
+        Retry-After:
+          schema:
+            type: string
+            example: "60"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ReadOnly:
+      description: The resolved session is read-only (code matched a share token, not a session id).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+paths:
+  /api/session:
+    post:
+      tags: [sync]
+      summary: Create a new session
+      description: >-
+        Creates a fresh session (empty picks/schedule), sets the session cookie, and
+        returns both the private session id and the public read-only share token.
+        Rate limit bucket "create": 10 requests / 3600s per IP.
+      responses:
+        "201":
+          description: Session created.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: stc_session cookie (see sessionCookie security scheme).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionCreateResponse"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/session/{code}/sync-pin:
+    post:
+      tags: [sync]
+      summary: Issue a one-time 6-digit cross-device sync PIN
+      description: >-
+        Generates a 6-digit PIN valid for 300s that another device can exchange (via
+        `POST /api/sync/{pin}`) to adopt this session. AS-BUILT: this endpoint shares
+        the "load" rate-limit bucket (600 req / 3600s per IP) with `/api/me` and
+        `GET /api/session/{code}` -- it does not have its own budget despite minting
+        a distinct resource (a PIN). Any prior un-expired PIN for this session is
+        invalidated when a new one is issued (only one live PIN per session at a
+        time). If `{code}` resolves to a read-only share token, returns 403.
+      parameters:
+        - $ref: "#/components/parameters/codeParam"
+      responses:
+        "201":
+          description: PIN created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncPinResponse"
+        "403":
+          $ref: "#/components/responses/ReadOnly"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          description: >-
+            Could not generate a unique PIN after 50 attempts (collision retry
+            exhausted). Practically unreachable at real traffic volumes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/sync/{pin}:
+    post:
+      tags: [sync]
+      summary: Exchange a sync PIN for the session it was minted for
+      description: >-
+        Single-use: the PIN is popped from the in-memory store on first use (a
+        second exchange attempt with the same PIN 404s even if the 300s TTL has not
+        elapsed). Sets the session cookie on the calling device and schedules a
+        background `sync_complete` WebSocket broadcast to the originating session's
+        connected clients so the PIN-issuing device can react. Rate limit bucket
+        "sync_pin": 12 requests / 3600s per IP.
+      parameters:
+        - name: pin
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^\\d{6}$"
+            example: "482913"
+      responses:
+        "200":
+          description: PIN exchanged; caller now holds the session's cookie.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionStateResponse"
+        "404":
+          description: PIN not found or expired.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/me:
+    get:
+      tags: [sync]
+      summary: Fetch the current session's state via cookie
+      description: >-
+        Reads `stc_session` from the request cookie (never a path param). 401 if
+        absent or malformed. Shares the "load" rate-limit bucket (600 req / 3600s
+        per IP) with `/api/session/{code}/sync-pin` and `GET /api/session/{code}`.
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Current session state.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: Cookie is re-set (sliding max-age refresh) on every successful call.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionStateResponse"
+        "401":
+          description: No session cookie present, or it fails the token format check.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/session/{code}:
+    get:
+      tags: [sync]
+      summary: Look up a session by session id or share token
+      description: >-
+        AS-BUILT: the cookie is only (re-)set when `{code}` resolves via the
+        session-id branch; a share-token lookup returns state but leaves the
+        caller's existing cookie (if any) untouched and reports `session_id: null`.
+        Shares the "load" rate-limit bucket with `/api/me` and the sync-pin endpoint.
+      parameters:
+        - $ref: "#/components/parameters/codeParam"
+      responses:
+        "200":
+          description: Session state (readonly=true when looked up via share token).
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: Only sent when the lookup resolved via session id, not share token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionStateResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/session/{code}/pick/{artist_id}:
+    post:
+      tags: [favorites]
+      summary: Add an artist to the session's favorites
+      description: >-
+        Idempotent (SQL `UNION` de-dupes). Broadcasts the updated `picks` array to
+        every connected WebSocket client on this session (except none excluded here
+        since the caller isn't itself a WS client) as a background task. Rate limit
+        bucket "pick": 600 req / 3600s per IP -- this same bucket is also consumed by
+        `POST /api/session/{code}/push/subscribe` (AS-BUILT: subscribing to push
+        counts against the same per-IP budget as favoriting artists).
+      parameters:
+        - $ref: "#/components/parameters/codeParam"
+        - name: artist_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+            example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+      responses:
+        "204":
+          description: Pick added (or already present).
+        "403":
+          $ref: "#/components/responses/ReadOnly"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    delete:
+      tags: [favorites]
+      summary: Remove an artist from the session's favorites
+      description: >-
+        Idempotent (removing a non-present id is a no-op 204). Same broadcast and
+        rate-limit bucket ("pick") as the POST variant.
+      parameters:
+        - $ref: "#/components/parameters/codeParam"
+        - name: artist_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+      responses:
+        "204":
+          description: Pick removed (or already absent).
+        "403":
+          $ref: "#/components/responses/ReadOnly"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/session/{code}/schedule/{slot_id}:
+    post:
+      tags: [schedule]
+      summary: Add a timetable slot to the session's personal schedule
+      description: >-
+        Idempotent. Broadcasts both `picks` and `schedule` (unlike the pick
+        endpoints, which only broadcast `picks`) to connected WebSocket clients.
+        Rate limit bucket "schedule": 600 req / 3600s per IP, independent from the
+        "pick" bucket.
+      parameters:
+        - $ref: "#/components/parameters/codeParam"
+        - name: slot_id
+          in: path
+          required: true
+          description: A timetable slot UUID as produced by `slot_uuid()` (pipeline/scraper/timetable_json.py).
+          schema:
+            type: string
+            pattern: "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+            example: "9c858901-8a57-4791-81fe-4c455b099bc9"
+      responses:
+        "204":
+          description: Slot added (or already present).
+        "403":
+          $ref: "#/components/responses/ReadOnly"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    delete:
+      tags: [schedule]
+      summary: Remove a timetable slot from the session's personal schedule
+      description: Idempotent. Same broadcast and rate-limit bucket ("schedule") as the POST variant.
+      parameters:
+        - $ref: "#/components/parameters/codeParam"
+        - name: slot_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+      responses:
+        "204":
+          description: Slot removed (or already absent).
+        "403":
+          $ref: "#/components/responses/ReadOnly"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/push/vapid-key:
+    get:
+      tags: [push]
+      summary: Fetch the VAPID public key for client-side push subscription
+      description: Not rate limited. Returns 501 (not 404) when the server has no VAPID key configured.
+      responses:
+        "200":
+          description: VAPID public key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VapidKeyResponse"
+        "501":
+          description: Push notifications not configured (VAPID_PUBLIC_KEY unset).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/session/{code}/push/subscribe:
+    post:
+      tags: [push]
+      summary: Register (or update) a Web Push subscription for this session
+      description: >-
+        Upserts on `endpoint` (a re-subscribe with the same endpoint just refreshes
+        keys and re-points it at this session). AS-BUILT: uses the "pick" rate-limit
+        bucket, not a dedicated push bucket -- shared with the favorite add/remove
+        endpoints. AS-BUILT: a non-JSON request body is not caught and surfaces as an
+        unhandled 500 rather than a 422 (see PushSubscribeRequest schema note).
+      parameters:
+        - $ref: "#/components/parameters/codeParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushSubscribeRequest"
+      responses:
+        "204":
+          description: Subscription stored.
+        "403":
+          $ref: "#/components/responses/ReadOnly"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: >-
+            Missing endpoint/p256dh/auth field, or endpoint fails the host-suffix
+            allowlist check, or `{code}` fails its format check.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    delete:
+      tags: [push]
+      summary: Remove a Web Push subscription
+      description: >-
+        AS-BUILT: this endpoint has NO rate limiting at all (the `_check_rate` call
+        present on nearly every other mutating endpoint in this file is absent
+        here). Deleting a subscription that does not belong to this session (or
+        does not exist) is a silent no-op 204, not a 404.
+      parameters:
+        - $ref: "#/components/parameters/codeParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushUnsubscribeRequest"
+      responses:
+        "204":
+          description: Subscription removed (or was never present).
+        "403":
+          $ref: "#/components/responses/ReadOnly"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: Missing endpoint field, or `{code}` fails its format check.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/session/{code}/push/status:
+    get:
+      tags: [push]
+      summary: Check whether this session has at least one push subscription
+      description: >-
+        AS-BUILT: no rate limiting on this endpoint (same gap as the DELETE
+        subscribe endpoint above). Works for a read-only share-token code too --
+        unlike the mutating push endpoints, this one does not check/reject `readonly`.
+      parameters:
+        - $ref: "#/components/parameters/codeParam"
+      responses:
+        "200":
+          description: Subscription presence for this session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushStatusResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /ics/{slot_id}:
+    get:
+      tags: [ics]
+      summary: Download a calendar (.ics) file for a single timetable slot
+      description: >-
+        Reads from the server-side `timetable.json` cache (mtime-checked, reloaded
+        on change), not the database directly. AS-BUILT: `slot_id` has NO format
+        validation (unlike `artist_id`/other `slot_id` params elsewhere in this file,
+        which are UUID_RE-checked) -- it is used only as a dict lookup key, so an
+        arbitrary string is accepted and simply 404s if not a real slot. AS-BUILT: no
+        rate limiting on this endpoint at all. A 10-minute VALARM reminder is always
+        embedded. Times are converted from the event's configured IANA timezone
+        (falls back to Europe/Berlin on an invalid/missing timezone) to UTC; no
+        VTIMEZONE block is emitted (all times are absolute UTC, avoiding the need to
+        embed timezone transition rules).
+      parameters:
+        - name: slot_id
+          in: path
+          required: true
+          description: "AS-BUILT: accepted as any string, not format-validated server-side."
+          schema:
+            type: string
+            example: "9c858901-8a57-4791-81fe-4c455b099bc9"
+      responses:
+        "200":
+          description: iCalendar file.
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              description: 'attachment; filename derived from the artist name(s), non-alphanumerics stripped.'
+          content:
+            text/calendar; charset=utf-8:
+              schema:
+                type: string
+              example: |
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                PRODID:-//Stone Techno Companion//EN
+                CALSCALE:GREGORIAN
+                METHOD:PUBLISH
+                BEGIN:VEVENT
+                DTSTART:20260711220000Z
+                DTEND:20260711233000Z
+                DTSTAMP:20260713120000Z
+                UID:20260711220000Z-RdhdSolomunbtb@stonetechno.deftlab.dev
+                SUMMARY:Rødhåd b2b Solomun
+                LOCATION:Koksofenbatterie\, Stone Techno 2026
+                BEGIN:VALARM
+                TRIGGER:-PT10M
+                ACTION:DISPLAY
+                DESCRIPTION:Rødhåd b2b Solomun starts in 10 minutes
+                END:VALARM
+                END:VEVENT
+                END:VCALENDAR
+        "404":
+          description: Timetable not available (no timetable.json on disk), or slot_id not found in it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/transport/departures:
+    get:
+      tags: [transport]
+      summary: Realtime departures (Zollverein tram, or Dusseldorf Airport regional trains)
+      description: >-
+        Two entirely different upstreams are multiplexed on one path via `route`:
+        the default (`zollverein`, or any value other than `duesseldorf`) hits the
+        VRR EFA departure monitor and filters to tram lines 107/NE2 in the requested
+        direction; `route=duesseldorf` hits the VRR journey planner
+        (XML_TRIP_REQUEST2, direct trips only, RE/RB/S filtered) and pages up to 3
+        times to collect up to 6 upcoming trips. Both share a 90s in-process cache
+        keyed by `(date, route:dir)` (no time-of-day component in the cache key) and
+        an `asyncio.Lock` per key to collapse concurrent requests into one upstream
+        call. On upstream failure, a cached response (of any age) is served with
+        `stale: true`; if there is no cached response at all, returns 502.
+
+
+        AS-BUILT (shared rate-limit bucket): this endpoint and `/api/transport/walk`
+        both call `_check_transport_rate`, which keys its hit-list ONLY by client IP
+        -- not by endpoint or route/dir. The two endpoints are called with different
+        per-IP limits (30/60s here, 10/60s on `/api/transport/walk`), but every hit
+        from either endpoint is appended to the SAME list and counted against
+        whichever limit is checked. In practice: 10 calls to this endpoint from one
+        IP within 60s will already exhaust the walk endpoint's entire budget for
+        that window, even though this endpoint's own 30-request ceiling is nowhere
+        near reached.
+
+
+        `time` AS-BUILT: despite the documented convention of `HH:MM`, the actual
+        validation regex `^\d{1,2}:\d{2}$` also accepts a single-digit hour (e.g.
+        `9:05`).
+
+
+        `date` AS-BUILT: `^\d{2}\.\d{2}\.\d{4}$` only checks digit-group shape, not
+        that the date is calendrically valid (e.g. `31.02.2026` passes the regex and
+        is forwarded to the upstream as-is).
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: "^\\d{2}\\.\\d{2}\\.\\d{4}$"
+            example: "13.07.2026"
+        - name: time
+          in: query
+          required: true
+          description: 'AS-BUILT: regex is `^\d{1,2}:\d{2}$` -- a single-digit hour is accepted despite the documented HH:MM convention.'
+          schema:
+            type: string
+            pattern: "^\\d{1,2}:\\d{2}$"
+            example: "23:41"
+        - name: route
+          in: query
+          required: false
+          description: Defaults to the Zollverein tram board when omitted or any value other than "duesseldorf".
+          schema:
+            type: string
+            enum: ["zollverein", "duesseldorf"]
+            default: "zollverein"
+        - name: dir
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["outbound", "inbound"]
+            default: "outbound"
+      responses:
+        "200":
+          description: Departures for the requested date/time/route/direction.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransportDeparturesResponse"
+        "400":
+          description: Malformed date/time, or `dir` not one of outbound/inbound for the given route.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: >-
+            Rate limit exceeded (30 req / 60s per IP for this endpoint, but see the
+            AS-BUILT shared-bucket note above -- walk requests from the same IP
+            count against this too).
+          headers:
+            Retry-After:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: Upstream departure service unavailable and no cached fallback exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/transport/walk:
+    get:
+      tags: [transport]
+      summary: Walking distance/duration from a point to the departure stop of the viewed direction
+      description: >-
+        Proxies OSRM foot routing (FOSSGIS `routing.openstreetmap.de/routed-foot`,
+        a real foot profile -- explicitly not the project-osrm.org demo, which only
+        hosts the car profile and would silently return driving times). The target
+        stop is server-pinned per `route`+`dir` (never client-supplied), and the
+        caller's lat/lng are bounded to roughly the Essen area (`|lat-51.486095|
+        <= 0.35` and `|lng-7.046062| <= 0.5`) before any upstream call is made, so
+        this cannot be used as a general routing proxy. Coordinates are used
+        transiently only -- never stored or logged.
+
+
+        AS-BUILT: shares its rate-limit hit-list with `/api/transport/departures`
+        (see that endpoint's description) despite having a much lower per-IP limit
+        (10 req / 60s here vs 30 req / 60s there).
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema:
+            type: number
+            format: float
+        - name: lng
+          in: query
+          required: true
+          schema:
+            type: number
+            format: float
+        - name: route
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["zollverein", "duesseldorf"]
+            default: "zollverein"
+        - name: dir
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["outbound", "inbound"]
+            default: "outbound"
+      responses:
+        "200":
+          description: Walking distance and duration to the pinned departure stop.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransportWalkResponse"
+        "400":
+          description: Coordinates outside the allowed Essen-area bounding box, or an invalid route/dir combination.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: >-
+            Rate limit exceeded (10 req / 60s per IP -- see the AS-BUILT
+            shared-bucket note; departures requests from the same IP count
+            against this too).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: OSRM routing service unavailable or returned no route.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /public-transport:
+    get:
+      tags: [transport]
+      summary: Legacy URL redirect
+      description: Permanent (301) redirect to `/transport`, kept so old shared links keep working.
+      responses:
+        "301":
+          description: Permanent redirect to /transport.
+          headers:
+            Location:
+              schema:
+                type: string
+                example: "/transport"
+
+  /api/{path}:
+    parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [static]
+      summary: Unmatched /api/* catch-all
+      description: >-
+        Registered AFTER every real /api/* route, so it only ever fires for a path
+        under /api that matched no other handler. Always returns a clean 404 JSON
+        body instead of falling through to the SPA's index.html catch-all. Also
+        registered for POST/PUT/DELETE/PATCH on the same wildcard (single handler,
+        five methods).
+      responses:
+        "404":
+          description: Not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      tags: [static]
+      summary: Unmatched /api/* catch-all (POST)
+      responses:
+        "404":
+          description: Not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      tags: [static]
+      summary: Unmatched /api/* catch-all (PUT)
+      responses:
+        "404":
+          description: Not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      tags: [static]
+      summary: Unmatched /api/* catch-all (DELETE)
+      responses:
+        "404":
+          description: Not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    patch:
+      tags: [static]
+      summary: Unmatched /api/* catch-all (PATCH)
+      responses:
+        "404":
+          description: Not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /favicon.svg:
+    get:
+      tags: [static]
+      summary: Favicon (SVG)
+      description: 404 if the file is missing from server/static/. No caching headers set (default Starlette FileResponse behavior applies -- ETag/Last-Modified, no explicit Cache-Control).
+      responses:
+        "200":
+          description: SVG favicon.
+          content:
+            image/svg+xml:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /favicon.png:
+    get:
+      tags: [static]
+      summary: Favicon (PNG)
+      description: 404 if the file is missing. No explicit Cache-Control header.
+      responses:
+        "200":
+          description: PNG favicon.
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /manifest.json:
+    get:
+      tags: [static]
+      summary: PWA manifest
+      description: Served with Cache-Control no-cache so a manifest change is picked up without a container rebuild.
+      responses:
+        "200":
+          description: Web app manifest.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: "no-cache"
+          content:
+            application/manifest+json:
+              schema:
+                type: object
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /sw.js:
+    get:
+      tags: [static]
+      summary: Service worker script
+      description: "Served with `Service-Worker-Allowed: /` (root scope) and Cache-Control no-cache."
+      responses:
+        "200":
+          description: Service worker JavaScript.
+          headers:
+            Service-Worker-Allowed:
+              schema:
+                type: string
+                example: "/"
+            Cache-Control:
+              schema:
+                type: string
+                example: "no-cache"
+          content:
+            application/javascript:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /bios.json:
+    get:
+      tags: [static]
+      summary: Artist bios and sets (lazy-loaded lineup data)
+      description: >-
+        AS-BUILT: unlike manifest.json/sw.js/shared.css/shared.js/timetable-transport.json,
+        this route sets NO explicit Cache-Control header (default FileResponse
+        caching semantics only), despite being a content file that changes on every
+        deploy exactly like those others.
+      responses:
+        "200":
+          description: Bios/sets JSON, keyed by artist id.
+          content:
+            application/json:
+              schema:
+                type: object
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /timetable-transport.json:
+    get:
+      tags: [static]
+      summary: Static tram/train schedule data for the /transport page
+      description: Cache-Control no-cache so a schedule regeneration is picked up without a rebuild.
+      responses:
+        "200":
+          description: Schedule JSON (route, stop, days, reverse, per-direction blocks).
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: "no-cache"
+          content:
+            application/json:
+              schema:
+                type: object
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /shared.css:
+    get:
+      tags: [static]
+      summary: Shared design-token stylesheet
+      description: Cache-Control no-cache so a content deploy shipping a new bundle is picked up immediately.
+      responses:
+        "200":
+          description: CSS.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: "no-cache"
+          content:
+            text/css:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /shared.js:
+    get:
+      tags: [static]
+      summary: Shared JS utilities
+      description: Cache-Control no-cache so a content deploy shipping a new bundle is picked up immediately.
+      responses:
+        "200":
+          description: JavaScript.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: "no-cache"
+          content:
+            application/javascript:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /dop/{z}/{x}/{y}.jpg:
+    get:
+      tags: [static]
+      summary: NRW aerial imagery XYZ tile proxy (Geobasis NRW WMS, disk-cached)
+      description: >-
+        Renders a web-mercator tile from the Geobasis NRW WMS on first request and
+        disk-caches it under static/vendor/dop-cache/ so repeat views are instant and
+        cost no upstream call. Guarded to zoom 12-20 and to the NRW lat/lon
+        bounding box (50.0-52.7 N, 5.7-9.6 E) so the proxy cannot be used to mirror
+        arbitrary tiles outside the region. AS-BUILT: out-of-range zoom/tile-index
+        or out-of-NRW tiles both return 404 (not 400), and an upstream fetch
+        failure or a non-image content-type from the WMS returns 502.
+      parameters:
+        - name: z
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 12
+            maximum: 20
+        - name: x
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+        - name: "y"
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        "200":
+          description: JPEG tile.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: "public, max-age=2592000"
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: z/x/y out of the allowed range, or the tile's center falls outside the NRW bounding box.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: z/x/y path segment is not an integer (FastAPI's automatic type coercion failure, array-shaped detail).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: Upstream WMS fetch failed, or responded with a non-image content type.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /photos/{filename}:
+    get:
+      tags: [static]
+      summary: Processed artist photos (AVIF), static mount
+      description: >-
+        `StaticFiles` mount at /photos over server/static/photos/ (directory
+        auto-created at startup if missing). Starlette handles path-traversal
+        protection and 404s for this mount; no per-file endpoint code exists here.
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: AVIF image file.
+          content:
+            image/avif:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /thumbs/{filename}:
+    get:
+      tags: [static]
+      summary: YouTube video thumbnails (AVIF), static mount
+      description: "`StaticFiles` mount at /thumbs over server/static/thumbs/ (directory auto-created at startup if missing)."
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: AVIF thumbnail file.
+          content:
+            image/avif:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /vendor/{path}:
+    get:
+      tags: [static]
+      summary: Self-hosted third-party frontend assets, static mount
+      description: >-
+        `StaticFiles` mount at /vendor over server/static/vendor/ (e.g. MapLibre GL
+        bundle, dop-cache tiles) so the app has no external CDN dependency.
+        Directory auto-created at startup if missing.
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Static asset file.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /line-up:
+    get:
+      tags: [static]
+      summary: Lineup view entry point (served by the SPA catch-all)
+      description: >-
+        Registered as its own decorator ahead of the generic `/{path:path}` catch-all
+        but runs the exact same `serve_index` handler and same behavior: serves
+        index.html with Cache-Control no-store.
+      responses:
+        "200":
+          description: index.html.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: "no-store"
+          content:
+            text/html:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /timetable:
+    get:
+      tags: [static]
+      summary: Timetable view entry point (served by the SPA catch-all)
+      description: Same handler and behavior as /line-up (index.html, Cache-Control no-store).
+      responses:
+        "200":
+          description: index.html.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: "no-store"
+          content:
+            text/html:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /{path}:
+    parameters:
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [static]
+      summary: SPA catch-all / clean-URL static page resolver
+      description: >-
+        Registered last, after every other route (including the chat module's own
+        routes, mounted just above it). Behavior, in order: (1) if `path` starts
+        with "chat", returns 404 (chat is served by its own module and must never
+        fall through here); (2) if `path` matches `[a-z0-9][a-z0-9-]*` (no slashes
+        or dots -- traversal-safe) and `static/pages/{path}.html` exists, serves
+        that file with Cache-Control no-cache (this is how clean-URL pages like
+        `/transport` are served with no per-page route needed); (3) otherwise
+        serves `static/index.html` (the SPA shell) with Cache-Control no-store, or
+        404 if that file is missing.
+      responses:
+        "200":
+          description: Either a clean-URL static page or the SPA shell, per the resolution order above.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                description: '"no-cache" for a clean-URL static page, "no-store" for the SPA shell.'
+          content:
+            text/html:
+              schema:
+                type: string
+        "404":
+          description: Path starts with "chat", or no static page matched and index.html is missing.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
