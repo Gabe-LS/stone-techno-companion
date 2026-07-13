@@ -87,10 +87,12 @@ _COPY_IGNORE = shutil.ignore_patterns(
     ".env",
     ".env.*",
     "*.pyc",
-    # server/static/ holds symlinks into ../../output/ (thumbs, bios.json,
-    # index.html, timetable.json). In a scratch copy those dangle, and a
-    # dangling `thumbs` symlink makes api.py's mkdir(exist_ok=True) raise
-    # FileExistsError. Drop them; api.py recreates thumbs/ as a real dir.
+    # server/static/ holds symlinks into ../../output/ (photos, thumbs,
+    # bios.json, index.html, timetable.json). In a scratch copy those dangle,
+    # and a dangling `photos`/`thumbs` symlink makes api.py's
+    # mkdir(exist_ok=True) raise FileExistsError. Drop them; api.py recreates
+    # photos/ and thumbs/ as real dirs.
+    "photos",
     "thumbs",
     "bios.json",
     "index.html",
