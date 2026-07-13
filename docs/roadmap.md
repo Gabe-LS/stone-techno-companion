@@ -48,8 +48,8 @@ sequencing and the blueprint is authoritative for strategy and rationale.
 
 | Stage | State | Current focus | Next actions |
 |---|---|---|---|
-| **1. Stabilize and document** | In progress (started 2026-07-13) | Documentation backbone shipped (commits 1558268, 039f813, cd345e3); Bucket 1 resolved (breakpoint + a11y shipped in 4269c51, remaining items deferred to Stage 3 nav by owner decision) | Post-event retrospective: mine `monitor.sh` logs, push ack data (`chat_push_subscriptions`, `sent_notifications`), and moderation logs for real usage data; fold findings into `docs/invariants.md` and ADRs |
-| **2. Foundations** | Not started | None yet | ADR 0007 DECIDED (2026-07-13): monorepo, single bigger VPS, ~50 EUR/mo. Unblocked once Stage 1 exit criteria close (retrospective remaining) |
+| **1. Stabilize and document** | COMPLETE (2026-07-13) | All exit criteria met: backbone shipped, Bucket 1 resolved, retrospective done (bcecd28), core suite 261 green, notif harness restored to 21/21 (it had been silently broken since 2026-07-07 by a dangling symlink, then stale vs the 8be87cf token-hashing commit; both fixed: dff54a1, ae8b445) | Human follow-up: one pending moderation report at /chat/admin |
+| **2. Foundations** | In progress (2026-07-13) | Design docs shipped: `docs/stage2-monorepo-plan.md` (6c130b1), `docs/api/companion-openapi.yaml` + `docs/api/lineup-data-api.md` (5391ae3). ADR 0007 accepted | Owner sign-off on the monorepo move map, then execute the restructure; code-fix wave for retrospective bugs and AS-BUILT API quirks |
 | **3. The Next.js front** | Not started | None yet | Blocked on Stage 2 exit criteria |
 | **4. Multi-event and moat features** | Not started | None yet | Backend/data-model work (ADR 0003, ADR 0004 decisions) may start once Stage 2 lands, in parallel with Stage 3; all UI work blocked until Stage 3 delivers a Next.js app to build it in |
 | **5. Commerce** | Not started | None yet | Blocked on a second event having run on the platform, and on ADR 0008 |
@@ -65,8 +65,12 @@ code that Stage 3 is going to delete.
 
 **Workstreams**
 
-- [ ] **Post-event retrospective.** Mine real usage data from the event that just concluded:
-  - [ ] `monitor.sh` hourly logs (HTTP/TLS/latency probes, VPS internals, restarts, DB
+- [x] **Post-event retrospective.** Done 2026-07-13, findings in `docs/retrospective-2026-07.md`
+  (commit bcecd28): zero restarts, clean DBs, 48 of 51 error lines from one WS disconnect-race
+  noise bug (fix queued), push healthy, moderation cost grounding fed to ADR 0005, INV-3
+  field-data caveat added to `docs/invariants.md`. QNAP monitor log unreachable from dev,
+  VPS-side evidence substituted. One moderation report left pending for human review.
+  - [x] `monitor.sh` hourly logs (HTTP/TLS/latency probes, VPS internals, restarts, DB
     `quick_check` results) for anything that degraded during the live event
   - [ ] Push delivery data: `sent_notifications` (dedup table), push ack timeline
     (`POST /chat/api/push/ack` → `[PUSH-ACK]` log lines), `chat_push_subscriptions` /
