@@ -18,38 +18,41 @@ A multi-event festival companion tool: scraper, enrichment pipeline, static site
 
 ```
 stone-techno-companion/
-├── pipeline/                    # PRE-PRODUCTION — content preparation (runs locally)
-│   ├── stone_techno_companion.py  # CLI entry point — orchestrates the full pipeline
-│   ├── fetch_videos.py          # YouTube set discovery via yt-dlp → artist_sets table
-│   ├── scraper/
-│   │   ├── scrape.py            # Lineup parser + SC/IG/Spotify/RA scrapers
-│   │   ├── db.py                # SQLite schema, upserts, queries — all event-scoped
-│   │   ├── images.py            # Photo download, resize (pyvips), AVIF encoding
-│   │   ├── render.py            # HTML generation — lineup + timetable + modals + JS
-│   │   ├── timetable_json.py    # Generates timetable.json for push scheduler + ICS
-│   │   ├── overrides.toml       # Manual corrections for links, curators, YouTube
-│   │   └── icons/               # SVG icons — deduplicated via <symbol>/<use> sprite
-│   ├── output/                  # Generated (gitignored): lineup.html, bios.json,
-│   │                            #   timetable.json, photos/*.avif, thumbs/*.avif
-│   └── lineup.db                # SQLite database (gitignored)
-├── server/                      # THE PRODUCT — what users interact with (runs on VPS)
-│   ├── api.py                   # FastAPI — favorites + schedule + push + ICS + chat mount
-│   ├── chat_db.py               # Chat SQLite schema + CRUD (chat.db)
-│   ├── chat_moderation.py       # Word filter + OpenAI + GPT drug detection
-│   ├── chat_ws.py               # Chat WebSocket server + purge loop
-│   ├── chat_api.py              # Chat REST API + admin page + auth
-│   ├── chat/
-│   │   ├── chat.html            # Chat frontend (single file, inline CSS/JS)
-│   │   ├── admin.html           # Admin dashboard SPA
-│   │   ├── blocklist.txt        # Drug/slur word filter (editable)
-│   │   ├── disposable_domains.txt # 7,860 blocked email domains
-│   │   └── uploads/             # Chat media uploads (ephemeral, gitignored)
-│   ├── static/                  # Shared bundles, sw.js, manifest, vendor libs,
-│   │                            #   symlinks into pipeline/output/
-│   ├── generate_vapid_keys.py   # One-time VAPID key pair generator
-│   ├── Dockerfile               # Python 3.12 slim + uvicorn
-│   ├── docker-compose.yml       # Container config with volume mounts
-│   └── requirements.txt         # fastapi, uvicorn[standard], pywebpush
+├── services/
+│   ├── data/                    # PRE-PRODUCTION — content preparation (runs locally)
+│   │   ├── stone_techno_companion.py  # CLI entry point — orchestrates the full pipeline
+│   │   ├── fetch_videos.py      # YouTube set discovery via yt-dlp → artist_sets table
+│   │   ├── scraper/
+│   │   │   ├── scrape.py        # Lineup parser + SC/IG/Spotify/RA scrapers
+│   │   │   ├── db.py            # SQLite schema, upserts, queries — all event-scoped
+│   │   │   ├── images.py        # Photo download, resize (pyvips), AVIF encoding
+│   │   │   ├── render.py        # HTML generation — lineup + timetable + modals + JS
+│   │   │   ├── timetable_json.py  # Generates timetable.json for push scheduler + ICS
+│   │   │   ├── overrides.toml   # Manual corrections for links, curators, YouTube
+│   │   │   └── icons/           # SVG icons — deduplicated via <symbol>/<use> sprite
+│   │   ├── output/               # Generated (gitignored): lineup.html, bios.json,
+│   │   │                        #   timetable.json, photos/*.avif, thumbs/*.avif
+│   │   └── lineup.db            # SQLite database (gitignored)
+│   └── companion/                # THE PRODUCT — what users interact with (runs on VPS)
+│       ├── api.py                # FastAPI — favorites + schedule + push + ICS + chat mount
+│       ├── chat_db.py             # Chat SQLite schema + CRUD (chat.db)
+│       ├── chat_moderation.py     # Word filter + OpenAI + GPT drug detection
+│       ├── chat_ws.py             # Chat WebSocket server + purge loop
+│       ├── chat_api.py            # Chat REST API + admin page + auth
+│       ├── chat/
+│       │   ├── chat.html          # Chat frontend (single file, inline CSS/JS)
+│       │   ├── admin.html         # Admin dashboard SPA
+│       │   ├── blocklist.txt      # Drug/slur word filter (editable)
+│       │   ├── disposable_domains.txt # 7,860 blocked email domains
+│       │   └── uploads/           # Chat media uploads (ephemeral, gitignored)
+│       ├── static/                # Shared bundles, sw.js, manifest, vendor libs,
+│       │                        #   symlinks into services/data/output/
+│       ├── generate_vapid_keys.py # One-time VAPID key pair generator
+│       ├── Dockerfile             # Python 3.12 slim + uvicorn
+│       ├── docker-compose.yml     # Container config with volume mounts
+│       └── requirements.txt       # fastapi, uvicorn[standard], pywebpush
+├── apps/web/                     # Next.js app (empty placeholder, Stage 3)
+├── packages/                     # Shared design tokens / API types (placeholders)
 ├── tests/                       # 281 tests + standalone harnesses
 │   ├── test_chat_*.py           # Core suites (db, moderation, ws, api, admin roles)
 │   ├── test_notifications.py    # Push tests (Playwright, run separately)
@@ -98,7 +101,7 @@ schedule          — artist_id + event_id + start_time (PK), stage_id, end_time
 ### Full pipeline
 
 ```bash
-python pipeline/stone_techno_companion.py
+python services/data/stone_techno_companion.py
 ```
 
 ### Common flags
@@ -115,18 +118,18 @@ python pipeline/stone_techno_companion.py
 | `--event-name NAME` | Event name (default: `Stone Techno`) |
 | `--event-edition ED` | Event edition (default: `2026`) |
 | `--url URL` | Override the source lineup URL |
-| `--output-dir DIR` | Override the output directory (default: `pipeline/output/`) |
+| `--output-dir DIR` | Override the output directory (default: `services/data/output/`) |
 
 ### Quick regeneration
 
 ```bash
-python pipeline/stone_techno_companion.py --render-only --no-photos
+python services/data/stone_techno_companion.py --render-only --no-photos
 ```
 
 ### Local preview
 
 ```bash
-cd pipeline/output && python3 -m http.server 8321
+cd services/data/output && python3 -m http.server 8321
 # Open http://localhost:8321/lineup.html
 ```
 
@@ -135,7 +138,7 @@ Do not use `file://` — fetch-based features (bios, API) require HTTP.
 ### YouTube sets
 
 ```bash
-python pipeline/fetch_videos.py
+python services/data/fetch_videos.py
 ```
 
 Run separately from the main pipeline (~50 min for 100 artists). Results stored in `artist_sets` table.
@@ -143,14 +146,14 @@ Run separately from the main pipeline (~50 min for 100 artists). Results stored 
 ### Deploy to production
 
 ```bash
-python pipeline/stone_techno_companion.py --render-only --deploy
+python services/data/stone_techno_companion.py --render-only --deploy
 ```
 
 Rsyncs HTML, bios.json, timetable.json, photos, thumbs, sw.js, and manifest.json to the VPS.
 
 ## Overrides
 
-`pipeline/scraper/overrides.toml` provides manual corrections applied after scraping.
+`services/data/scraper/overrides.toml` provides manual corrections applied after scraping.
 
 ```toml
 [Amoral]
@@ -235,12 +238,12 @@ Sends notifications 10 minutes before scheduled sets.
 ### Content deploys (local)
 
 ```bash
-python pipeline/stone_techno_companion.py --deploy
+python services/data/stone_techno_companion.py --deploy
 ```
 
 ### Code deploys (automatic)
 
-Push to `main` with changes in `server/` triggers GitHub Actions → SSH → `git pull` + `docker compose up -d --build --force-recreate`.
+Push to `main` with changes in `services/companion/` triggers GitHub Actions → SSH → `git pull` + `docker compose up -d --build --force-recreate`.
 
 ### Caddy configuration
 
@@ -256,9 +259,9 @@ stonetechno.deftlab.dev {
 
 1. DNS: Cloudflare A record `stonetechno` → VPS IP
 2. Clone repo on VPS: `cd /root/services && git clone ... stone-techno`
-3. Deploy static files: `python pipeline/stone_techno_companion.py --render-only --no-photos --deploy`
-4. Generate VAPID keys, create `server/.env`
-5. Start container: `cd server && docker compose up -d`
+3. Deploy static files: `python services/data/stone_techno_companion.py --render-only --no-photos --deploy`
+4. Generate VAPID keys, create `services/companion/.env`
+5. Start container: `cd services/companion && docker compose up -d`
 6. Add Caddy block, reload: `docker exec caddy caddy reload --config /etc/caddy/Caddyfile`
 7. GitHub secret: `gh secret set VPS_SSH_KEY < ~/.ssh/id_ed25519`
 
