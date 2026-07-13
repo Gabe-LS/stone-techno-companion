@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import os
 import random
@@ -116,6 +117,16 @@ def _b64url(data: bytes) -> str:
 
 def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _hash_token(token: str) -> str:
+    """Mirror server/chat_db.py's hash_token: sessions.token stores only a
+    SHA-256 hash at rest (since commit 8be87cf, "hash session and magic-link
+    tokens at rest"). The harness inserts sessions directly into the scratch
+    DB, so it must hash here too -- the raw token is what goes over the wire
+    (cookie / WS URL path segment) and server/chat_db.py's get_user_by_token
+    hashes the incoming token before comparing against this column."""
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 def gen_vapid_keys() -> dict:
@@ -394,16 +405,22 @@ class NotifServer:
 
     def create_session(self, user_id: str) -> str:
         """Insert a chat.db sessions row (stress_test.py pattern: a 64-hex-char
-        token, 7-day expiry) and return the token. This is a chat WS session
-        token, unrelated to hearts.db's own "sessions" table (lineup
-        pick/schedule sessions, keyed by session_id/share_token)."""
+        token, 7-day expiry) and return the raw token. This is a chat WS
+        session token, unrelated to hearts.db's own "sessions" table (lineup
+        pick/schedule sessions, keyed by session_id/share_token).
+
+        The DB column stores only hash_token(token) (SHA-256 hex), matching
+        server/chat_db.py's create_session/get_user_by_token since commit
+        8be87cf -- the raw token is returned here for callers to use as the
+        WS URL segment / cookie value, never written to the DB itself.
+        """
         token = uuid.uuid4().hex + uuid.uuid4().hex
         expires = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
         conn = self._chat_conn()
         try:
             conn.execute(
                 "INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)",
-                (str(uuid.uuid4()), user_id, token, expires),
+                (str(uuid.uuid4()), user_id, _hash_token(token), expires),
             )
             conn.commit()
         finally:
