@@ -276,10 +276,12 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
    so the top menu matches the other pages (line-up, transport). */
 .app.auth-mode { flex-direction: column; }
 .auth-cmd-bar { display: none; }
-@media (min-width: 768px) {
+@media (min-width: 769px) {
   /* Other pages center the whole body at max-width 960px with space-xl
      side padding, so their cmd-bar renders as a 912px centered strip,
-     not full-bleed. Mirror that exact geometry here. */
+     not full-bleed. Mirror that exact geometry here. 769px (not 768px):
+     the app treats 768px as mobile everywhere, matching shared.css and
+     the lineup/timetable pages (see the 767-vs-768 breakpoint fix). */
   .auth-cmd-bar { display: flex; width: calc(100% - 2 * var(--space-xl)); max-width: calc(960px - 2 * var(--space-xl)); margin: 0 auto; }
   .auth-mode .header { display: none; }
 }
@@ -333,7 +335,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
    no way to reach it. Make the prompt a scroll container and use safe centering
    (falls back to start when overflowing) so focused fields can scroll into view.
    Scoped to mobile so the desktop layout is untouched. */
-@media (max-width: 767px) {
+@media (max-width: 768px) {
   .profile-prompt { justify-content: safe center; overflow-y: auto; }
 }
 .profile-prompt button { width: 320px; padding: var(--space-md); background: var(--gray-900); color: #fff; border: none; border-radius: var(--radius-md); font-size: var(--font-base); cursor: pointer; font-weight: 600; font-family: inherit; }
@@ -369,7 +371,9 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
 /* ===== MEDIA QUERIES ===== */
 
 /* --- Desktop --- */
-@media (min-width: 768px) {
+/* 769px, not 768px: 768px is mobile everywhere in this app (shared.css,
+   render.py). See the 767-vs-768 breakpoint fix in the mobile block below. */
+@media (min-width: 769px) {
   .app { flex-direction: row; }
   .sidebar { width: 320px; border-right: 1px solid var(--color-border); display: flex; flex-direction: column; height: 100vh; height: 100dvh; flex-shrink: 0; }
   .sidebar .content { flex: 1; overflow-y: auto; min-height: 0; }
@@ -394,7 +398,10 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
   .member-name { font-size: var(--font-sm); color: var(--color-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
   .member-flag { font-size: var(--font-sm); flex-shrink: 0; margin-left: auto; }
 }
-@media (max-width: 767px) {
+/* 768px, matching shared.css's .hamburger/.nav-icon/.cmd-bar mobile
+   threshold and the lineup/timetable convention (max-width:768 = mobile),
+   so the hamburger menu opens correctly at exactly 768px. */
+@media (max-width: 768px) {
   .sidebar { display: none; }
   .sidebar.visible { display: flex; flex-direction: column; height: 100%; }
   .main-panel { display: none; }
@@ -440,7 +447,7 @@ html, body { padding: 0; height: 100%; font-size: var(--font-base); overscroll-b
   .menu-member-name { font-size: var(--font-sm); color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
   .menu-member-flag { font-size: var(--font-sm); flex-shrink: 0; margin-left: auto; }
 }
-@media (max-width: 767px) and (max-height: 600px) { .profile-preview { display: none; } }
+@media (max-width: 768px) and (max-height: 600px) { .profile-preview { display: none; } }
 </style>
 </head>
 <body>
@@ -470,7 +477,7 @@ const ICON_BACK = '<svg width="24" height="24" viewBox="0 0 24 24" fill="current
 let replyTo = null;
 let _pendingDmTarget = null;
 let _pendingDmName = '';
-let isMobile = window.innerWidth < 768;
+let isMobile = window.innerWidth <= 768;
 let _googleClientId = null;
 let _googleInitialized = false;
 let _siteShort = null;
@@ -590,7 +597,7 @@ function _authChromeTop(title) {
     <div class="header">
       <a href="/line-up" class="nav-icon" aria-label="Lineup section" onclick="event.preventDefault();dbg('[NAV] lineup section (calendar icon)');location.href=storageGet('stc_view')==='timetable'?'/timetable':'/line-up'">${ICON_CALENDAR}</a>
       <div class="header-info"><span class="title">${title || 'Chat'}</span></div>
-      <button type="button" class="hamburger" onclick="toggleChatMenu()">${ICON_HAMBURGER}</button>
+      <button type="button" class="hamburger" onclick="toggleChatMenu()" aria-label="Menu">${ICON_HAMBURGER}</button>
     </div>`;
 }
 
@@ -1869,7 +1876,7 @@ function renderRoomList() {
     app.innerHTML = `
       <div class="header">
         <span class="title">Chats</span>
-        <button class="hamburger" onclick="toggleChatMenu()">${ICON_HAMBURGER}<span class="hamburger-dot"></span></button>
+        <button type="button" class="hamburger" onclick="toggleChatMenu()" aria-label="Menu">${ICON_HAMBURGER}<span class="hamburger-dot"></span></button>
       </div>
       <div class="content" style="display:flex;align-items:center;justify-content:center">
         <div class="empty">Tap the menu to pick a room</div>
@@ -2378,7 +2385,7 @@ function renderChatView(roomName) {
           ${roomDesc ? `<span class="online">${esc(roomDesc)}</span>` : ''}
         </div>
         ${currentRoomType !== 'dm' ? `<span class="header-count">${memberCount} ${USER_ICON}</span>` : ''}
-        <button class="hamburger" onclick="toggleChatMenu()">${ICON_HAMBURGER}<span class="hamburger-dot"></span></button>
+        <button type="button" class="hamburger" onclick="toggleChatMenu()" aria-label="Menu">${ICON_HAMBURGER}<span class="hamburger-dot"></span></button>
       </div>
       <div class="content" id="msg-scroll">
         <div class="messages" id="messages"></div>
@@ -3025,13 +3032,17 @@ function _renderChatMenuHtml() {
 // (except the calendar nav icon and the hamburger's own handler) toggles
 // the menu. Delegated: headers are re-rendered per room.
 document.addEventListener('click', function (e) {
-  if (!window.matchMedia('(max-width: 767px)').matches) return;
+  if (!window.matchMedia('(max-width: 768px)').matches) return;
   var header = e.target.closest('.header');
   if (!header) return;
   if (e.target.closest('.hamburger') || e.target.closest('.nav-icon')) return;
   dbg('[MENU] header tap -> toggleChatMenu');
   toggleChatMenu();
 });
+
+// Tracks the hamburger button to return focus to when the menu closes via
+// Escape (the same trigger-focus-return convention documented for modals).
+let _chatMenuTrigger = null;
 
 function toggleChatMenu() {
   dbg('[MENU] toggleChatMenu');
@@ -3041,7 +3052,10 @@ function toggleChatMenu() {
   const opening = !menu.classList.contains('open');
   menu.classList.toggle('open');
   overlay?.classList.toggle('open');
-  if (opening) _populateMenuSections();
+  if (opening) {
+    _chatMenuTrigger = document.querySelector('.header .hamburger');
+    _populateMenuSections();
+  }
 }
 
 function closeChatMenu() {
@@ -5387,7 +5401,7 @@ async function route() {
 
 window.addEventListener('resize', () => {
   const wasMobile = isMobile;
-  isMobile = window.innerWidth < 768;
+  isMobile = window.innerWidth <= 768;
   if (wasMobile !== isMobile) {
     dbg('[LAYOUT] breakpoint crossed, re-rendering for', isMobile ? 'mobile' : 'desktop');
     _routing = false;
@@ -5416,6 +5430,13 @@ window.addEventListener('keydown', (e) => {
     if (modal.id === 'meetup-map-overlay') closeMeetupMapPicker();
     else if (modal.id === 'meetup-modal') closeMeetupModal();
     else modal.remove();
+    return;
+  }
+  const chatMenu = document.getElementById('chat-menu');
+  if (chatMenu && chatMenu.classList.contains('open')) {
+    dbg('[MENU] Escape -> closeChatMenu');
+    closeChatMenu();
+    _chatMenuTrigger?.focus();
     return;
   }
   closeViewer();
