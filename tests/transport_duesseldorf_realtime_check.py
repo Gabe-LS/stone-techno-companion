@@ -47,22 +47,28 @@ try:
         pg2=ctx.new_page()
         pg2.goto(base+"/transport?route=duesseldorf&date=10.07.2026&time=14:00",timeout=30000)
         pg2.wait_for_selector(".dep-item",timeout=15000); pg2.wait_for_timeout(800)
-        B=pg2.evaluate("""(dep)=>{
+        # The shipped markup has one .dep-time span per row: on a delay it gets
+        # the "delayed" class and its text is replaced by the real (live) time,
+        # so the matching row is found by that real time, not the scheduled one.
+        real_dep=plus(tgt["dep"],7)
+        B=pg2.evaluate("""(real)=>{
           const rows=[...document.querySelectorAll('.dep-item')];
-          const row=rows.find(r=>{const sc=r.querySelector('.dep-time-scheduled');return sc && sc.textContent.trim()===dep;});
+          const row=rows.find(r=>{const t=r.querySelector('.dep-time.delayed');return t && t.textContent.trim()===real;});
           if(!row) return {found:false};
-          return {found:true, real:(row.querySelector('.dep-time-real')||{}).textContent,
+          return {found:true, real:(row.querySelector('.dep-time.delayed')||{}).textContent,
             sub:(row.querySelector('.dep-sub')||{}).textContent,
-            arrReal:(row.querySelector('.dep-arr-real')||{}).textContent,
-            dot:!!row.querySelector('.rt-dot'), live:getComputedStyle(document.getElementById('live-indicator')).display};
-        }""", tgt["dep"])
+            arrReal:(row.querySelector('.dep-arr.delayed')||{}).textContent,
+            dot:!!row.querySelector('.rt-dot.red'),
+            live:getComputedStyle(document.getElementById('live-indicator')).visibility};
+        }""", real_dep)
         print("B overlay:",B)
-        if not B.get("found"): fails.append("delayed row not rendered (no struck scheduled time)")
+        if not B.get("found"): fails.append("delayed row not rendered (no delayed departure time)")
         else:
             if not B.get("real"): fails.append("no real (delayed) departure time")
             if "#99999" not in (B.get("sub") or ""): fails.append("train number not shown")
-            if not B.get("arrReal"): fails.append("delayed arrival not shown")
+            if plus(tgt["arr"],7) not in (B.get("arrReal") or ""): fails.append("delayed arrival not shown")
             if not B.get("dot"): fails.append("no realtime dot")
+            if B.get("live") != "visible": fails.append("live indicator not shown")
         pg2.locator("#day-panels").screenshot(path=f"{SS}/dus_rt_live.png")
         b.close()
 finally: h.stop_server(proc)
