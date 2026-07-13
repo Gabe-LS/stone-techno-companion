@@ -1,7 +1,7 @@
 """Stage-2 client-behavior scenarios (real Chromium, synchronous).
 
 Each scenario is a SYNC function `fn(lab, server, recorder) -> list[str]`
-returning failure strings (empty = pass). They drive server/chat/chat.html in
+returning failure strings (empty = pass). They drive services/companion/chat/chat.html in
 a real browser via the BrowserLab/BrowserSession layer and assert the
 client-side notification signals: enable/disable/repair, the idle beacon, the
 focus-gated visible keepalive, cross-device badge fan-out and clear, and the

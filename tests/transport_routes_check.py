@@ -21,7 +21,7 @@ import e2ee_browser_check as h  # noqa: E402
 
 db = Path(tempfile.mkdtemp(prefix="rt_")) / "chat.db"
 os.environ["CHAT_DB_PATH"] = str(db)
-sys.path.insert(0, str(Path.cwd() / "server"))
+sys.path.insert(0, str(Path.cwd() / "services" / "companion"))
 import chat_db  # noqa: E402
 
 chat_db.init_chat_db(chat_db.get_chat_db())

@@ -1,6 +1,6 @@
 # Festival Ops Runbook
 
-Incident procedures for the live event. Facts verified against `deploy.sh`, `server/chat_moderation.py`, and the push invariants in CLAUDE.md (July 2026).
+Incident procedures for the live event. Facts verified against `deploy.sh`, `services/companion/chat_moderation.py`, and the push invariants in CLAUDE.md (July 2026).
 
 - **VPS**: `root@209.38.244.136`, app dir `/root/services/stone-techno`, container `stone-techno`
 - **Site**: https://stonetechno.deftlab.dev — TLS terminated by Caddy on the VPS
@@ -38,13 +38,13 @@ ssh root@209.38.244.136 "docker logs stone-techno --tail 200"           # look f
 1. **Test on a Chromium browser first** (Chrome/Brave). FCM is the strict push service; iOS and Firefox working proves nothing about Chromium users.
 2. Check the startup log for `VAPID key pair verified`. A mismatch error means the private key file and `VAPID_PUBLIC_KEY` in `.env` have drifted — every push silently fails until fixed. Do NOT regenerate keys casually: new keys invalidate every existing subscription.
 3. Check logs for WebPush errors and 410 pruning (`docker logs stone-techno | grep -i push`). A 410 means the browser revoked the subscription (e.g. Brave "Forget me"); the row is auto-pruned and the client self-repairs on next page load.
-4. Local reproduction: enable notifications on both lineup and chat in one Chromium profile, then `set -a && source server/.env && set +a && python tests/verify_push_both.py` — expects ONE endpoint, LIVE in both tables.
+4. Local reproduction: enable notifications on both lineup and chat in one Chromium profile, then `set -a && source services/companion/.env && set +a && python tests/verify_push_both.py` — expects ONE endpoint, LIVE in both tables.
 
 ## Server down / unhealthy
 
 ```bash
 ssh root@209.38.244.136
-cd /root/services/stone-techno/server
+cd /root/services/stone-techno/services/companion
 docker compose ps
 docker logs stone-techno --tail 200   # find the crash reason first
 docker compose up -d                  # restart
@@ -66,14 +66,14 @@ Note: a failed chat module import crashes the server at startup **by design** (f
   ssh root@209.38.244.136
   cd /root/services/stone-techno
   git reset --hard <known-good-commit>
-  cd server && docker compose up -d --build --force-recreate
+  cd services/companion && docker compose up -d --build --force-recreate
   ```
 
   Known-good reference point: `868fda0` is the June 30 lineup-only build that ran in production until the first chat deploy (July 2026). Rolling back to it loses chat entirely but restores a proven-stable lineup site.
 
 - **Slow path** (when the bad commit should also leave history): `git revert <bad-commit>` locally, push, run `./deploy.sh` — full backups + chat health check included.
-- **Backups**: the VPS keeps 5 timestamped backups (`server/data.bak.*`); every `deploy.sh` run also downloads `server/data/` + `chat-uploads/` to local `backups/{timestamp}/` (each `.db` verified with `PRAGMA quick_check`).
-- **DB restore**: stop the container, replace `server/data/chat.db` (or `hearts.db`) with the backup copy, delete any stale `-wal`/`-shm` files next to it, start the container.
+- **Backups**: the VPS keeps 5 timestamped backups (`services/companion/data.bak.*`); every `deploy.sh` run also downloads `services/companion/data/` + `chat-uploads/` to local `backups/{timestamp}/` (each `.db` verified with `PRAGMA quick_check`).
+- **DB restore**: stop the container, replace `services/companion/data/chat.db` (or `hearts.db`) with the backup copy, delete any stale `-wal`/`-shm` files next to it, start the container.
 - **.env restore**: `deploy.sh` keeps `.env.bak.{timestamp}` beside the live `.env` on the VPS.
 
 ## Moderation incidents
@@ -90,14 +90,14 @@ Note: a failed chat module import crashes the server at startup **by design** (f
 ## Content updates mid-festival (lineup / timetable / bios)
 
 ```bash
-python pipeline/stone_techno_companion.py --render-only --deploy   # rsync only, no container restart
+python services/data/stone_techno_companion.py --render-only --deploy   # rsync only, no container restart
 ```
 
 Static pages (e.g. `/transport`) deploy via `git pull` on the VPS (bind-mounted `static/`), no rebuild.
 
 ## Map / POIs
 
-POIs live ONLY in the MapTiler dataset (edit pins there; live within 120 s). If MapTiler is unreachable right after a container restart (cold cache), the map shows zero POIs. Break-glass: drop a `festival-pois.kml` (or `.kmz`/`.json`) export into the VPS `server/static/` — bind-mounted, picked up without a deploy.
+POIs live ONLY in the MapTiler dataset (edit pins there; live within 120 s). If MapTiler is unreachable right after a container restart (cold cache), the map shows zero POIs. Break-glass: drop a `festival-pois.kml` (or `.kmz`/`.json`) export into the VPS `services/companion/static/` — bind-mounted, picked up without a deploy.
 
 ## Disk pressure
 

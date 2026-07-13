@@ -47,7 +47,7 @@ def _new_room(server: NotifServer, name: str, is_moderated: bool = False) -> str
     """Insert a fresh, isolated room directly into the scratch chat.db.
 
     Each scenario gets its own room rather than reusing server.main_room_id():
-    _get_room_notification_targets (server/chat_ws.py) pulls ALL members of a
+    _get_room_notification_targets (services/companion/chat_ws.py) pulls ALL members of a
     room, so a room shared across scenarios would accumulate users from every
     earlier scenario and inflate push_targets / the "[PUSH] targets=" log line
     with stale recipients -- silently breaking the exact-count assertions
@@ -128,7 +128,7 @@ def _log_offset(server: NotifServer) -> int:
 
 def _has_push_targets_log(server: NotifServer, n: int, since: int = 0) -> bool:
     """True if the server logged a "[PUSH] targets=<n> " line at or after the
-    `since` log-line offset (server/chat_ws.py's handle_chat_ws logs
+    `since` log-line offset (services/companion/chat_ws.py's handle_chat_ws logs
     "[PUSH] targets=%d all=%d connected=%d sender=%s")."""
     needle = f"[PUSH] targets={n} "
     return any(needle in line for line in server.log_lines[since:])
@@ -233,7 +233,7 @@ async def active_recipient_no_push(
 ) -> list[str]:
     """A recipient who is connected AND recently active (<30s) must NOT
     receive a push. Confirms the active-viewer suppression in the
-    push_targets filter: server/chat_ws.py excludes a uid from push_targets
+    push_targets filter: services/companion/chat_ws.py excludes a uid from push_targets
     when it is in connected_uids and `now - _last_ws_activity[uid] <= 30`.
     Connecting itself stamps fresh activity (ConnectionManager.connect), so
     the recipient is "active" for the next 30s with no extra event needed.
@@ -297,7 +297,7 @@ async def idle_recipient_push(
     Idleness is forced deterministically via `POST /chat/api/push/idle`
     (harness.post_idle_beacon), which zeroes `manager._last_ws_activity` for
     the user server-side -- the same signal the real client's sendBeacon
-    sends on tab-hide, per server/chat_api.py's chat_push_idle. Avoids a real
+    sends on tab-hide, per services/companion/chat_api.py's chat_push_idle. Avoids a real
     30-second sleep while still exercising the exact idle-detection code
     path (the push_targets filter in handle_chat_ws).
     """
@@ -374,7 +374,7 @@ async def debounce_silent_escalation(
     debounce and delivered later, by its own background flush task, with
     silent=True.
 
-    Per server/chat_ws.py's _push_or_defer: the debounce window is 10s only
+    Per services/companion/chat_ws.py's _push_or_defer: the debounce window is 10s only
     until a push has actually gone out for this (user, room) key; once
     `_push_sent[key]` is set (right after the first real send), the window
     for any later call within 1800s widens to 60s. So the second send here
@@ -448,7 +448,7 @@ async def dead_endpoint_pruned(
     """A subscription whose push endpoint returns 410 Gone must be pruned
     from chat_push_subscriptions.
 
-    Confirms server/chat_ws.py's _do_send_push WebPushException handler
+    Confirms services/companion/chat_ws.py's _do_send_push WebPushException handler
     (status_code in (404, 410) -> delete_push_subscription_by_endpoint).
     """
     fails: list[str] = []
@@ -518,7 +518,7 @@ async def vapid_isolation(
     each carrying a VAPID `aud` equal to its OWN origin, and the three auds
     must be pairwise distinct.
 
-    This is the anti-poisoning invariant documented in server/chat_ws.py's
+    This is the anti-poisoning invariant documented in services/companion/chat_ws.py's
     _do_send_push: pywebpush mutates the vapid_claims dict it is given,
     stamping the first endpoint's origin as `aud`, so a shared dict across
     the subscription loop would poison every later push with the first
@@ -597,7 +597,7 @@ async def pending_not_pushed(
     harness.py itself uses for subscriptions/sessions -- and then sends one
     real, immediately-approved message. It asserts the pending row's text
     never leaks into the resulting push and never inflates the counts that
-    server/chat_ws.py's _do_send_push and chat_db.get_unread_counts compute
+    services/companion/chat_ws.py's _do_send_push and chat_db.get_unread_counts compute
     (both filter "moderation_status != 'pending'").
     """
     fails: list[str] = []

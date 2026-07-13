@@ -1,10 +1,10 @@
 # Transport Page: Behavioral Parity Specification
 
 Source of truth for the current implementation:
-- `server/static/pages/transport.html` (the whole SPA, markup + inline CSS + inline JS)
-- `server/api.py` (`/api/transport/departures`, `/api/transport/walk`, `/public-transport`, `/timetable-transport.json`, the clean-URL static-page catch-all)
-- `server/static/timetable-transport.json` (generated data)
-- `pipeline/transport/capture-api.mjs` (the offline generator for that JSON)
+- `services/companion/static/pages/transport.html` (the whole SPA, markup + inline CSS + inline JS)
+- `services/companion/api.py` (`/api/transport/departures`, `/api/transport/walk`, `/public-transport`, `/timetable-transport.json`, the clean-URL static-page catch-all)
+- `services/companion/static/timetable-transport.json` (generated data)
+- `services/data/transport/capture-api.mjs` (the offline generator for that JSON)
 - `tests/test_transport.py` and the four standalone Playwright checks
 
 This file is the exhaustive, testable checklist for the Next.js port of `/transport`. The port ships only when every box below is checked against a real running instance of the port, not against this document alone. Every item states an input and the exact observable output; where the current code and `CLAUDE.md`'s prose summary disagree, this file follows the code (verified by reading and by the test suite) and the disagreement is flagged explicitly in "Notes on documentation drift" at the end.
@@ -56,7 +56,7 @@ The Python endpoints described here (`/api/transport/departures`, `/api/transpor
 - [ ] Each calendar day's `departures` array is midnight-to-midnight for that literal calendar date (`day`/`date`), PLUS up to 5 extra entries copied from the START of the NEXT calendar day's own departures, each flagged `nextDay: true`. These are for late-night/early-morning continuity display, not for a different calendar date's own tab. The last day in each `days` array (Sunday) has no such overflow (nothing follows it).
 - [ ] A `nextDay: true` departure's own `dep` clock time is still whatever the next real calendar day's early-morning time is (e.g. `00:09`, `01:09` for NE2 owl service). The client, not the data, is responsible for treating it as "1440 minutes later" for sort/highlight purposes (see section 7).
 - [ ] `platform` may be an empty string (seen on some SEV entries). The port's rendering must treat `""` the same as absent (no "Pl. " sub-line segment emitted), matching the client's `if (plat) subParts.push(...)` truthiness check.
-- [ ] The generator (`pipeline/transport/capture-api.mjs`) is a manually-run Node 18+ script, not a live pipeline step: regenerating the schedule for new event dates means editing its `dates` / `duesDates` arrays and re-running it, then deploying the output JSON via git pull (no rebuild). The port does not need to replicate the generator logic, only accept whatever shape it produces (as specified above).
+- [ ] The generator (`services/data/transport/capture-api.mjs`) is a manually-run Node 18+ script, not a live pipeline step: regenerating the schedule for new event dates means editing its `dates` / `duesDates` arrays and re-running it, then deploying the output JSON via git pull (no rebuild). The port does not need to replicate the generator logic, only accept whatever shape it produces (as specified above).
 
 ---
 
@@ -201,9 +201,9 @@ For every departure row (`<li class="dep-item">`), computed per render pass over
 
 ## 9. Cross-page integration
 
-- [ ] Lineup command bar (desktop, `pipeline/scraper/render.py`) has a "Transport" button that opens `/transport` via `window.open('/transport', '_self')` (not a plain link) after logging `dbg('[NAV] transport (cmd-bar)')`.
+- [ ] Lineup command bar (desktop, `services/data/scraper/render.py`) has a "Transport" button that opens `/transport` via `window.open('/transport', '_self')` (not a plain link) after logging `dbg('[NAV] transport (cmd-bar)')`.
 - [ ] Lineup mobile hamburger menu has an equivalent "Transport" entry, `window.open('/transport', '_self')`, logging `dbg('[NAV] transport (menu)')`.
-- [ ] Chat's signed-out/auth-chrome desktop command bar (`server/chat/chat.html`) has a "Transport" button navigating to `/transport` via `location.href`, logging `dbg('[NAV] transport (auth cmd-bar)')`.
+- [ ] Chat's signed-out/auth-chrome desktop command bar (`services/companion/chat/chat.html`) has a "Transport" button navigating to `/transport` via `location.href`, logging `dbg('[NAV] transport (auth cmd-bar)')`.
 - [ ] Chat's sign-in/login menu has a "Transport" link (`<a href="/transport">`) logging `dbg('[NAV] transport (login menu)')`.
 - [ ] Chat's signed-in mobile menu has a "Transport" link (`<a href="/transport">`) logging `dbg('[NAV] transport (mobile menu)')`.
 - [ ] None of these five entry points pass any query string (they all link to the bare `/transport`, always landing on the default Zollverein outbound view). The port must not silently add a remembered/last-viewed route to these cross-page links unless product explicitly asks for that.
@@ -265,7 +265,7 @@ For every departure row (`<li class="dep-item">`), computed per render pass over
 
 Two claims in `CLAUDE.md`'s "Public transport page" section do not match the code as actually read and tested, and this spec follows the code:
 
-1. **Realtime cache TTL and key.** `CLAUDE.md` says "a shared 55 s cache per (date, minute, route:dir) bucket". The code (`server/api.py`, both the Zollverein and Düsseldorf branches of `/api/transport/departures`) uses a 90-second TTL (`now - cached[0] < 90`) keyed by `(date, dir)` (or `(date, "dues:"+dir)`), with NO minute component at all. Confirmed by `test_cache_collapses_upstream_calls`'s explicit assertion that a different `time` with the same `date`+`dir` still hits the cache. Whoever wrote the `CLAUDE.md` line either described an earlier version of the cache or a slightly different mental model of the bucketing; either way, 90 seconds / (date, dir)-only is what a byte-for-byte port must match.
+1. **Realtime cache TTL and key.** `CLAUDE.md` says "a shared 55 s cache per (date, minute, route:dir) bucket". The code (`services/companion/api.py`, both the Zollverein and Düsseldorf branches of `/api/transport/departures`) uses a 90-second TTL (`now - cached[0] < 90`) keyed by `(date, dir)` (or `(date, "dues:"+dir)`), with NO minute component at all. Confirmed by `test_cache_collapses_upstream_calls`'s explicit assertion that a different `time` with the same `date`+`dir` still hits the cache. Whoever wrote the `CLAUDE.md` line either described an earlier version of the cache or a slightly different mental model of the bucketing; either way, 90 seconds / (date, dir)-only is what a byte-for-byte port must match.
 2. **Client poll interval.** `CLAUDE.md` says the page "polls ... every 30 s when viewing today". The client's actual `POLL_INTERVAL` constant is `90000` (90 seconds) for the real network re-fetch of realtime data. There IS a genuinely separate 30-second `setInterval`, but it only triggers a local re-render (`renderPanel()`, no network call) and only when realtime is not currently active. A port that polls the network every 30 seconds would be denser than the current production behavior (3x the request rate) and would need a product decision, not just a bugfix, before shipping that as an intentional change.
 
 One more finding worth flagging even though it isn't a `CLAUDE.md` contradiction: `transport_duesseldorf_realtime_check.py` Part B references CSS classes (`.dep-time-scheduled`, `.dep-time-real`, `.dep-arr-real`) that do not exist in the current `transport.html` markup at all. This test currently cannot pass as written. It is called out as its own checklist item in section 12 rather than buried here, since it blocks calling that script "gating" without a fix.

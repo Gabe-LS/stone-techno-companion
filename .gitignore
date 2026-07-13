@@ -13,25 +13,25 @@ __pycache__/
 .claude/
 
 # Database (regenerable cache)
-pipeline/lineup.db
-pipeline/lineup.db-shm
-pipeline/lineup.db-wal
+services/data/lineup.db
+services/data/lineup.db-shm
+services/data/lineup.db-wal
 
 # Server runtime data (databases, VAPID keys)
-server/data/
+services/companion/data/
 
 # Chat runtime data (ephemeral DB + user uploads — must never be committed)
-server/chat.db
-server/chat.db-shm
-server/chat.db-wal
-server/chat/uploads/
-server/chat-uploads/
-server/chat/tmp/
-server/static/bios.json
-server/static/index.html
-server/static/photos
-server/static/thumbs
-server/static/timetable.json
+services/companion/chat.db
+services/companion/chat.db-shm
+services/companion/chat.db-wal
+services/companion/chat/uploads/
+services/companion/chat-uploads/
+services/companion/chat/tmp/
+services/companion/static/bios.json
+services/companion/static/index.html
+services/companion/static/photos
+services/companion/static/thumbs
+services/companion/static/timetable.json
 
 # Deploy backups (downloaded from VPS)
 backups/
@@ -40,10 +40,10 @@ backups/
 logs/
 
 # Generated output
-pipeline/output/
+services/data/output/
 
 .env
-server/.env
+services/companion/.env
 
 # Local TLS certs (mkcert)
 *.pem
@@ -56,4 +56,4 @@ tests/stress_test/throughput_*.log
 tests/stress_test/debug_*.log
 
 # NRW aerial tile cache (runtime)
-server/static/vendor/dop-cache/
+services/companion/static/vendor/dop-cache/

@@ -15,7 +15,7 @@ Usage:
 
     # Full 200-user, 30-minute run against production
     python tests/stress_test/run.py --url https://stonetechno.deftlab.dev \
-        --db /root/services/stone-techno/server/data/chat.db
+        --db /root/services/stone-techno/services/companion/data/chat.db
 
     # Without moderation (isolate chat infra from OpenAI)
     python tests/stress_test/run.py --insecure --no-moderation
@@ -2397,7 +2397,7 @@ def main():
         default="https://localhost:64728",
         help="Server base URL (default: https://localhost:64728)",
     )
-    p.add_argument("--db", default="server/data/chat.db", help="Path to chat.db")
+    p.add_argument("--db", default="services/companion/data/chat.db", help="Path to chat.db")
     p.add_argument(
         "--users", type=int, default=200, help="Simulated users (default: 200)"
     )

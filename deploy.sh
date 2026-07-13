@@ -16,7 +16,7 @@ cd "$(dirname "$0")"
 VPS="root@209.38.244.136"
 VPS_DIR="/root/services/stone-techno"
 LOCAL_BACKUPS="backups"
-LOCAL_ENV="server/.env"
+LOCAL_ENV="services/companion/.env"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 DRY_RUN=false
 DEPLOY_REF="main"
@@ -50,7 +50,7 @@ if [ "${1:-}" = "--rollback" ]; then
     fi
     echo "[2/3] Resetting VPS worktree and rebuilding container..."
     ssh "$VPS" "cd $VPS_DIR && git reset --hard $TARGET"
-    ssh "$VPS" "cd $VPS_DIR/server && docker compose up -d --build --force-recreate"
+    ssh "$VPS" "cd $VPS_DIR/services/companion && docker compose up -d --build --force-recreate"
     echo "[3/3] Health check (container only — target commit may predate the chat API)..."
     check_container_health
     if [ "$STATUS" != "healthy" ]; then
@@ -61,8 +61,8 @@ if [ "${1:-}" = "--rollback" ]; then
     echo ""
     echo "=== Rollback complete (code only) ==="
     echo "If data or .env were damaged, restore manually on the VPS:"
-    echo "  cp -r $VPS_DIR/server/data.bak.<timestamp>/. $VPS_DIR/server/data/"
-    echo "  cp $VPS_DIR/server/.env.bak.<timestamp> $VPS_DIR/server/.env"
+    echo "  cp -r $VPS_DIR/services/companion/data.bak.<timestamp>/. $VPS_DIR/services/companion/data/"
+    echo "  cp $VPS_DIR/services/companion/.env.bak.<timestamp> $VPS_DIR/services/companion/.env"
     echo "(then docker compose restart; see docs/runbook.md)"
     exit 0
 fi
@@ -155,11 +155,11 @@ else
     # secrets aren't group/world-readable.
     ENV_BYTES=$(printf "%b" "$PROD_ENV" | wc -c | tr -d ' ')
     printf "%b" "$PROD_ENV" | ssh "$VPS" \
-        "cat > $VPS_DIR/server/.env.tmp \
-         && [ \$(wc -c < $VPS_DIR/server/.env.tmp) -eq $ENV_BYTES ] \
-         && ([ ! -f $VPS_DIR/server/.env ] || cp $VPS_DIR/server/.env $VPS_DIR/server/.env.bak.$TIMESTAMP) \
-         && mv $VPS_DIR/server/.env.tmp $VPS_DIR/server/.env \
-         && chmod 600 $VPS_DIR/server/.env"
+        "cat > $VPS_DIR/services/companion/.env.tmp \
+         && [ \$(wc -c < $VPS_DIR/services/companion/.env.tmp) -eq $ENV_BYTES ] \
+         && ([ ! -f $VPS_DIR/services/companion/.env ] || cp $VPS_DIR/services/companion/.env $VPS_DIR/services/companion/.env.bak.$TIMESTAMP) \
+         && mv $VPS_DIR/services/companion/.env.tmp $VPS_DIR/services/companion/.env \
+         && chmod 600 $VPS_DIR/services/companion/.env"
     echo "  Synced $NVARS vars to VPS"
 fi
 
@@ -171,11 +171,11 @@ fi
 echo ""
 echo "[1/7] VAPID preflight (local public key vs VPS private pem)..."
 LOCAL_VAPID_PUB=$(grep "^VAPID_PUBLIC_KEY=" "$LOCAL_ENV" | cut -d= -f2-)
-VPS_PEM_EXISTS=$(ssh "$VPS" "[ -f $VPS_DIR/server/data/vapid_private.pem ] && echo yes || echo no")
+VPS_PEM_EXISTS=$(ssh "$VPS" "[ -f $VPS_DIR/services/companion/data/vapid_private.pem ] && echo yes || echo no")
 if [ "$VPS_PEM_EXISTS" = "no" ]; then
     echo "  No vapid_private.pem on VPS yet — skipping (first deploy of push?)"
 else
-    VPS_VAPID_PUB=$(ssh "$VPS" "cat $VPS_DIR/server/data/vapid_private.pem" | python3 -c "
+    VPS_VAPID_PUB=$(ssh "$VPS" "cat $VPS_DIR/services/companion/data/vapid_private.pem" | python3 -c "
 import sys, base64
 from cryptography.hazmat.primitives.serialization import load_pem_private_key, Encoding, PublicFormat
 key = load_pem_private_key(sys.stdin.buffer.read(), password=None)
@@ -190,7 +190,7 @@ print(base64.urlsafe_b64encode(pub).rstrip(b'=').decode())")
         echo "       VAPID_PUBLIC_KEY=$VPS_VAPID_PUB"
         echo "    b) or replace the VPS pem with the local one (invalidates"
         echo "       existing prod subscriptions):"
-        echo "       scp <local-pem> $VPS:$VPS_DIR/server/data/vapid_private.pem"
+        echo "       scp <local-pem> $VPS:$VPS_DIR/services/companion/data/vapid_private.pem"
         exit 1
     fi
 fi
@@ -207,22 +207,22 @@ if [ "$DRY_RUN" = true ]; then
 else
     ssh "$VPS" "python3 - <<'PY'
 import glob, os, shutil, sqlite3
-snap = '$VPS_DIR/server/data-snap.$TIMESTAMP'
+snap = '$VPS_DIR/services/companion/data-snap.$TIMESTAMP'
 os.makedirs(snap, exist_ok=True)
-for db in glob.glob('$VPS_DIR/server/data/*.db'):
+for db in glob.glob('$VPS_DIR/services/companion/data/*.db'):
     dest = os.path.join(snap, os.path.basename(db))
     c = sqlite3.connect(db, timeout=10)
     c.execute('VACUUM INTO ?', (dest,))
     c.close()
     print('  snapshot ' + os.path.basename(db))
-for f in glob.glob('$VPS_DIR/server/data/*.pem'):
+for f in glob.glob('$VPS_DIR/services/companion/data/*.pem'):
     shutil.copy2(f, snap)
     print('  copied ' + os.path.basename(f))
 PY"
 fi
 run mkdir -p "$LOCAL_BACKUPS"
 run rsync -az --progress \
-    "$VPS:$VPS_DIR/server/data-snap.$TIMESTAMP/" \
+    "$VPS:$VPS_DIR/services/companion/data-snap.$TIMESTAMP/" \
     "$LOCAL_BACKUPS/$TIMESTAMP/"
 if [ "$DRY_RUN" = false ]; then
     echo "  Saved to $LOCAL_BACKUPS/$TIMESTAMP/"
@@ -247,7 +247,7 @@ if [ "$DRY_RUN" = false ]; then
         fi
     done
     # Best-effort: back up live user uploads too (24h TTL of media)
-    rsync -az --progress "$VPS:$VPS_DIR/server/chat-uploads/" \
+    rsync -az --progress "$VPS:$VPS_DIR/services/companion/chat-uploads/" \
         "$LOCAL_BACKUPS/$TIMESTAMP/chat-uploads/" 2>/dev/null || \
         echo "  (no chat-uploads dir on VPS yet, skipping)"
 fi
@@ -255,8 +255,8 @@ fi
 # --- Step 3: Backup on VPS (timestamped, keeps previous) ---
 echo ""
 echo "[3/7] Creating VPS-side backup..."
-run ssh "$VPS" "mv $VPS_DIR/server/data-snap.$TIMESTAMP $VPS_DIR/server/data.bak.$TIMESTAMP"
-echo "  Created server/data.bak.$TIMESTAMP on VPS (verified snapshot)"
+run ssh "$VPS" "mv $VPS_DIR/services/companion/data-snap.$TIMESTAMP $VPS_DIR/services/companion/data.bak.$TIMESTAMP"
+echo "  Created services/companion/data.bak.$TIMESTAMP on VPS (verified snapshot)"
 
 # --- Step 4: Check out target ref on VPS ---
 # Fetch everything, then resolve DEPLOY_REF: a remote branch ships its latest
@@ -274,14 +274,14 @@ run ssh "$VPS" "cd $VPS_DIR && git fetch origin --tags --prune --force && \
 # --- Step 5: Seed chat.db (first chat deploy only) ---
 # Builds a clean production chat.db from the LOCAL dev database: keeps the
 # curated group rooms + chat_settings, strips all messages/users/test data,
-# and pre-creates the owner account (see server/seed_chat_db.py). Uploaded
+# and pre-creates the owner account (see services/companion/seed_chat_db.py). Uploaded
 # ONLY when the VPS has no chat.db — this can never overwrite live prod data.
 echo ""
 echo "[5/7] Chat DB seed..."
-VPS_HAS_CHATDB=$(ssh "$VPS" "[ -f $VPS_DIR/server/data/chat.db ] && echo yes || echo no")
+VPS_HAS_CHATDB=$(ssh "$VPS" "[ -f $VPS_DIR/services/companion/data/chat.db ] && echo yes || echo no")
 if [ "$VPS_HAS_CHATDB" = "yes" ]; then
     echo "  chat.db already exists on VPS — skipping seed (live data untouched)"
-elif [ ! -f "server/data/chat.db" ]; then
+elif [ ! -f "services/companion/data/chat.db" ]; then
     echo "  No local chat.db to seed from — container will create a fresh one"
 else
     SEED_EMAIL="gabrielelosurdo@gmail.com"
@@ -292,10 +292,10 @@ else
     fi
     SEED_TMP=$(mktemp -d)
     if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY RUN] Would build seed from server/data/chat.db and upload"
+        echo "  [DRY RUN] Would build seed from services/companion/data/chat.db and upload"
     else
-        python3 server/seed_chat_db.py --out "$SEED_TMP/chat.db" --email "$SEED_EMAIL"
-        rsync -az "$SEED_TMP/chat.db" "$VPS:$VPS_DIR/server/data/chat.db"
+        python3 services/companion/seed_chat_db.py --out "$SEED_TMP/chat.db" --email "$SEED_EMAIL"
+        rsync -az "$SEED_TMP/chat.db" "$VPS:$VPS_DIR/services/companion/data/chat.db"
         echo "  Seeded chat.db uploaded to VPS"
     fi
     rm -rf "$SEED_TMP"
@@ -316,7 +316,7 @@ else
     # Keep the newest 15 archived container logs
     ls -dt logs/docker-*.log 2>/dev/null | tail -n +16 | xargs rm -f 2>/dev/null || true
 fi
-run ssh "$VPS" "cd $VPS_DIR/server && docker compose up -d --build --force-recreate"
+run ssh "$VPS" "cd $VPS_DIR/services/companion && docker compose up -d --build --force-recreate"
 
 # --- Step 7: Health check ---
 echo ""
@@ -344,7 +344,7 @@ fi
 
 # --- Cleanup old backups ---
 # VPS: keep last 5 data backups + last 5 .env backups.
-to_prune=$(ssh "$VPS" "ls -dt $VPS_DIR/server/data.bak.* 2>/dev/null | tail -n +6; ls -dt $VPS_DIR/server/.env.bak.* 2>/dev/null | tail -n +6" || true)
+to_prune=$(ssh "$VPS" "ls -dt $VPS_DIR/services/companion/data.bak.* 2>/dev/null | tail -n +6; ls -dt $VPS_DIR/services/companion/.env.bak.* 2>/dev/null | tail -n +6" || true)
 if [ -n "$to_prune" ]; then
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY RUN] Would prune on VPS:"
@@ -371,4 +371,4 @@ echo "=== Deploy complete ==="
 echo "Backup: $LOCAL_BACKUPS/$TIMESTAMP/"
 echo ""
 echo "To deploy content (lineup HTML + photos):"
-echo "  python pipeline/stone_techno_companion.py --render-only --deploy"
+echo "  python services/data/stone_techno_companion.py --render-only --deploy"

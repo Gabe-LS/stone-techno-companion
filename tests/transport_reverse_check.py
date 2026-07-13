@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path.cwd() / "tests"))
 import e2ee_browser_check as h
 db = Path(tempfile.mkdtemp(prefix="tr_"))/"chat.db"; os.environ["CHAT_DB_PATH"]=str(db)
 import sqlite3
-sys.path.insert(0, str(Path.cwd()/"server")); import chat_db; chat_db.init_chat_db(chat_db.get_chat_db())
+sys.path.insert(0, str(Path.cwd()/"services"/"companion")); import chat_db; chat_db.init_chat_db(chat_db.get_chat_db())
 port=h.get_free_port(); proc,base,_=h.start_server(db,port)
 fails=[]
 def dests(page):

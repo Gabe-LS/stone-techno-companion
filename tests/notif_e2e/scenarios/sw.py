@@ -1,7 +1,7 @@
 """Stage-3 service-worker handler-behavior scenarios (real Chromium, synchronous).
 
 Each scenario is a SYNC function `fn(swlab, server, recorder) -> list[str]`
-returning failure strings (empty = pass). They drive the REAL server/static/
+returning failure strings (empty = pass). They drive the REAL services/companion/static/
 sw.js source running in sw_harness.SWHarness's mock service-worker
 environment, asserting on push/notificationclick/notificationclose/
 pushsubscriptionchange side effects: shown notifications, tag collapse,

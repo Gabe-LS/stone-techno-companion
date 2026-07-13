@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "server"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "services" / "companion"))
 
 from chat_db import (
     init_chat_db,
@@ -1070,7 +1070,7 @@ def _server_proc():
     import subprocess
     import os
 
-    server_dir = Path(__file__).resolve().parent.parent / "server"
+    server_dir = Path(__file__).resolve().parent.parent / "services" / "companion"
     env = os.environ.copy()
     env["CHAT_BASE_URL"] = "https://localhost:64729"
     env["OPENAI_API_KEY"] = "test-key"
@@ -1084,7 +1084,7 @@ def _server_proc():
     cert_file = server_dir / "certs" / "localhost+1.pem"
     key_file = server_dir / "certs" / "localhost+1-key.pem"
     if not cert_file.exists() or not key_file.exists():
-        pytest.skip("Local TLS certs not found (server/certs/localhost+1.pem / -key.pem)")
+        pytest.skip("Local TLS certs not found (services/companion/certs/localhost+1.pem / -key.pem)")
 
     proc = subprocess.Popen(
         [

@@ -42,7 +42,7 @@ DB_PATH = PROJECT_ROOT / "lineup.db"
 PHOTOS_DIR = DEFAULT_OUTPUT_DIR / "photos"
 OVERRIDES_PATH = PROJECT_ROOT / "scraper" / "overrides.toml"
 VPS_HOST = "root@209.38.244.136"
-VPS_STATIC_DIR = "/root/services/stone-techno/server/static/"
+VPS_STATIC_DIR = "/root/services/stone-techno/services/companion/static/"
 
 DEFAULT_EVENT_ID = "stone-techno-2026"
 DEFAULT_EVENT_NAME = "Stone Techno"
@@ -65,7 +65,7 @@ def deploy_to_vps(output_dir: Path, output_path: Path) -> None:
             json_src = output_dir / json_name
             if json_src.exists():
                 shutil.copy2(json_src, staging_path / json_name)
-        server_static = Path(__file__).resolve().parent.parent / "server" / "static"
+        server_static = Path(__file__).resolve().parent.parent / "companion" / "static"
         for fname in ("manifest.json", "sw.js", "shared.css", "shared.js"):
             src = server_static / fname
             if src.exists():
@@ -86,7 +86,7 @@ def deploy_to_vps(output_dir: Path, output_path: Path) -> None:
         for p in staging_path.rglob("*"):
             p.chmod(0o755 if p.is_dir() else 0o644)
         # No global --delete: the VPS static dir is the git worktree's
-        # server/static, which also holds tracked assets not staged here —
+        # services/companion/static, which also holds tracked assets not staged here —
         # a mirror sync would delete them and break the next git pull.
         subprocess.run(
             [

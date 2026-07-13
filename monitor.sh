@@ -171,7 +171,7 @@ disk=\$(df -P / | awk 'NR==2 {gsub("%",""); print \$5}')
 mem_avail=\$(free | awk '/Mem:/ {printf "%d", \$7*100/\$2}')
 load1=\$(cut -d' ' -f1 /proc/loadavg)
 cores=\$(nproc)
-uploads_mb=\$(du -sm $VPS_DIR/server/chat-uploads 2>/dev/null | cut -f1)
+uploads_mb=\$(du -sm $VPS_DIR/services/companion/chat-uploads 2>/dev/null | cut -f1)
 uploads_mb=\${uploads_mb:-0}
 errors_1h=\$(docker logs --since 1h stone-techno 2>&1 | grep -cE 'ERROR|CRITICAL|Traceback' || true)
 vapid_ok=\$(docker logs stone-techno 2>&1 | grep -c 'VAPID key pair verified' || true)
@@ -195,7 +195,7 @@ mod=\${mod:-execfail}
 dbcheck=\$(python3 - <<'PY'
 import glob, sqlite3
 bad = []
-for db in glob.glob('$VPS_DIR/server/data/*.db'):
+for db in glob.glob('$VPS_DIR/services/companion/data/*.db'):
     try:
         c = sqlite3.connect(f'file:{db}?mode=ro', uri=True, timeout=10)
         r = c.execute('PRAGMA quick_check').fetchone()[0]

@@ -1,7 +1,7 @@
 // Regenerates the Tram 107 / NE2 schedule for /transport.
 // Run when event dates change (edit the dates array below), then deploy the
 // JSON via git pull (no rebuild). Requires Node 18+. Output goes to
-// server/static/timetable-transport.json.
+// services/companion/static/timetable-transport.json.
 import { writeFileSync } from 'fs';
 
 // Call the VRR EFA departure monitor API directly from Node.js
@@ -323,5 +323,5 @@ const transportJson = {
   },
 };
 
-writeFileSync(new URL('../../server/static/timetable-transport.json', import.meta.url), JSON.stringify(transportJson));
-console.log('\nJSON saved to server/static/timetable-transport.json');
+writeFileSync(new URL('../../../services/companion/static/timetable-transport.json', import.meta.url), JSON.stringify(transportJson));
+console.log('\nJSON saved to services/companion/static/timetable-transport.json');

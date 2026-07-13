@@ -38,7 +38,7 @@ import urllib.request
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SERVER_DIR = REPO_ROOT / "server"
+SERVER_DIR = REPO_ROOT / "services" / "companion"
 
 # Env vars that must never leak into the scratch server process. Nothing in
 # the tested path (key upload, DM send/receive, group room, reporting)
