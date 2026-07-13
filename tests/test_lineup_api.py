@@ -1,11 +1,11 @@
-"""Tests for the non-chat lineup HTTP surface of server/api.py.
+"""Tests for the non-chat lineup HTTP surface of services/companion/api.py.
 
 Covers /ics/{slot_id} format validation + its own rate-limit bucket, and the
 push subscribe endpoint's dedicated rate-limit bucket (separate from the
 favorites "pick" bucket). TestClient is used WITHOUT the context manager so
 the app lifespan (push scheduler etc.) never starts; DB_PATH is monkeypatched
-to a scratch sqlite file per test (server/api.py hardcodes DB_PATH relative
-to the source file with no environment override, unlike chat_db.CHAT_DB_PATH).
+to a scratch sqlite file per test (services/companion/api.py hardcodes DB_PATH
+relative to the source file with no environment override, unlike chat_db.CHAT_DB_PATH).
 """
 
 import sys
@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "server"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "services" / "companion"))
 
 import api  # noqa: E402
 

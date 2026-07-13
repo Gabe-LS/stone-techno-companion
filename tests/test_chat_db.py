@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "server"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "services" / "companion"))
 
 from chat_db import (
     init_chat_db,

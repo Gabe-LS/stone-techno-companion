@@ -13,9 +13,9 @@ import os, sys, tempfile, json
 from pathlib import Path
 sys.path.insert(0, str(Path.cwd()/"tests")); import e2ee_browser_check as h
 db=Path(tempfile.mkdtemp(prefix="rt_"))/"chat.db"; os.environ["CHAT_DB_PATH"]=str(db)
-sys.path.insert(0,str(Path.cwd()/"server")); import chat_db; chat_db.init_chat_db(chat_db.get_chat_db())
+sys.path.insert(0,str(Path.cwd()/"services"/"companion")); import chat_db; chat_db.init_chat_db(chat_db.get_chat_db())
 # pick a target Friday DUS departure >= 14:00
-tt=json.load(open("server/static/timetable-transport.json"))
+tt=json.load(open("services/companion/static/timetable-transport.json"))
 fri=[d for d in tt["duesseldorf"]["days"] if d["day"]=="Friday"][0]
 tgt=next(x for x in fri["departures"] if x["dep"]>="14:00")
 def plus(hhmm,m):

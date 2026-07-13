@@ -10,9 +10,9 @@ enable notifications on BOTH surfaces in the same Chromium profile, it sends a
 real WebPush to each stored subscription and reports whether each is live (201)
 or dead (410/404).
 
-Usage (from the repo root, with server/.env loaded for VAPID keys):
+Usage (from the repo root, with services/companion/.env loaded for VAPID keys):
 
-    set -a && source server/.env && set +a && python tests/verify_push_both.py
+    set -a && source services/companion/.env && set +a && python tests/verify_push_both.py
 
 Expect: both surfaces report LIVE, and the two endpoints are IDENTICAL. A dead
 record or two different endpoints means the collision is back.
@@ -26,7 +26,7 @@ from pathlib import Path
 
 from pywebpush import WebPushException, webpush
 
-_SERVER_DATA = Path(__file__).resolve().parent.parent / "server" / "data"
+_SERVER_DATA = Path(__file__).resolve().parent.parent / "services" / "companion" / "data"
 HEARTS_DB = _SERVER_DATA / "hearts.db"
 CHAT_DB = Path(os.environ.get("CHAT_DB_PATH", _SERVER_DATA / "chat.db"))
 

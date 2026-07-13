@@ -57,7 +57,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SERVER_DIR = REPO_ROOT / "server"
+SERVER_DIR = REPO_ROOT / "services" / "companion"
 
 # Stripped from the scratch server's environment so the isolated instance can
 # never accidentally talk to real third-party services (OpenAI moderation,
