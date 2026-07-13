@@ -1458,7 +1458,7 @@ async def serve_bios():
 @app.get("/timetable-transport.json")
 async def serve_timetable_transport():
     # Tram 107 / NE2 schedule for /transport. no-cache so a schedule
-    # regeneration (pipeline/transport/capture-api.mjs + git pull) is picked
+    # regeneration (services/data/transport/capture-api.mjs + git pull) is picked
     # up without a container rebuild.
     file_path = STATIC_DIR / "timetable-transport.json"
     if file_path.exists():

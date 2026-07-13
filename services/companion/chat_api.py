@@ -149,7 +149,7 @@ _SITE_NAME = "Stone Techno"
 
 def _load_site_short() -> None:
     global _SITE_SHORT, _SITE_NAME
-    lineup_db = Path(__file__).resolve().parent.parent / "pipeline" / "lineup.db"
+    lineup_db = Path(__file__).resolve().parent.parent / "data" / "lineup.db"
     if not lineup_db.exists():
         return
     try:
@@ -569,7 +569,7 @@ def _parse_kml_pois(kml_text: str) -> list:
 
 
 def _load_pois() -> list:
-    """Festival POIs for the map picker, from server/static/ (bind-mounted, so
+    """Festival POIs for the map picker, from services/companion/static/ (bind-mounted, so
     editable without redeploy). Prefers a Google-Earth/My-Maps export
     (festival-pois.kmz or .kml), falls back to festival-pois.json. Never raises."""
     import zipfile
@@ -668,7 +668,7 @@ async def _pois_data() -> list:
     """Festival POI list. Prefers a published MapTiler dataset
     (MAPTILER_DATASET_ID) fetched server-side + cached (so the key stays off the
     client and edits appear live); falls back to the cached copy on error, then
-    to a local KMZ/KML/JSON in server/static/."""
+    to a local KMZ/KML/JSON in services/companion/static/."""
     import time
 
     ds = os.environ.get("MAPTILER_DATASET_ID")
