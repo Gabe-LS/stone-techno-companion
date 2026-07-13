@@ -48,7 +48,7 @@ sequencing and the blueprint is authoritative for strategy and rationale.
 
 | Stage | State | Current focus | Next actions |
 |---|---|---|---|
-| **1. Stabilize and document** | In progress (started 2026-07-13) | Documentation backbone (this file, plus `docs/adr/`, `docs/invariants.md`, `docs/parity/` stubs) being produced today; post-event retrospective and Bucket 1 menu fixes queued right behind it | Finish the documentation backbone; mine `monitor.sh` logs, push ack data (`chat_push_subscriptions`, `sent_notifications`), and moderation logs for real usage data; ship the four Bucket 1 menu fixes (see 3.1) |
+| **1. Stabilize and document** | In progress (started 2026-07-13) | Documentation backbone shipped (commits 1558268, 039f813, cd345e3); Bucket 1 resolved (breakpoint + a11y shipped in 4269c51, remaining items deferred to Stage 3 nav by owner decision) | Post-event retrospective: mine `monitor.sh` logs, push ack data (`chat_push_subscriptions`, `sent_notifications`), and moderation logs for real usage data; fold findings into `docs/invariants.md` and ADRs |
 | **2. Foundations** | Not started | None yet | Blocked on Stage 1 exit criteria; first concrete step is the ADR 0007 repo-shape decision |
 | **3. The Next.js front** | Not started | None yet | Blocked on Stage 2 exit criteria |
 | **4. Multi-event and moat features** | Not started | None yet | Backend/data-model work (ADR 0003, ADR 0004 decisions) may start once Stage 2 lands, in parallel with Stage 3; all UI work blocked until Stage 3 delivers a Next.js app to build it in |
@@ -78,27 +78,30 @@ code that Stage 3 is going to delete.
   - [ ] Fold anything that qualifies as a hard constraint into `docs/invariants.md`;
     fold anything that changes a blueprint open decision (section I) into the relevant
     ADR once written
-- [ ] **Bucket 1 menu fixes** (from `docs/menu-sequencing-strategy.md`, all migration-proof:
-  none of this is wasted when Next.js's `<Nav>` replaces it in Stage 3):
-  - [ ] Unified active-state convention + group labels + hamburger unread badge (today: three
-    divergent active-state conventions across the app's hand-written menus)
-  - [ ] Fix the 767px vs 768px breakpoint bug (chat's menu does not open at exactly 768px)
-  - [ ] Give chat desktop a way back to Line-up / Timetable / Transport (the "zero nav" hole:
-    chat currently has no desktop nav back to the rest of the app)
-  - [ ] Chat hamburger `aria-label` + Escape-to-close (verified accessibility gaps)
-  - [ ] Explicitly **not** doing: the `renderMenu()` / Web Components standardization
+- [x] **Bucket 1 menu fixes** (from `docs/menu-sequencing-strategy.md`), resolved 2026-07-13:
+  - [x] Fixed the 767px vs 768px breakpoint bug (chat's menu did not open at exactly 768px;
+    all chat.html breakpoints aligned to the shared convention, commit 4269c51)
+  - [x] Chat hamburger `aria-label` + Escape-to-close with focus return (same commit)
+  - [x] Unified active-state convention + group labels + hamburger unread badge: DECIDED
+    (owner, 2026-07-13) to defer all three to the Next.js nav component in Stage 3.
+    Design inputs recorded there. Do not re-raise.
+  - [x] Chat desktop nav back to Line-up / Timetable / Transport: DECIDED (owner,
+    2026-07-13) to leave the gap until the Next.js front ships. The signed-in desktop
+    calendar icon stays display:none. Do not ship a stopgap.
+  - [x] Explicitly **not** doing: the `renderMenu()` / Web Components standardization
     (Bucket 2). Next.js is the committed near-term plan, so per the menu-sequencing
     decision record, that abstraction is built exactly once, in Stage 3, as the unified
     nav component (ADR 0002)
-- [ ] **Documentation backbone**
-  - [ ] `docs/roadmap.md` (this file)
-  - [ ] `docs/adr/0001` through `0008` (see section 4 below for what each one decides)
-  - [ ] `docs/invariants.md`: seed it from blueprint section G (slot UUIDs, one push
-    subscription per origin, one manifest/app identity, VAPID continuity, client-side
-    E2EE keys, provider-keyed ban/strike continuity) plus retrospective findings
-  - [ ] `docs/parity/transport.md`, `docs/parity/pwa-shell.md`, `docs/parity/lineup.md`,
-    `docs/parity/timetable.md`: acceptance criteria stubs for the four Stage 3 surfaces,
-    in the same risk order they'll be ported, expanded just before each port starts
+- [x] **Documentation backbone** (shipped 2026-07-13, commits 1558268 and 039f813)
+  - [x] `docs/roadmap.md` (this file)
+  - [x] `docs/adr/0001` through `0008` (see section 4 below for what each one decides)
+  - [x] `docs/invariants.md`: 17 invariants (INV-1 through INV-17) from blueprint section G
+    plus the hard-won CLAUDE.md knowledge; retrospective findings still to be folded in
+  - [x] `docs/parity/transport.md`, `docs/parity/pwa-shell.md`, `docs/parity/lineup.md`,
+    `docs/parity/timetable.md`: full acceptance checklists (507 items), not stubs; they
+    were extracted from the actual code and already corrected drift in CLAUDE.md
+    (transport polling/cache numbers, timetable "Also" cross-references, the undocumented
+    read-only shared-picks mode) and fixed a broken Playwright check (commit cd345e3)
 - [ ] **Feature freeze on `pipeline/scraper/render.py`.** No new features land in the legacy
   HTML/CSS/JS generator from this point on. Bug fixes and the Bucket 1 menu fixes above are
   allowed (they're migration-proof); anything net-new that only exists to make the
@@ -106,7 +109,9 @@ code that Stage 3 is going to delete.
 
 **Exit criteria**
 
-- All four Bucket 1 menu fixes shipped and verified in the running app
+- Bucket 1 resolved: the two shippable fixes (768px breakpoint, hamburger a11y) shipped and
+  verified; the design-gated items explicitly deferred to the Stage 3 nav component by
+  owner decision (2026-07-13), recorded in 3.1 and in the Stage 3 nav workstream
 - `docs/adr/0001`-`0008`, `docs/invariants.md`, and the four `docs/parity/*.md` stubs exist
   and are linked from this file
 - Retrospective findings are captured (in `docs/invariants.md` and/or the relevant ADR),
@@ -194,7 +199,13 @@ new front early, not as a surprise at the end.
   (color variables, spacing scale, radius scale, shadow scale, font scale) into
   `packages/`. Build the unified nav component **once**, here, per ADR 0002. This is
   where the Bucket 2 work deferred in Stage 1 finally happens, as a native Next.js
-  component instead of hand-rolled Web Components
+  component instead of hand-rolled Web Components. Design inputs deferred here by
+  owner decision on 2026-07-13: (a) one unified active-state convention (today three
+  coexist: chat rows use a background tint, chat tabs a bottom border, lineup tabs an
+  inverted background); (b) hamburger unread indicator upgraded from the boolean dot
+  to a numbered badge if space allows; (c) signed-in desktop chat gets real nav back
+  to Line-up / Timetable / Transport (the known "zero nav" gap, deliberately left open
+  until this component ships); (d) grouped/labeled menu sections where lists are long
 - [ ] **Port transport first** (`docs/parity/transport.md`): standalone SPA today
   (`server/static/pages/transport.html`), clean existing API (`/api/transport/*`),
   lowest risk of the four surfaces. No shared state with lineup/chat to get wrong
