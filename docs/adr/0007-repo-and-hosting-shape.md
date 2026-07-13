@@ -2,11 +2,11 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Date
 
-2026-07-13
+2026-07-13 (proposed and accepted the same day, owner decision)
 
 ## Context
 
@@ -133,12 +133,30 @@ should not be left implicit.
 
 ## Decision
 
-Pending.
+Monorepo (option A, scoped per option C's clarification): `apps/web`,
+`services/companion`, `services/data`, `packages/` live in this repository;
+pretix, Medusa, Payload, and Meilisearch stay upstream projects run as their
+own container images, integrated via configuration and API calls, never
+vendored.
+
+Hosting: vertical scaling (option a). One bigger VPS, docker-compose with
+per-service resource limits, extending the existing `deploy.sh` discipline.
+Budget line: approximately 50 EUR/month. Managed orchestration (option c)
+is explicitly deferred until service count or load proves the single-host
+model insufficient; revisit via a superseding ADR if commerce (Stage 5)
+demands it.
 
 ## Consequences
 
-Pending: depends on the option chosen. Whichever repo shape and hosting
-option are chosen, they must be settled and the budget line set before
-Phase 2 (the Next.js front-end stand-up, per blueprint section E) begins,
-per the blueprint's own framing of D5 as a hard prerequisite, not a
-concurrent task.
+- Stage 2 is unblocked: the monorepo restructure can begin.
+- The current repo is restructured in place (history preserved), not split.
+- `deploy.sh`'s backup/preflight/health-check discipline is generalized to
+  the multi-service compose file rather than replaced (INV-16 in
+  `docs/invariants.md` region: the snapshot-verify-then-change sequence
+  must survive the restructure).
+- The 50 EUR/month ceiling constrains Stage 5: pretix and Medusa must fit
+  the single-host model or trigger the superseding-ADR conversation before
+  any commerce integration starts.
+- The single-VPS blast-radius tradeoff documented under option (a) is
+  accepted knowingly: per-service resource limits and the health check are
+  the mitigations.

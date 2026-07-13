@@ -49,7 +49,7 @@ sequencing and the blueprint is authoritative for strategy and rationale.
 | Stage | State | Current focus | Next actions |
 |---|---|---|---|
 | **1. Stabilize and document** | In progress (started 2026-07-13) | Documentation backbone shipped (commits 1558268, 039f813, cd345e3); Bucket 1 resolved (breakpoint + a11y shipped in 4269c51, remaining items deferred to Stage 3 nav by owner decision) | Post-event retrospective: mine `monitor.sh` logs, push ack data (`chat_push_subscriptions`, `sent_notifications`), and moderation logs for real usage data; fold findings into `docs/invariants.md` and ADRs |
-| **2. Foundations** | Not started | None yet | Blocked on Stage 1 exit criteria; first concrete step is the ADR 0007 repo-shape decision |
+| **2. Foundations** | Not started | None yet | ADR 0007 DECIDED (2026-07-13): monorepo, single bigger VPS, ~50 EUR/mo. Unblocked once Stage 1 exit criteria close (retrospective remaining) |
 | **3. The Next.js front** | Not started | None yet | Blocked on Stage 2 exit criteria |
 | **4. Multi-event and moat features** | Not started | None yet | Backend/data-model work (ADR 0003, ADR 0004 decisions) may start once Stage 2 lands, in parallel with Stage 3; all UI work blocked until Stage 3 delivers a Next.js app to build it in |
 | **5. Commerce** | Not started | None yet | Blocked on a second event having run on the platform, and on ADR 0008 |
@@ -140,7 +140,7 @@ change.
 
 **Workstreams**
 
-- [ ] **Monorepo restructure** (resolves ADR 0007)
+- [ ] **Monorepo restructure** (ADR 0007: Accepted 2026-07-13, monorepo + single bigger VPS at ~50 EUR/mo)
   - [ ] `apps/web`: the Next.js app (empty scaffold at this stage; Stage 3 fills it in)
   - [ ] `services/companion`: today's `server/` (FastAPI: favorites, schedule sync,
     push scheduler, ICS export, transport proxy, DOP tile proxy, chat)
@@ -369,7 +369,7 @@ decisions the phased path (section E) calls out directly.
 | 0004 | Organizer dashboard owner: Payload admin, pretix organizer area, or a custom surface; also decides where POIs live long-term | D2 (Phase 1) | Stage 4 (safety and food-and-drink pillars, which assume organizer-maintained data) |
 | 0005 | AI agent model choice, per-event cost ceiling, rate limits, and its interaction with the moderation pipeline | D3 (Phase 1) | Stage 4 (AI support agent workstream) |
 | 0006 | Postgres cutover order and dual-write/cutover mechanics: `lineup.db` first, then `hearts.db`/`chat.db` | D4 (Phase 2) | Stage 4 (Postgres cutover workstream) |
-| 0007 | Monorepo vs polyrepo shape, and hosting/orchestration once one VPS no longer fits the service count | D5 (Phase 2) | Stage 2 (foundations: the repo restructure literally can't start without this) |
+| 0007 | DECIDED: monorepo (apps/, services/, packages/), vertical scaling on one bigger VPS, ~50 EUR/mo budget | D5 (Phase 2) | Stage 2 unblocked (Accepted 2026-07-13) |
 | 0008 | Identity broker: companion auth as its own OIDC IdP vs. an external IdP (Keycloak/Authentik/Ory) | D6 (Phase 3) | Stage 5 (commerce: pretix/Medusa integration sits behind whatever this picks) |
 
 ## 5. Standing rules

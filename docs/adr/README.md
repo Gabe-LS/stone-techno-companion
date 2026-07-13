@@ -17,7 +17,7 @@ to reconstruct the reasoning from old chat logs or code archaeology.
 | [0004](0004-organizer-dashboard-owner.md) | Organizer dashboard owner (D2) | Proposed | 2026-07-13 |
 | [0005](0005-ai-agent-model-and-cost.md) | AI agent model and cost ceiling (D3) | Proposed | 2026-07-13 |
 | [0006](0006-postgres-cutover-order.md) | Postgres cutover order (D4) | Proposed | 2026-07-13 |
-| [0007](0007-repo-and-hosting-shape.md) | Repo and hosting shape (D5) | Proposed | 2026-07-13 |
+| [0007](0007-repo-and-hosting-shape.md) | Repo and hosting shape (D5) | Accepted | 2026-07-13 |
 | [0008](0008-identity-broker.md) | Identity broker (D6) | Proposed | 2026-07-13 |
 
 ## Process
