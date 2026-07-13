@@ -1,0 +1,9 @@
+{
+  "name": "@stone-techno/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Next.js front end (Stage 3 scaffold, see docs/roadmap.md section 3.3). Placeholder at Stage 2 exit per docs/adr/0007-repo-and-hosting-shape.md.",
+  "scripts": {
+    "dev": "echo 'apps/web is a Stage 2 placeholder, not yet implemented (Stage 3, docs/roadmap.md section 3.3)' && exit 1"
+  }
+}
