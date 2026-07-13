@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Festival platform — build/buy & reference architecture</title>
+<style>
+  :root{
+    --ground:#0d0d10; --surface:#16161c; --surface2:#1d1d25; --line:#2a2a33;
+    --text:#ecebe6; --muted:#9a9aa6; --faint:#6b6b76;
+    --violet:#a06bff;        /* doc accent — techno */
+    --build:#e5a53a;         /* BUILD (your differentiator) */
+    --buy:#5b9bff;           /* BUY / adopt OSS */
+    --keep:#35c88a;          /* KEEP (already have) */
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,monospace;
+    --ui:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:
+      radial-gradient(1100px 520px at 84% -10%,#1a1030 0%,transparent 60%),
+      radial-gradient(900px 460px at -5% 3%,#101623 0%,transparent 55%),
+      var(--ground);
+    color:var(--text);font-family:var(--ui);line-height:1.55;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1060px;margin:0 auto;padding:clamp(28px,5vw,72px) clamp(18px,4vw,40px) 100px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--violet);margin:0 0 16px}
+  h1{font-size:clamp(30px,6vw,50px);line-height:1.03;letter-spacing:-.02em;font-weight:800;margin:0 0 18px;text-wrap:balance}
+  h1 span{color:var(--muted);font-weight:300}
+  .lede{max-width:64ch;color:#cbcac4;font-size:clamp(15px,2.1vw,18px);margin:0}
+  .lede b{color:var(--text);font-weight:600}
+  h2{font-family:var(--mono);font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);font-weight:500;margin:0 0 20px;padding-bottom:12px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:baseline}
+  h2 .n{color:var(--violet)}
+  section{margin-top:clamp(50px,8vw,86px)}
+  p{max-width:70ch}
+  .note{font-size:13.5px;color:var(--muted)} .note b{color:var(--text)}
+
+  /* verified pill */
+  .vf{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--keep);border:1px solid #234b39;background:rgba(53,200,138,.08);border-radius:20px;padding:2px 8px;white-space:nowrap}
+
+  /* matrix */
+  .scroll{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
+  table{border-collapse:collapse;width:100%;min-width:920px;font-size:13.5px}
+  th,td{text-align:center;padding:11px 10px;border-bottom:1px solid var(--line)}
+  th:first-child,td:first-child{text-align:left;white-space:nowrap;font-weight:600}
+  thead th{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:500}
+  tbody tr:last-child td{border-bottom:none}
+  tr.you{background:rgba(160,107,255,.08)} tr.you td:first-child{color:#fff}
+  .yes{color:var(--keep);font-weight:700} .no{color:#4a4a55} .part{color:var(--build)}
+  .wedge{margin-top:16px;border-left:3px solid var(--violet);background:rgba(160,107,255,.06);border-radius:0 8px 8px 0;padding:15px 18px;font-size:14px;color:var(--muted)}
+  .wedge b{color:var(--text)}
+
+  /* build-buy cards */
+  .bb{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .bb>div{background:var(--surface);padding:18px 18px 20px}
+  .bb .pillar{font-size:15px;font-weight:700;margin:0 0 4px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .tag{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;padding:2px 8px;border-radius:5px}
+  .t-build{background:rgba(229,165,58,.14);color:var(--build);box-shadow:inset 0 0 0 1px #4a3a1c}
+  .t-buy{background:rgba(91,155,255,.14);color:var(--buy);box-shadow:inset 0 0 0 1px #21385c}
+  .t-keep{background:rgba(53,200,138,.14);color:var(--keep);box-shadow:inset 0 0 0 1px #1f4030}
+  .bb p{margin:8px 0 0;font-size:13px;color:var(--muted)}
+  .bb p b{color:var(--text)} .bb code{font-family:var(--mono);font-size:12px;color:#cdd0d6}
+
+  /* architecture */
+  .arch{display:flex;flex-direction:column;gap:10px}
+  .layer{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:13px 14px}
+  .layer .lab{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 10px}
+  .boxes{display:grid;gap:8px}
+  .b3{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+  .box{border-radius:9px;padding:11px 13px;font-size:13px;background:var(--surface2);border:1px solid var(--line)}
+  .box .t{font-weight:600;display:flex;align-items:center;gap:8px}
+  .box .s{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-top:3px}
+  .box.build{box-shadow:inset 3px 0 0 var(--build)} .box.buy{box-shadow:inset 3px 0 0 var(--buy)} .box.keep{box-shadow:inset 3px 0 0 var(--keep)}
+  .flowdot{color:var(--faint);text-align:center;font-size:16px;line-height:1;margin:-2px 0}
+  .legend{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:16px;font-size:12.5px;color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:7px} .legend i{width:11px;height:11px;border-radius:3px;display:inline-block}
+  .lg-build{background:var(--build)} .lg-buy{background:var(--buy)} .lg-keep{background:var(--keep)}
+
+  /* phases */
+  .phase{display:grid;grid-template-columns:auto 1fr;gap:16px;padding:16px 0;border-top:1px solid var(--line)}
+  .phase:first-child{border-top:none}
+  .phase .k{font-family:var(--mono);font-size:12px;color:var(--violet);white-space:nowrap;padding-top:2px}
+  .phase h3{margin:0 0 5px;font-size:15.5px}
+  .phase p{margin:0;font-size:13.5px;color:var(--muted)} .phase p b{color:var(--text)}
+
+  .risks{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .risks>div{background:var(--surface);padding:17px 18px}
+  .risks h4{margin:0 0 6px;font-size:14px;display:flex;align-items:center;gap:8px}
+  .risks h4::before{content:"";width:8px;height:8px;border-radius:50%;background:#e5484d}
+  .risks p{margin:0;font-size:13px;color:var(--muted)}
+  .foot{margin-top:62px;padding-top:18px;border-top:1px solid var(--line);font-family:var(--mono);font-size:11px;letter-spacing:.05em;color:var(--faint)}
+  .stack-line{font-family:var(--mono);font-size:14px;color:#cdd0d6;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:4px 0 0;overflow-x:auto}
+  .stack-line b{color:#fff}
+  code{font-family:var(--mono);font-size:12px;color:#cdd0d6}
+  table.map{min-width:960px}
+  .map td{text-align:left;vertical-align:top;font-size:13px;color:var(--muted)}
+  .map td b{color:var(--text)}
+  .map td:last-child{font-family:var(--mono);font-size:11px;color:var(--violet);white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">Stone Techno → European festival platform</p>
+  <h1>Build vs buy, <span>and the architecture to get there.</span></h1>
+  <p class="lede">The direction is a <b>platform</b> — content, community, ticketing, merch, and a database of festivals + transport + line-ups across Europe. This is the plan for what to <b>build</b>, what to <b>adopt</b>, and how it wires together — grounded in verified market + stack research, and positioned honestly against the closest real competitor.</p>
+
+  <section>
+    <h2><span class="n">A</span> The competitive reality <span class="vf">web-verified</span></h2>
+    <p class="note">No one owns all the pillars — but it is <b>not</b> empty ground. <b>Woov already combines a line-up/timetable + community chat + ticketing</b> across many events, so it's the real benchmark. The ticketing majors (RA/Shotgun/DICE) have ticketing but no timetable or chat; Clashfinder is timetable-only; Radiate is chat-first with light set-times.</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Platform</th><th>Festival&nbsp;DB</th><th>Line-up / clashfinder</th><th>Community / chat</th><th>AI&nbsp;support</th><th>Safety</th><th>Food&nbsp;/&nbsp;drink</th><th>Ride sharing</th><th>Ticketing</th><th>Realtime transit</th><th>Merch</th></tr></thead>
+        <tbody>
+          <tr><td>RA / Shotgun / DICE</td><td class="yes">●</td><td class="no">—</td><td class="part">◐</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">●</td><td class="no">—</td><td class="no">—</td></tr>
+          <tr><td>Bandsintown / Songkick</td><td class="yes">●</td><td class="part">◐</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="part">◐</td><td class="no">—</td><td class="no">—</td></tr>
+          <tr><td>Clashfinder</td><td class="no">—</td><td class="yes">●</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+          <tr><td>Radiate</td><td class="part">◐</td><td class="part">◐</td><td class="yes">●</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="part">◐</td><td class="part">◐</td><td class="no">—</td><td class="part">◐</td></tr>
+          <tr><td><b>Woov</b> — closest rival</td><td class="part">◐</td><td class="yes">●</td><td class="yes">●</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">●</td><td class="no">—</td><td class="no">—</td></tr>
+          <tr class="you"><td>You (planned)</td><td>multi-event ready</td><td class="yes">●</td><td class="yes">●</td><td class="yes">●</td><td class="yes">●</td><td class="yes">●</td><td class="yes">●</td><td class="no">—</td><td class="yes">●</td><td class="no">—</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="wedge"><b>The defensible wedge (the one gap adversarial search couldn't fill):</b> nobody pairs a <b>live festival timetable with realtime local public-transit</b> — that's uniquely yours today. Second edge: <b>techno/electronic-scene depth + festival-scoped E2EE chat &amp; meetups</b>. Third: an <b>AI support agent</b> grounded in festival data (no competitor offers one). Everything else (ticketing, merch, CMS) is table-stakes you should <b>adopt</b>, not out-build Woov on.</div>
+  </section>
+
+  <section>
+    <h2><span class="n">B</span> Build vs buy, pillar by pillar</h2>
+    <div class="bb">
+      <div><p class="pillar">Festival / line-up / transport data <span class="tag t-build">Build</span></p><p><b>Your moat.</b> The scrape → enrich → normalize pipeline + realtime transit is the differentiator and the hardest thing to copy. Keep it in <b>Python</b>. No product does this well.</p></div>
+      <div><p class="pillar">Community: chat / meetups <span class="tag t-keep">Keep</span></p><p>Your bespoke <b>E2EE chat + meetups + moderation</b> is already more festival-tailored than Rocket.Chat/Matrix. Keep and scale it; don't replace it with off-the-shelf.</p></div>
+      <div><p class="pillar">Ticketing <span class="tag t-buy">Adopt</span></p><p>Do not build a payments/inventory engine. Adopt <code>pretix</code> (Django, festival-native, offline check-in) or <code>Hi.Events</code> (Laravel/React). Integrate, don't rebuild.</p></div>
+      <div><p class="pillar">Merch shop <span class="tag t-buy">Adopt</span></p><p><code>Medusa</code> (MIT, headless, Node/TS) — variants, multi-region, bundle-with-tickets. Theme its storefront rather than writing commerce from scratch.</p></div>
+      <div><p class="pillar">CMS (event/editorial content) <span class="tag t-buy">Adopt</span></p><p><code>Payload</code> (MIT core, TS/Next-native) for editorial + flexible schemas. Note: a paid Enterprise plugin tier exists on top of the free core.</p></div>
+      <div><p class="pillar">Search <span class="tag t-buy">Adopt</span></p><p><code>Meilisearch</code> (or Typesense) — sub-50ms typo-tolerant search over artists / line-ups / POIs, one lightweight binary. Good on festival wifi.</p></div>
+      <div><p class="pillar">Maps / geo / wayfinding <span class="tag t-keep">Keep</span></p><p>You already run the right open stack: <code>MapLibre + OpenFreeMap + OSRM</code>. Add <code>PMTiles</code> for offline venue tiles. Nothing to buy.</p></div>
+      <div><p class="pillar">Safety &amp; awareness <span class="tag t-build">Build</span></p><p>Emergency alerts (organizer-pushed), <b>first aid / awareness team / safe space / water</b> locations on the map (POI categories you already have), one-tap contact button. Data-driven: organizers manage it via CMS or the dashboard. A trust differentiator when onboarding festivals.</p></div>
+      <div><p class="pillar">Food &amp; drink <span class="tag t-build">Build</span></p><p>Vendor directory with <b>menus and prices</b>, dietary filters (vegan, gluten-free), locations on the map. A major real pain point at festivals. Natural extension of the POI system + CMS (organizers or vendors maintain their listings).</p></div>
+      <div><p class="pillar">Ride sharing <span class="tag t-build">Build</span></p><p>Offer/request rides to and from festivals. <b>Route matching</b> (origin, destination, date, seats), in-app coordination via chat (DM the driver), map visualization of pickup points, cost splitting. Complements the realtime transit board: public transport for the last mile, ride sharing for the long haul. Integrates with your existing maps, chat, and user identity.</p></div>
+      <div><p class="pillar">AI support agent <span class="tag t-build">Build</span></p><p>A <b>bot user inside the chat system</b> in a dedicated support room, grounded in your festival data via <b>tool-calling</b> (schedule, artists, transport, POIs, FAQs). Answers "When does X play?", "How do I get there?", "Where's the nearest water?" from real data, not hallucination. Leverages existing chat infra, moderation, and the structured DB. Another differentiator no competitor offers.</p></div>
+      <div><p class="pillar">On-sale / high-concurrency real-time <span class="tag t-build">Later</span></p><p>Only if ticket on-sales spike hard. The proven pattern is an <b>Elixir/Phoenix</b> waiting-room service (Veeps: 20 Rails → 2 Elixir nodes). Defer until scale demands it.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">C</span> Reference architecture</h2>
+    <div class="arch">
+      <div class="layer"><p class="lab">Clients</p>
+        <div class="boxes b3">
+          <div class="box keep"><div class="t">Web + PWA</div><div class="s">Next.js · offline · push</div></div>
+          <div class="box keep"><div class="t">Native (later)</div><div class="s">wrap PWA / React Native</div></div>
+        </div>
+      </div>
+      <div class="flowdot">↓</div>
+      <div class="layer"><p class="lab">App / edge — the front you build</p>
+        <div class="boxes"><div class="box buy"><div class="t">Next.js (SSR/SSG) + BFF</div><div class="s">content pages static · app routes dynamic · one component system · calls services below</div></div></div>
+      </div>
+      <div class="flowdot">↓</div>
+      <div class="layer"><p class="lab">Services</p>
+        <div class="boxes b3">
+          <div class="box build"><div class="t">Data platform</div><div class="s">Python: scrape · enrich · normalize · transit</div></div>
+          <div class="box build"><div class="t">Companion + chat API</div><div class="s">FastAPI · WebSocket · E2EE · moderation</div></div>
+          <div class="box build"><div class="t">AI support agent</div><div class="s">tool-calling bot · festival data · chat user</div></div>
+          <div class="box build"><div class="t">Identity / SSO</div><div class="s">companion auth as OIDC IdP · one login across pretix / Medusa / Payload</div></div>
+          <div class="box buy"><div class="t">pretix</div><div class="s">ticketing (Django)</div></div>
+          <div class="box buy"><div class="t">Medusa</div><div class="s">merch (Node/TS)</div></div>
+          <div class="box buy"><div class="t">Payload</div><div class="s">CMS (TS)</div></div>
+          <div class="box buy"><div class="t">Meilisearch</div><div class="s">search (Rust)</div></div>
+        </div>
+      </div>
+      <div class="flowdot">↓</div>
+      <div class="layer"><p class="lab">Data &amp; infra</p>
+        <div class="boxes b3">
+          <div class="box"><div class="t">PostgreSQL</div><div class="s">primary store (per service)</div></div>
+          <div class="box"><div class="t">Redis</div><div class="s">cache · queues · realtime bus</div></div>
+          <div class="box"><div class="t">Object storage + tiles</div><div class="s">media · AVIF · MapLibre/PMTiles</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="legend"><span><i class="lg-build"></i> Build — your differentiator</span><span><i class="lg-buy"></i> Adopt — proven OSS</span><span><i class="lg-keep"></i> Keep — already have</span></div>
+    <p class="note" style="margin-top:16px">Each adopted system keeps its own datastore and is integrated at the <b>API/BFF layer</b>, not merged into one DB — the standard way these OSS pieces are meant to run. Postgres + Redis is the near-universal pairing across pretix, Saleor, Medusa and Discourse <span class="vf">verified</span>.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">D</span> The stack verdict <span class="vf">matches how the market builds this</span></h2>
+    <p class="note">The empirical pattern across Eventbrite, Saleor, Medusa, DICE and the adoptable OSS — <b>not</b> a guess:</p>
+    <p class="stack-line"><b>Next.js</b> (React) front · <b>Python</b> (FastAPI/Django-family) backbone · <b>Postgres + Redis</b> · adopt <b>pretix / Medusa / Payload / Meilisearch</b> · <b>Elixir/Phoenix</b> only for on-sale/real-time at scale</p>
+    <p class="note" style="margin-top:14px">React/Next.js recurs on every verifiable content-commerce-community platform, and every adoptable storefront (Saleor, Medusa) ships Next.js starters — so <b>Next.js beats SvelteKit at platform scale</b> on ecosystem + integration fit. <b>Python stays central</b> — it's where your pipeline already lives and what Eventbrite/Saleor/pretix run. This is the one place the "greenfield" answer and your existing investment finally agree.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">E</span> Phased path — today's app is phase 0</h2>
+    <div class="phase"><div class="k">Phase&nbsp;0</div><div><h3>Harden the companion (now)</h3><p>Single-event app, evolve in place. Ship only the <b>migration-proof menu fixes</b> (unified active state, the 768px breakpoint bug, chat desktop nav, aria/Escape gaps); the shared menu <b>component</b> is deferred to the Next.js front so the abstraction is built once (decision record: <code>docs/menu-sequencing-strategy.md</code>). Fill the deferred meetup gaps: push wiring (<code>room_memberships</code> branch for meetup rooms), attendee-list UI, pre-meetup reminders. <b>No framework migration.</b> <b>Done when:</b> the deferred list is empty and the next event runs on this codebase without incident.</p></div></div>
+    <div class="phase"><div class="k">Phase&nbsp;1</div><div><h3>Multi-event, data-driven + AI agent</h3><p>Event picker + a <b>festival/route/artist data model</b> (config-driven, not files; the transport itineraries move from hand-edited JSON into it). Search (<b>Meilisearch</b>). <b>AI support agent</b> as a bot user in chat: tool-calling over the structured DB (schedule, transport, POIs) so answers are grounded in real data. This is the moat — build it before anything commercial. <b>Done when:</b> adding a third event needs only a scraper module plus config (no code changes elsewhere), and the agent answers schedule, transport and POI questions from live data.</p></div></div>
+    <div class="phase"><div class="k">Phase&nbsp;2</div><div><h3>The platform front-end</h3><p>Stand up the <b>Next.js</b> app consuming the Python data + companion API; port the content pages; keep chat as-is behind it. Add <b>Payload</b> for editorial content. <b>Done when:</b> every content page is served by Next.js at feature parity on the same origin, <code>render.py</code> is retired, and the push harness (<code>tests/notif_e2e</code>, <code>verify_push_both</code>) passes against the new front in a Chromium-family browser.</p></div></div>
+    <div class="phase"><div class="k">Phase&nbsp;3</div><div><h3>Commerce &amp; scale</h3><p>Integrate <b>pretix</b> (ticketing) and <b>Medusa</b> (merch) at the BFF, behind the single identity service. Add an <b>Elixir</b> on-sale service only if/when spikes demand it. Now you're a platform. <b>Done when:</b> a real ticket and a real merch order complete end to end through the BFF with one login.</p></div></div>
+  </section>
+
+  <section>
+    <h2><span class="n">F</span> Current system → target, asset by asset</h2>
+    <p class="note">What the restructure actually does to each thing that exists today. Nothing on this list is abandoned without a stated successor.</p>
+    <div class="scroll">
+      <table class="map">
+        <thead><tr><th>Asset today</th><th>What it is</th><th>Fate in the target architecture</th><th>When</th></tr></thead>
+        <tbody>
+          <tr><td><code>pipeline/</code></td><td>Python scrape → enrich → normalize → AVIF pipeline writing SQLite <code>lineup.db</code>; one scraper module per event; <code>overrides.toml</code> for manual corrections</td><td><b>Becomes the Data platform service.</b> The scraper output contract (<code>parsed</code> dict: artists, sections, locations, assignments) stays the ingestion interface until organizer self-serve exists. Overrides move from a file into the data model. SQLite moves to Postgres when multi-event ingestion lands.</td><td>Phase 1</td></tr>
+          <tr><td><code>scraper/render.py</code></td><td>Every line of the lineup frontend (HTML/CSS/JS, ~650 KB page + <code>bios.json</code> + timetable) generated as Python string concatenation</td><td><b>Retired.</b> Its pages are the first surfaces the Next.js front re-implements. It keeps generating until feature parity is verified, then is deleted; the timetable/scroll/modal behaviors it encodes are the parity checklist.</td><td>Phase 2</td></tr>
+          <tr><td><code>server/api.py</code></td><td>FastAPI monolith: favorites + schedule sync, push scheduler, ICS export, transport proxy, DOP tile proxy, static routes, SPA catch-all</td><td><b>Survives as the Companion API</b> behind the BFF. Page and static-file routes move to Next.js; the push scheduler, ICS, transport and tile proxies stay server-side in Python.</td><td>Phase 2</td></tr>
+          <tr><td>Chat (<code>chat_*.py</code>, <code>chat.html</code>, admin)</td><td>Bespoke E2EE chat, three-layer moderation, meetups, multi-admin panel; single-file frontend</td><td><b>Kept</b> (section B). Runs unchanged behind the platform front. Porting <code>chat.html</code> into the shared component system is optional and comes last, if ever.</td><td>Phase 2+</td></tr>
+          <tr><td><code>hearts.db</code> / <code>chat.db</code></td><td>Live user data in SQLite (WAL, <code>secure_delete</code>): sessions, favorites, push subscriptions, messages, E2EE device keys, bans</td><td><b>Postgres per service</b>, migrated under the section G invariants (slot UUIDs, push endpoints, provider-keyed bans and device keys carry over byte-identically).</td><td>Phase 2</td></tr>
+          <tr><td>Transport board</td><td><code>transport.html</code> + <code>/api/transport/*</code> VRR proxies + hand-regenerated <code>timetable-transport.json</code> (stops pinned in code)</td><td><b>Generalizes into the festival + route data model:</b> per-event stops and itineraries become data rows, not files and constants. The UI ports to the front; the proxy and no-open-proxy invariant stay in Python.</td><td>Phase 1 (data) / 2 (UI)</td></tr>
+          <tr><td>Deploy + monitoring</td><td><code>deploy.sh</code> (snapshot backups, VAPID preflight, seed), <code>monitor.sh</code> on the QNAP, single VPS with docker compose + Caddy</td><td><b>Re-architected.</b> Seven-plus services need orchestration, per-service databases and real observability; one VPS and one compose file stop being enough. The backup/verify/rollback discipline in <code>deploy.sh</code> is the bar the replacement must meet.</td><td>Phase 2/3</td></tr>
+          <tr><td>Tests (315 + harnesses)</td><td>pytest suites pinned to FastAPI internals, plus Playwright push/E2EE/transport harnesses pinned to the current DOM</td><td><b>Stay green against the services they cover.</b> The Next.js front gets its own e2e layer from day one; <code>tests/notif_e2e</code> and <code>verify_push_both</code> gate the Phase 2 cutover.</td><td>ongoing</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">G</span> Migration invariants: break any of these and users lose data silently</h2>
+    <p class="note">Hard-won constraints from the live system. Every one of them was learned the expensive way; the restructure inherits them as non-negotiables.</p>
+    <div class="risks">
+      <div><h4>Slot UUIDs are permanent</h4><p><code>slot_uuid()</code> (in <code>timetable_json.py</code>) is the identity of a set for saved schedules, push dedup and ICS. Any schema change or Postgres migration must carry these ids unchanged, or every user's saved schedule and notification history resets.</p></div>
+      <div><h4>One origin, one push subscription</h4><p>Lineup and chat share the root-scope <code>sw.js</code> and a single browser subscription per origin. The new front must serve the same worker at root scope on the same origin, and must never unsubscribe-then-resubscribe (it rotates the endpoint and orphans the other surface's record).</p></div>
+      <div><h4>One manifest, one app identity</h4><p>A second manifest is a second iOS storage partition: separate sign-in, separate push. Already tried and reverted. The platform keeps <code>start_url: "/"</code> and exactly one manifest, whatever serves the pages.</p></div>
+      <div><h4>VAPID keys migrate, never rotate</h4><p>Rotating the key pair silently kills every existing subscription. The pem moves with the infrastructure, the startup consistency check stays, and every push change is tested on a Chromium-family browser (FCM is the only strict validator; Apple and Mozilla passing proves nothing).</p></div>
+      <div><h4>E2EE keys live client-side</h4><p>DM device keys sit in localStorage per browser profile and the server cannot re-encrypt history. Any origin change or storage-clearing migration strips users' ability to decrypt. DM migration means envelope and key continuity, not data transformation.</p></div>
+      <div><h4>Identity continuity for moderation</h4><p>Bans and strikes are provider-keyed and deliberately survive user deletion. Whatever identity layer fronts pretix/Medusa/Payload must preserve <code>provider_id</code> continuity, or every ban silently expires at cutover.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">H</span> The honest risks — where this is hard, not the framework</h2>
+    <div class="risks">
+      <div><h4>The data</h4><p>Scraping all of Europe is a permanent ops + <b>legal/ToS</b> burden. Many sites forbid it; you'll need partnerships/APIs. This, not the UI, is the make-or-break.</p></div>
+      <div><h4>Ticketing &amp; payments</h4><p>PCI, fraud, refunds, regulation. Adopt (pretix) or integrate existing sellers — do not build it. Ticketing is a business, not a feature.</p></div>
+      <div><h4>Woov exists</h4><p>Timetable + chat + ticketing already shipped, multi-event. Compete on the transit edge + scene depth, not by re-doing what they have.</p></div>
+      <div><h4>Scope &amp; people</h4><p>This is 3–4 products. Realistically a <b>funded, team</b> effort — not a solo per-event side project. Sequence it; don't build it all at once.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">I</span> Open decisions: resolve each before its phase starts</h2>
+    <div class="phase"><div class="k">D1 · Phase 1</div><div><h3>Ingestion model for festival number two</h3><p>Who adds the next event: a hand-written scraper module (the current contract), organizer self-serve through the CMS/dashboard, or partnership data feeds? The legal exposure in section H differs completely per path, and Phase 1's data model design depends on the answer.</p></div></div>
+    <div class="phase"><div class="k">D2 · Phase 1</div><div><h3>Organizer dashboard owner</h3><p>The safety and food pillars assume "organizers manage it via CMS or the dashboard", but no pillar builds that dashboard. Pick its home: Payload's admin, pretix's organizer area, or a custom surface. It also decides where POIs live long-term (today: a MapTiler dataset).</p></div></div>
+    <div class="phase"><div class="k">D3 · Phase 1</div><div><h3>AI agent model and cost ceiling</h3><p>Which model, what per-event budget, what rate limits, and how the bot interacts with the moderation pipeline (its answers post into a moderated room). Cheap to prototype, but the cost model must exist before it is public.</p></div></div>
+    <div class="phase"><div class="k">D4 · Phase 2</div><div><h3>Postgres cutover order</h3><p>Which SQLite database moves first and how the dual-write or cutover window works: <code>lineup.db</code> (regenerable, lowest risk), then <code>hearts.db</code>/<code>chat.db</code> (live user data, section G constraints). SQLite has served flawlessly at current scale; the move is driven by multi-service topology, not by load.</p></div></div>
+    <div class="phase"><div class="k">D5 · Phase 2</div><div><h3>Repo and hosting shape</h3><p>Monorepo vs polyrepo (where does the Next.js app live relative to the Python services), and hosting: one VPS will not hold Next.js + FastAPI + pretix + Medusa + Payload + Meilisearch + Postgres + Redis. Decide the orchestration story and the monthly budget line before Phase 2 begins.</p></div></div>
+    <div class="phase"><div class="k">D6 · Phase 3</div><div><h3>Identity broker</h3><p>Companion auth promoted to an OIDC identity provider, or an external IdP (Keycloak/Authentik/Ory) fronting everything? Must be answered before pretix and Medusa integration, and must satisfy the section G continuity invariants (provider ids, sessions, E2EE device keys).</p></div></div>
+  </section>
+
+  <p class="foot">Grounded in web-verified market + stack research (fetched 2026-07-09) and a full read of the current codebase. Claims marked "verified" survived an adversarial second-pass; the Woov positioning corrects an earlier overstatement. Sections F, G and I (asset mapping, migration invariants, open decisions) added 2026-07-13 from the codebase; <code>docs/menu-sequencing-strategy.md</code> governs the Phase 0 menu scope.</p>
+</div>
+</body>
+</html>
