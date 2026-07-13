@@ -6,26 +6,26 @@ Multi-event festival companion tool: scraper + enrichment pipeline + static site
 
 ```bash
 # Full pipeline (scrape + enrich + photos + generate HTML)
-python pipeline/stone_techno_companion.py
+python services/data/stone_techno_companion.py
 
 # Regenerate HTML only (fast — no network, no scraping)
-python pipeline/stone_techno_companion.py --render-only --no-photos
+python services/data/stone_techno_companion.py --render-only --no-photos
 
 # Fetch YouTube sets for all artists (separate step, ~50 min)
-python pipeline/fetch_videos.py
+python services/data/fetch_videos.py
 
 # Deploy content to production (rsync, no container restart needed)
-python pipeline/stone_techno_companion.py --render-only --deploy
+python services/data/stone_techno_companion.py --render-only --deploy
 
 # Preview locally (required — file:// won't work)
-cd pipeline/output && python3 -m http.server 8321
+cd services/data/output && python3 -m http.server 8321
 # Then open http://localhost:8321/lineup.html
 
 # Run for a specific event
-python pipeline/stone_techno_companion.py --event-id stone-techno-2026 --event-name "Stone Techno" --event-edition "2026"
+python services/data/stone_techno_companion.py --event-id stone-techno-2026 --event-name "Stone Techno" --event-edition "2026"
 
 # Run full server locally (lineup + chat)
-cd server && set -a && source .env && set +a && uvicorn api:app --port 64728 --ssl-keyfile certs/localhost+1-key.pem --ssl-certfile certs/localhost+1.pem
+cd services/companion && set -a && source .env && set +a && uvicorn api:app --port 64728 --ssl-keyfile certs/localhost+1-key.pem --ssl-certfile certs/localhost+1.pem
 # Open https://localhost:64728/line-up and https://localhost:64728/chat
 
 # Run tests
@@ -43,13 +43,13 @@ python -m pytest tests/ -v
 
 **Always preview via HTTP, never `file://`.** The page uses `fetch()` for lazy-loaded bios and API calls. Browsers block fetch from `file://` origins (CORS).
 
-**For lineup only**: `cd pipeline/output && python3 -m http.server 8321` — expected 404s for `/manifest.json`, `/sw.js`, `/api/me`.
+**For lineup only**: `cd services/data/output && python3 -m http.server 8321` — expected 404s for `/manifest.json`, `/sw.js`, `/api/me`.
 
-**For lineup + chat**: run the full FastAPI server: `cd server && set -a && source .env && set +a && uvicorn api:app --port 64728 --ssl-keyfile certs/localhost+1-key.pem --ssl-certfile certs/localhost+1.pem`. Symlinks in `server/static/` point to `pipeline/output/` files so lineup reflects latest build.
+**For lineup + chat**: run the full FastAPI server: `cd services/companion && set -a && source .env && set +a && uvicorn api:app --port 64728 --ssl-keyfile certs/localhost+1-key.pem --ssl-certfile certs/localhost+1.pem`. Symlinks in `services/companion/static/` point to `services/data/output/` files so lineup reflects latest build.
 
 **Chat requires auth**: sign in via email magic link at `/chat`. For local dev, set `CHAT_BASE_URL=https://localhost:64728` in `.env` so the magic link points to localhost.
 
-**Testing on iPhone (LAN, no proxy)**: the mkcert root CA is installed and trusted on the phone, so it connects directly. Start uvicorn with `--host 0.0.0.0` added to the command above and open `https://<Mac-LAN-IP>:64728/chat` on the phone. The cert (`server/certs/localhost+1.pem`) must have a SAN for the current LAN IP — on a new network, regenerate keeping the same filenames: `cd server && mkcert -cert-file certs/localhost+1.pem -key-file certs/localhost+1-key.pem localhost 127.0.0.1 <lan-ip>`. If magic-link emails must open on the phone, point `CHAT_BASE_URL` at the LAN IP (restore to localhost afterwards).
+**Testing on iPhone (LAN, no proxy)**: the mkcert root CA is installed and trusted on the phone, so it connects directly. Start uvicorn with `--host 0.0.0.0` added to the command above and open `https://<Mac-LAN-IP>:64728/chat` on the phone. The cert (`services/companion/certs/localhost+1.pem`) must have a SAN for the current LAN IP — on a new network, regenerate keeping the same filenames: `cd services/companion && mkcert -cert-file certs/localhost+1.pem -key-file certs/localhost+1-key.pem localhost 127.0.0.1 <lan-ip>`. If magic-link emails must open on the phone, point `CHAT_BASE_URL` at the LAN IP (restore to localhost afterwards).
 
 ## System Dependencies
 
@@ -59,7 +59,7 @@ Not pip-installable, must be present on the system:
 - **libvips**: `brew install vips` (macOS) — required by pyvips for image processing
 - **ssimulacra2**: binary must be in PATH — perceptual quality targeting for AVIF encoding
 
-Python dependencies: `playwright`, `beautifulsoup4`, `pyvips` (scraper); `fastapi`, `uvicorn[standard]`, `pywebpush`, `httpx` (moderation), `google-auth` + `PyJWT[crypto]` (OAuth), `python-multipart`, `pyvips` (server, full list in `server/requirements.txt`); `yt-dlp` (video discovery, invoked as a subprocess); `markdown` (bio rendering); `email-validator` (auth); `maileroo` (magic link emails).
+Python dependencies: `playwright`, `beautifulsoup4`, `pyvips` (scraper); `fastapi`, `uvicorn[standard]`, `pywebpush`, `httpx` (moderation), `google-auth` + `PyJWT[crypto]` (OAuth), `python-multipart`, `pyvips` (server, full list in `services/companion/requirements.txt`); `yt-dlp` (video discovery, invoked as a subprocess); `markdown` (bio rendering); `email-validator` (auth); `maileroo` (magic link emails).
 
 System: `ffmpeg` + `ffprobe` must be in PATH for video upload (frame extraction for moderation).
 
@@ -67,10 +67,10 @@ System: `ffmpeg` + `ffprobe` must be in PATH for video upload (frame extraction 
 
 ### Data flow
 
-1. `pipeline/stone_techno_companion.py` orchestrates: scrape → enrich → process photos → render HTML + timetable.json + bios.json
-2. `pipeline/lineup.db` (SQLite, WAL mode, FK enforcement) is the single source of truth — artists, links, sets, schedule, locations, events
-3. `pipeline/scraper/overrides.toml` provides manual corrections (artist links), editorial data (floor curators), and YouTube video overrides — applied as patches to the DB
-4. `pipeline/fetch_videos.py` discovers YouTube sets via yt-dlp and writes to the `artist_sets` table
+1. `services/data/stone_techno_companion.py` orchestrates: scrape → enrich → process photos → render HTML + timetable.json + bios.json
+2. `services/data/lineup.db` (SQLite, WAL mode, FK enforcement) is the single source of truth — artists, links, sets, schedule, locations, events
+3. `services/data/scraper/overrides.toml` provides manual corrections (artist links), editorial data (floor curators), and YouTube video overrides — applied as patches to the DB
+4. `services/data/fetch_videos.py` discovers YouTube sets via yt-dlp and writes to the `artist_sets` table
 5. Output: `lineup.html` (~650 KB) + `bios.json` (~200 KB, lazy-loaded) + `timetable.json` + `photos/*.avif` + `thumbs/*.avif`
 
 ### Database schema
@@ -107,26 +107,26 @@ Key design decisions:
 
 | File | Role |
 |---|---|
-| `pipeline/scraper/scrape.py` | Lineup parser + SoundCloud/Instagram/Spotify/Resident Advisor scrapers. Each event needs its own scraper module. |
-| `pipeline/scraper/db.py` | SQLite schema, upserts, overrides, queries — all event-scoped |
-| `pipeline/scraper/images.py` | Photo resize (pyvips lanczos3) + AVIF encode (ssimulacra2 target 78) |
-| `pipeline/scraper/render.py` | HTML generation — line-up list + timetable grid, CSS, JS, modals, hearts, schedule, push notifications. Markdown bio rendering. Dynamic floor color CSS. SVG icons via `<symbol>`/`<use>` sprite |
-| `pipeline/scraper/timetable_json.py` | Generates `timetable.json` — slot UUID → set time mapping for push scheduler and ICS endpoint. Reads timezone from events table. Owns `slot_uuid()` (also imported by `render.py`) — the single source of truth for a slot's id, collision-aware: an artist playing two sets on the same floor within one date+period no longer collapses to one id, and existing ids are preserved (the earliest slot keeps the historical id, only the extra one is disambiguated) so no saved schedule is ever reset. |
-| `pipeline/fetch_videos.py` | YouTube set discovery via yt-dlp. Writes to `artist_sets` table with `platform='youtube'`. |
-| `server/api.py` | FastAPI app — favorites + schedule API + WebSocket sync + push scheduler + ICS export + static file routes. Mounts chat module at startup. |
-| `server/chat_db.py` | Chat SQLite schema (chat.db) — users, sessions, bans, rooms, messages, meetups, reactions, blocks, reports, strikes, E2EE device key store |
-| `server/chat_moderation.py` | Three-layer moderation: word filter + OpenAI omni-moderation + GPT-5.4-nano drug detection. All via raw httpx. |
-| `server/chat_ws.py` | Chat WebSocket server — rooms, optimistic messaging, presence, typing, reactions, replies, meetups, DMs, purge loop, E2EE content gating (DM-only envelopes, generic previews, snippet redaction) |
-| `server/chat_api.py` | Chat REST API — auth (Google/Email), rooms, meetups, DMs, media upload, admin page, E2EE key endpoints. Mounts routes + WS into FastAPI. |
-| `server/chat/chat.html` | Chat frontend — single HTML file with inline CSS/JS. WhatsApp-style bubbles, reactions, replies, action menus, client-side E2EE (per-device keys, encrypt/decrypt, key rotation). |
-| `server/chat/admin.html` | Admin dashboard — dark-themed SPA with tabs: Rooms, Users, Reports, Banned, Logs, Audit, and (super-admin only) Admins + Settings. Room management (create/edit/delete/reorder/set-main; "..." per-row menu), user moderation ("..." menu: strike/mute/unmute/ban/unban/clear/delete), per-room message viewer + single delete, meetup delete, admin-action audit log, admin-list management, live app settings. Role-gated UI (see "Admin Page"). |
-| `server/chat/blocklist.txt` | Word filter blocklist (drug terms, slurs). Editable without deploy. |
-| `server/static/pages/transport.html` | Two-itinerary realtime departure board SPA: Zollverein tram (107/NE2) + DUS Airport regional trains, each bidirectional (see "Public transport page") |
-| `pipeline/transport/capture-api.mjs` | Regenerates the transport schedule JSON (both Zollverein tram directions + both DUS Airport directions) from the VRR EFA departure-monitor + journey-planner APIs (Node 18+) |
-| `server/static/shared.css` | Unified design tokens and shared CSS components (loaded by all pages) |
-| `server/static/shared.js` | Shared JS utilities: escapeHtml, dbg, showToast, storageGet/Set, icon constants (loaded by all pages) |
-| `server/static/sw.js` | Service worker — push ack (delivered/clicked/dismissed), notification click, pushsubscriptionchange auto-resubscribe, plus a scoped **cache-first `fetch` handler** (cache `stc-map-v1`) that offline-caches the meetup map assets (`/dop` aerial tiles, `/vendor/maplibre/*`, `tiles.openfreemap.org`); all other requests pass through untouched |
-| `server/static/manifest.json` | PWA manifest — enables Add to Home Screen and push on iOS |
+| `services/data/scraper/scrape.py` | Lineup parser + SoundCloud/Instagram/Spotify/Resident Advisor scrapers. Each event needs its own scraper module. |
+| `services/data/scraper/db.py` | SQLite schema, upserts, overrides, queries — all event-scoped |
+| `services/data/scraper/images.py` | Photo resize (pyvips lanczos3) + AVIF encode (ssimulacra2 target 78) |
+| `services/data/scraper/render.py` | HTML generation — line-up list + timetable grid, CSS, JS, modals, hearts, schedule, push notifications. Markdown bio rendering. Dynamic floor color CSS. SVG icons via `<symbol>`/`<use>` sprite |
+| `services/data/scraper/timetable_json.py` | Generates `timetable.json` — slot UUID → set time mapping for push scheduler and ICS endpoint. Reads timezone from events table. Owns `slot_uuid()` (also imported by `render.py`) — the single source of truth for a slot's id, collision-aware: an artist playing two sets on the same floor within one date+period no longer collapses to one id, and existing ids are preserved (the earliest slot keeps the historical id, only the extra one is disambiguated) so no saved schedule is ever reset. |
+| `services/data/fetch_videos.py` | YouTube set discovery via yt-dlp. Writes to `artist_sets` table with `platform='youtube'`. |
+| `services/companion/api.py` | FastAPI app — favorites + schedule API + WebSocket sync + push scheduler + ICS export + static file routes. Mounts chat module at startup. |
+| `services/companion/chat_db.py` | Chat SQLite schema (chat.db) — users, sessions, bans, rooms, messages, meetups, reactions, blocks, reports, strikes, E2EE device key store |
+| `services/companion/chat_moderation.py` | Three-layer moderation: word filter + OpenAI omni-moderation + GPT-5.4-nano drug detection. All via raw httpx. |
+| `services/companion/chat_ws.py` | Chat WebSocket server — rooms, optimistic messaging, presence, typing, reactions, replies, meetups, DMs, purge loop, E2EE content gating (DM-only envelopes, generic previews, snippet redaction) |
+| `services/companion/chat_api.py` | Chat REST API — auth (Google/Email), rooms, meetups, DMs, media upload, admin page, E2EE key endpoints. Mounts routes + WS into FastAPI. |
+| `services/companion/chat/chat.html` | Chat frontend — single HTML file with inline CSS/JS. WhatsApp-style bubbles, reactions, replies, action menus, client-side E2EE (per-device keys, encrypt/decrypt, key rotation). |
+| `services/companion/chat/admin.html` | Admin dashboard — dark-themed SPA with tabs: Rooms, Users, Reports, Banned, Logs, Audit, and (super-admin only) Admins + Settings. Room management (create/edit/delete/reorder/set-main; "..." per-row menu), user moderation ("..." menu: strike/mute/unmute/ban/unban/clear/delete), per-room message viewer + single delete, meetup delete, admin-action audit log, admin-list management, live app settings. Role-gated UI (see "Admin Page"). |
+| `services/companion/chat/blocklist.txt` | Word filter blocklist (drug terms, slurs). Editable without deploy. |
+| `services/companion/static/pages/transport.html` | Two-itinerary realtime departure board SPA: Zollverein tram (107/NE2) + DUS Airport regional trains, each bidirectional (see "Public transport page") |
+| `services/data/transport/capture-api.mjs` | Regenerates the transport schedule JSON (both Zollverein tram directions + both DUS Airport directions) from the VRR EFA departure-monitor + journey-planner APIs (Node 18+) |
+| `services/companion/static/shared.css` | Unified design tokens and shared CSS components (loaded by all pages) |
+| `services/companion/static/shared.js` | Shared JS utilities: escapeHtml, dbg, showToast, storageGet/Set, icon constants (loaded by all pages) |
+| `services/companion/static/sw.js` | Service worker — push ack (delivered/clicked/dismissed), notification click, pushsubscriptionchange auto-resubscribe, plus a scoped **cache-first `fetch` handler** (cache `stc-map-v1`) that offline-caches the meetup map assets (`/dop` aerial tiles, `/vendor/maplibre/*`, `tiles.openfreemap.org`); all other requests pass through untouched |
+| `services/companion/static/manifest.json` | PWA manifest — enables Add to Home Screen and push on iOS |
 | `tests/test_chat_db.py` | 59 tests — users, sessions, bans, rooms, messages, meetups, DMs, blocks, reports, strikes |
 | `tests/test_chat_moderation.py` | 39 tests — word filter, strike system (expiry, reset, mute cycling), AI moderation pipeline |
 | `tests/test_chat_ws.py` | 44 tests — WebSocket rooms, messaging, presence, moderation flow |
@@ -147,12 +147,12 @@ Key design decisions:
 ./deploy.sh
 
 # Content deploy (lineup HTML + photos — no server restart needed)
-python pipeline/stone_techno_companion.py --render-only --deploy
+python services/data/stone_techno_companion.py --render-only --deploy
 ```
 
 **Incidents during the live event**: see `docs/runbook.md` — health checks, push debugging, restart/rollback/DB restore, moderation outage behavior (fails closed), admin lockout break-glass, POI fallback.
 
-`deploy.sh` does: sync prod env vars to the VPS `.env` (back up the previous `.env` first, then an atomic temp-file + byte-count check + `mv` + `chmod 600` on the new file, so a dropped connection can't leave a truncated `.env` and secrets aren't left world-readable); **VAPID preflight** — derive the public key from the VPS `vapid_private.pem` and abort if the local `VAPID_PUBLIC_KEY` being synced doesn't match (a mismatch silently breaks every push); snapshot the VPS SQLite DBs via `VACUUM INTO` (transactionally consistent even under live writes — no torn `.db`/`-wal` copies) and download the snapshots (+ best-effort `server/chat-uploads/`) to `backups/{timestamp}/` locally; verify each downloaded `.db` with `PRAGMA quick_check` and abort before any change if a backup is corrupt; keep the same snapshot on the VPS as `data.bak.{timestamp}` (both backups are the same verified bytes); `git pull`; **seed `chat.db`** — on the FIRST chat deploy only (skipped whenever the VPS already has a `chat.db`), build a clean production DB from the local one via `server/seed_chat_db.py` (keeps curated group rooms + `chat_settings`, strips all messages/users/test data, pre-creates the owner account `gabriele` / gabrielelosurdo@gmail.com so first login only asks for the avatar + confirmation); archive the outgoing container's logs to `logs/docker-{timestamp}.log` (keeps newest 15) then `docker compose up -d --build --force-recreate`; health check (container + chat API), exiting non-zero on failure; prune old backups (VPS keeps 5 data + 5 .env backups, local `backups/` keeps newest 15). The backup step aborts before any change if the download contains zero `.db` files, and the seed step warns (10s grace) if the seed email is missing from `CHAT_ADMIN_EMAILS`. Local backups survive VPS disk failure. By default it ships `main`; `./deploy.sh --ref <branch|tag|commit>` ships any other ref instead (fetch + resolve + detached checkout on the VPS — a branch ships `origin/<branch>`'s tip, a tag/commit ships that exact object), so a feature branch can go to public testing without touching `main` (revert with `./deploy.sh --ref main`). `./deploy.sh --rollback <commit|tag>` resets the VPS code to a known-good target and rebuilds (code only, container-only health check — see `docs/runbook.md`); it now fetches first, so a tag pushed to origin moments earlier (e.g. a fresh known-good tag) resolves on the VPS instead of failing "not found".
+`deploy.sh` does: sync prod env vars to the VPS `.env` (back up the previous `.env` first, then an atomic temp-file + byte-count check + `mv` + `chmod 600` on the new file, so a dropped connection can't leave a truncated `.env` and secrets aren't left world-readable); **VAPID preflight** — derive the public key from the VPS `vapid_private.pem` and abort if the local `VAPID_PUBLIC_KEY` being synced doesn't match (a mismatch silently breaks every push); snapshot the VPS SQLite DBs via `VACUUM INTO` (transactionally consistent even under live writes — no torn `.db`/`-wal` copies) and download the snapshots (+ best-effort `services/companion/chat-uploads/`) to `backups/{timestamp}/` locally; verify each downloaded `.db` with `PRAGMA quick_check` and abort before any change if a backup is corrupt; keep the same snapshot on the VPS as `data.bak.{timestamp}` (both backups are the same verified bytes); `git pull`; **seed `chat.db`** — on the FIRST chat deploy only (skipped whenever the VPS already has a `chat.db`), build a clean production DB from the local one via `services/companion/seed_chat_db.py` (keeps curated group rooms + `chat_settings`, strips all messages/users/test data, pre-creates the owner account `gabriele` / gabrielelosurdo@gmail.com so first login only asks for the avatar + confirmation); archive the outgoing container's logs to `logs/docker-{timestamp}.log` (keeps newest 15) then `docker compose up -d --build --force-recreate`; health check (container + chat API), exiting non-zero on failure; prune old backups (VPS keeps 5 data + 5 .env backups, local `backups/` keeps newest 15). The backup step aborts before any change if the download contains zero `.db` files, and the seed step warns (10s grace) if the seed email is missing from `CHAT_ADMIN_EMAILS`. Local backups survive VPS disk failure. By default it ships `main`; `./deploy.sh --ref <branch|tag|commit>` ships any other ref instead (fetch + resolve + detached checkout on the VPS — a branch ships `origin/<branch>`'s tip, a tag/commit ships that exact object), so a feature branch can go to public testing without touching `main` (revert with `./deploy.sh --ref main`). `./deploy.sh --rollback <commit|tag>` resets the VPS code to a known-good target and rebuilds (code only, container-only health check — see `docs/runbook.md`); it now fetches first, so a tag pushed to origin moments earlier (e.g. a fresh known-good tag) resolves on the VPS instead of failing "not found".
 
 ## Monitoring
 
@@ -162,17 +162,17 @@ It runs hourly from the always-on QNAP NAS via Container Station, see `monitorin
 
 ## Generated Artifacts (gitignored)
 
-- `pipeline/lineup.db` — SQLite database (all tables)
-- `pipeline/output/lineup.html` — generated page (~650 KB)
-- `pipeline/output/bios.json` — artist bios + sets, lazy-loaded on first artist tap (~200 KB)
-- `pipeline/output/photos/*.avif` — processed artist photos
-- `pipeline/output/timetable.json` — slot UUID → set time mapping for push notifications
-- `pipeline/output/thumbs/*.avif` — YouTube video thumbnails (240px max, AVIF)
+- `services/data/lineup.db` — SQLite database (all tables)
+- `services/data/output/lineup.html` — generated page (~650 KB)
+- `services/data/output/bios.json` — artist bios + sets, lazy-loaded on first artist tap (~200 KB)
+- `services/data/output/photos/*.avif` — processed artist photos
+- `services/data/output/timetable.json` — slot UUID → set time mapping for push notifications
+- `services/data/output/thumbs/*.avif` — YouTube video thumbnails (240px max, AVIF)
 
-- `server/data/` — runtime databases (hearts.db, chat.db), VAPID keys (gitignored)
-- `server/chat/uploads/` — uploaded images/videos (WebP, MP4) in local/bare-uvicorn dev
-- `server/chat-uploads/` — the PRODUCTION uploads dir: `docker-compose.yml` bind-mounts `./chat-uploads:/app/chat/uploads`, so live user media lives here on the VPS (inside the deploy git worktree). Gitignored and backed up by `deploy.sh`
-- `server/chat/tmp/` — intermediate processing files (auto-cleaned on startup)
+- `services/companion/data/` — runtime databases (hearts.db, chat.db), VAPID keys (gitignored)
+- `services/companion/chat/uploads/` — uploaded images/videos (WebP, MP4) in local/bare-uvicorn dev
+- `services/companion/chat-uploads/` — the PRODUCTION uploads dir: `docker-compose.yml` bind-mounts `./chat-uploads:/app/chat/uploads`, so live user media lives here on the VPS (inside the deploy git worktree). Gitignored and backed up by `deploy.sh`
+- `services/companion/chat/tmp/` — intermediate processing files (auto-cleaned on startup)
 - `tests/stress_test/media/` — auto-generated test images (WebP 1500px Q=80) + videos (H.264 MP4) + user-provided files
 - `tests/stress_test/report_*.txt` — stress test reports
 - `tests/stress_test/debug_*.log` — stress test debug logs
@@ -181,7 +181,7 @@ These are regenerable. Source of truth is the live website + `overrides.toml` + 
 
 ## Overrides
 
-`pipeline/scraper/overrides.toml` provides manual corrections. Applied after scraping, before follower fetching.
+`services/data/scraper/overrides.toml` provides manual corrections. Applied after scraping, before follower fetching.
 
 ```toml
 # Artist link overrides — field names match platform names in artist_links
@@ -232,8 +232,8 @@ Toggled via the command bar. Appears automatically when artists have `start_time
 - **Colors**: CSS variables in `:root` — `--color-text`, `--color-bg`, `--color-surface`, `--color-surface-hover`, `--color-muted`, `--color-muted-icon`, `--color-accent`, `--color-schedule`, `--color-border`
 - **Floor colors**: from `locations.color` in DB (RGB channels). CSS generated at build time — cards `rgba(R,G,B, 0.88)`, pills `rgb(R,G,B)`. Unknown floors fall back to gray.
 - **Font scale**: `--font-2xl` (2rem) → `--font-xs` (0.75rem/12px min). All `rem`-based to prevent compounding in nested elements. No text below 12px.
-- **Shared CSS**: `server/static/shared.css` — unified design tokens (colors, spacing, radius, shadows, z-index, font scale, header height), shared components (hamburger, nav-icon, menu-overlay, toast), utilities (truncate, sr-only). Both pages link it via `<link rel="stylesheet" href="/shared.css">`.
-- **Shared JS**: `server/static/shared.js` — shared utilities (escapeHtml/esc, dbg/verify, showToast, fmtTime, ago, storageGet/storageSet/storageRemove, _urlBase64ToUint8Array, icon constants). Loaded synchronously before inline scripts.
+- **Shared CSS**: `services/companion/static/shared.css` — unified design tokens (colors, spacing, radius, shadows, z-index, font scale, header height), shared components (hamburger, nav-icon, menu-overlay, toast), utilities (truncate, sr-only). Both pages link it via `<link rel="stylesheet" href="/shared.css">`.
+- **Shared JS**: `services/companion/static/shared.js` — shared utilities (escapeHtml/esc, dbg/verify, showToast, fmtTime, ago, storageGet/storageSet/storageRemove, _urlBase64ToUint8Array, icon constants). Loaded synchronously before inline scripts.
 - **Shared tokens** (from `shared.css`): `--shadow-modal`, `--transition-fast`, `--fade-gradient`. `--radius-card`/`--radius-modal` are lineup-page-specific (declared locally in `render.py`, not shared).
 - **Hover**: all guarded with `@media (hover: hover)` — no sticky hover on touch
 - **Contrast**: all text/icon colors pass WCAG 2.1 AA
@@ -262,34 +262,34 @@ The lineup/timetable page has two more head scripts (before body): the FIRST han
 
 ## Working on the HTML/CSS/JS
 
-All frontend code lives in `pipeline/scraper/render.py` as Python string concatenation. Shared CSS lives in `server/static/shared.css`. Shared JS utilities live in `server/static/shared.js`.
+All frontend code lives in `services/data/scraper/render.py` as Python string concatenation. Shared CSS lives in `services/companion/static/shared.css`. Shared JS utilities live in `services/companion/static/shared.js`.
 
 ```bash
-python pipeline/stone_techno_companion.py --render-only --no-photos
-cd pipeline/output && python3 -m http.server 8321
+python services/data/stone_techno_companion.py --render-only --no-photos
+cd services/data/output && python3 -m http.server 8321
 # Open http://localhost:8321/lineup.html
 ```
 
 ## Server
 
-FastAPI (`server/api.py`). Sessions via 128-bit URL-safe tokens. Cross-device sync via ephemeral 6-digit PINs (5-min TTL). Real-time sync via WebSocket. Atomic pick/schedule operations via `json_group_array`/`json_each`. Loading the page with `?code={shareToken}` shows another session's picks read-only: heart, schedule, and ICS buttons are disabled (`pointerEvents: none`), the picks filter is forced on, and "Show My Picks" is hidden.
+FastAPI (`services/companion/api.py`). Sessions via 128-bit URL-safe tokens. Cross-device sync via ephemeral 6-digit PINs (5-min TTL). Real-time sync via WebSocket. Atomic pick/schedule operations via `json_group_array`/`json_each`. Loading the page with `?code={shareToken}` shows another session's picks read-only: heart, schedule, and ICS buttons are disabled (`pointerEvents: none`), the picks filter is forced on, and "Show My Picks" is hidden.
 
 Static file routes (`/bios.json`, `/manifest.json`, `/sw.js`, `/shared.css`, `/shared.js`, `/favicon.*`) are explicit endpoints before the catch-all `/{path:path}` (which serves `index.html`). New static files need an explicit route in `api.py`. `/sw.js`, `/manifest.json`, `/shared.css`, `/shared.js` are served with `Cache-Control: no-cache` so a content deploy that ships new shared bundles is picked up (the catch-all `index.html` uses `no-store`). `timetable.json` has no HTTP route — it's read server-side by the push scheduler and ICS export only.
 
 The catch-all `/{path:path}` serves `index.html` with `Cache-Control: no-store` and explicitly rejects `/chat*` paths (returns 404). A separate `/api/{path:path}` catch-all returns a clean 404 for unmatched API paths instead of the SPA, and `/public-transport` 301-redirects to `/transport`. Chat module import is **required** — if `chat_api.py` fails to import, the server crashes at startup (fail-fast, no silent degradation).
 
-**Clean-URL static pages**: drop a file at `server/static/pages/<slug>.html` and it is served at `/<slug>` (extensionless) automatically — the catch-all checks `static/pages/{path}.html` before falling back to `index.html`. The slug must match `[a-z0-9][a-z0-9-]*` (no slashes/dots), so the lookup is path-traversal-safe and multi-segment or dotted paths fall through to the SPA. No per-page route needed. `static/` is bind-mounted (`./static:/app/static`) and tracked in git, so new pages deploy via `git pull` with no image rebuild. Example: `static/pages/transport.html` → `/transport`.
+**Clean-URL static pages**: drop a file at `services/companion/static/pages/<slug>.html` and it is served at `/<slug>` (extensionless) automatically — the catch-all checks `static/pages/{path}.html` before falling back to `index.html`. The slug must match `[a-z0-9][a-z0-9-]*` (no slashes/dots), so the lookup is path-traversal-safe and multi-segment or dotted paths fall through to the SPA. No per-page route needed. `static/` is bind-mounted (`./static:/app/static`) and tracked in git, so new pages deploy via `git pull` with no image rebuild. Example: `static/pages/transport.html` → `/transport`.
 
 **Public transport page** (`/transport`): a realtime departure board with **two bidirectional itineraries**, selected by a `?route=` slug — `zollverein-essen` (default), `essen-zollverein`, `dus-airport-essen`, `essen-dus-airport` (legacy `?route=duesseldorf` still resolves). The in-page swap icon flips direction and rewrites the slug into the URL (each view is shareable/reloadable); `curBase()`/`curView()` pick the route + direction data block.
 
 - **Zollverein** (tram 107 / NE2, Zollverein ↔ Essen Hbf — how festival-goers get home): realtime via the VRR EFA **departure monitor** (`efa.vrr.de` `XSLT_DM_REQUEST`), stop id **pinned server-side per direction** (`_TRANSPORT_DIRECTIONS`, never client-controlled → cannot be abused as an open proxy). Fri–Sun.
 - **DUS Airport** (Düsseldorf Airport ↔ Essen Hbf, regional RE/RB/S trains — for fly-ins): realtime via the VRR **journey planner** (`www.vrr.de/vrr-efa` `XML_TRIP_REQUEST2`, `maxChanges=0` direct trips, long-distance ICE/IC filtered out), origin/dest **pinned per direction** (`_TRANSPORT_DUES_TRIP`, same no-open-proxy invariant). Response times are **UTC → converted to Europe/Berlin** (`_berlin_hhmm_date`). Returns the next ~6 trips with delay + **train number + platform + arrival**, shaped like the departure-monitor entries so the client overlays them identically (struck+red delay style, rt dot, LIVE badge). The destination column shows each train's **headsign/terminus** (Hamm, Osnabrück, Köln, ...), not "Essen". Includes a **Thursday** airport day (arrival day). NB: the journey API only returns realtime for "now", so future festival dates render scheduled-only.
 
-Static schedule in `server/static/timetable-transport.json` (`{route, stop, days, reverse, duesseldorf:{route, stop, days, reverse}}`), regenerated by `node pipeline/transport/capture-api.mjs` (Node 18+; edit its `dates` / `duesDates` arrays for new events; deploys via git pull). Realtime layer: the page polls `GET /api/transport/departures?date=DD.MM.YYYY&time=HH:MM&dir=&route=` every 90 s when viewing today (the `time` param must be `HH:MM` — a long-standing `HHMM` client bug that silently 400'd *all* realtime was fixed), with a shared **90 s cache** per (date, route:dir) bucket (no minute component), per-IP rate limiting, and stale-cache fallback. A separate 30 s timer only re-renders the already-fetched data locally (advancing past/next/too-late highlighting) with no network call. Walk-time: "Locate me" → `GET /api/transport/walk?lat=&lng=&dir=&route=` proxies OSRM foot routing (FOSSGIS `routing.openstreetmap.de/routed-foot`; the project-osrm.org demo only hosts the car profile) to the **viewed direction's departure stop** (server-pinned per route+dir; coords transient, never stored/logged; bounded to the Essen area). UI: day tabs auto-select today + auto-scroll to now; **dd/mm/yyyy slash dates** that compact to `Thu` / `09/07` on narrow bars (per-tab width measured, so the 4-day airport board compacts on phones while the 3-day tram board stays full). The mobile hamburger lists all four directions as line-up `dd-option` rows (`data-slug` → exact-direction highlight). Linked from the lineup command bar + hamburger and the chat mobile menu. Tests: `tests/test_transport.py` (mocked upstream) + standalone Playwright `transport_{reverse,duesseldorf,duesseldorf_realtime,routes}_check.py`.
+Static schedule in `services/companion/static/timetable-transport.json` (`{route, stop, days, reverse, duesseldorf:{route, stop, days, reverse}}`), regenerated by `node services/data/transport/capture-api.mjs` (Node 18+; edit its `dates` / `duesDates` arrays for new events; deploys via git pull). Realtime layer: the page polls `GET /api/transport/departures?date=DD.MM.YYYY&time=HH:MM&dir=&route=` every 90 s when viewing today (the `time` param must be `HH:MM` — a long-standing `HHMM` client bug that silently 400'd *all* realtime was fixed), with a shared **90 s cache** per (date, route:dir) bucket (no minute component), per-IP rate limiting, and stale-cache fallback. A separate 30 s timer only re-renders the already-fetched data locally (advancing past/next/too-late highlighting) with no network call. Walk-time: "Locate me" → `GET /api/transport/walk?lat=&lng=&dir=&route=` proxies OSRM foot routing (FOSSGIS `routing.openstreetmap.de/routed-foot`; the project-osrm.org demo only hosts the car profile) to the **viewed direction's departure stop** (server-pinned per route+dir; coords transient, never stored/logged; bounded to the Essen area). UI: day tabs auto-select today + auto-scroll to now; **dd/mm/yyyy slash dates** that compact to `Thu` / `09/07` on narrow bars (per-tab width measured, so the 4-day airport board compacts on phones while the 3-day tram board stays full). The mobile hamburger lists all four directions as line-up `dd-option` rows (`data-slug` → exact-direction highlight). Linked from the lineup command bar + hamburger and the chat mobile menu. Tests: `tests/test_transport.py` (mocked upstream) + standalone Playwright `transport_{reverse,duesseldorf,duesseldorf_realtime,routes}_check.py`.
 
-Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DBs at `server/data/` volume-mounted (hearts.db, chat.db, vapid_private.pem).
+Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DBs at `services/companion/data/` volume-mounted (hearts.db, chat.db, vapid_private.pem).
 
-### Environment Variables (`server/.env`)
+### Environment Variables (`services/companion/.env`)
 
 | Variable | Required | Description |
 |---|---|---|
@@ -307,7 +307,7 @@ Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DBs at `server/d
 | `CHAT_EVENT_ID` | No | Event ID (default: `stone-techno-2026`) |
 | `CHAT_DB_PATH` | No | Test/dev override for chat.db location. Used by the browser verification harness (`tests/e2ee_browser_check.py`) to point at an isolated scratch DB. |
 | `MAPTILER_KEY` | No | MapTiler Cloud API key. Now used **only server-side** for the festival POI dataset fetch (see `MAPTILER_DATASET_ID`) — the meetup map itself no longer uses MapTiler tiles (it's self-hosted NRW aerial + OpenFreeMap). Still returned in `/chat/api/config` but the current map doesn't read it. Free tier = 100k loads/mo, no card, hard-stops. |
-| `MAPTILER_DATASET_ID` | No | MapTiler dataset id for festival POIs. When set (with `MAPTILER_KEY`), `GET /chat/api/pois` fetches the dataset's `features.json` server-side, normalizes it (point coords + `name` + `Category`→our type, unknown→`other`), and caches it 120s — so organizers edit pins live in MapTiler with no redeploy, the key stays off the client, and it falls back to the cached copy on error. POIs live ONLY in MapTiler (no local copy is maintained); as a break-glass fallback, a `festival-pois.kmz`/`.kml`/`.json` export dropped into the bind-mounted `server/static/` is picked up with no redeploy. |
+| `MAPTILER_DATASET_ID` | No | MapTiler dataset id for festival POIs. When set (with `MAPTILER_KEY`), `GET /chat/api/pois` fetches the dataset's `features.json` server-side, normalizes it (point coords + `name` + `Category`→our type, unknown→`other`), and caches it 120s — so organizers edit pins live in MapTiler with no redeploy, the key stays off the client, and it falls back to the cached copy on error. POIs live ONLY in MapTiler (no local copy is maintained); as a break-glass fallback, a `festival-pois.kmz`/`.kml`/`.json` export dropped into the bind-mounted `services/companion/static/` is picked up with no redeploy. |
 
 ### DNS for Email (deftlab.dev)
 
@@ -317,7 +317,7 @@ Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DBs at `server/d
 
 ### Deploy Checklist
 
-**VPS env vars** (add to `/root/services/stone-techno/server/.env`):
+**VPS env vars** (add to `/root/services/stone-techno/services/companion/.env`):
 1. `MAILEROO_API_KEY` — required for email magic links
 2. `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` — required for Google OAuth
 3. `CHAT_ADMIN_EMAILS` — comma-separated admin emails
@@ -326,7 +326,7 @@ Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DBs at `server/d
 
 **DNS** (already done): SPF includes `_spf.maileroo.com`, DKIM at `mta._domainkey.deftlab.dev`
 
-**Automatic on deploy**: Dockerfile installs ffmpeg + libvips + all Python deps. `chat.db` created fresh on first run. `chat/uploads/` and `chat/tmp/` auto-created. `server/.dockerignore` keeps local runtime files (`chat/uploads/`, `chat/tmp/`, `data/`, `.env`, `*.pem`) out of the image build context (the Dockerfile does `COPY chat/ ./chat/`). Container logs are capped via `docker-compose.yml` (`json-file`, 10m x 5). `.gitignore` covers the live `chat.db`, `chat/uploads/`, and the production `chat-uploads/` bind-mount path so none of them can be committed. The container runs as non-root (`appuser`, uid 1001); `entrypoint.sh` runs as root first to `chown` the bind-mounted volumes (`data/`, `chat/uploads/`, and the WHOLE `static/` tree, since api.py creates `photos/`, `thumbs/`, `vendor/dop-cache/` under it at startup) before dropping to `appuser` via `gosu` — this handles VPS volumes left root-owned by the old container automatically, no manual `chown` needed on deploy. Related invariant: the content deploy normalizes staging permissions (dirs 755, files 644) before rsync, because a mkdtemp staging dir synced with `-a` once clamped `static/` to 700 and locked `appuser` out of every static route (all 500s).
+**Automatic on deploy**: Dockerfile installs ffmpeg + libvips + all Python deps. `chat.db` created fresh on first run. `chat/uploads/` and `chat/tmp/` auto-created. `services/companion/.dockerignore` keeps local runtime files (`chat/uploads/`, `chat/tmp/`, `data/`, `.env`, `*.pem`) out of the image build context (the Dockerfile does `COPY chat/ ./chat/`). Container logs are capped via `docker-compose.yml` (`json-file`, 10m x 5). `.gitignore` covers the live `chat.db`, `chat/uploads/`, and the production `chat-uploads/` bind-mount path so none of them can be committed. The container runs as non-root (`appuser`, uid 1001); `entrypoint.sh` runs as root first to `chown` the bind-mounted volumes (`data/`, `chat/uploads/`, and the WHOLE `static/` tree, since api.py creates `photos/`, `thumbs/`, `vendor/dop-cache/` under it at startup) before dropping to `appuser` via `gosu` — this handles VPS volumes left root-owned by the old container automatically, no manual `chown` needed on deploy. Related invariant: the content deploy normalizes staging permissions (dirs 755, files 644) before rsync, because a mkdtemp staging dir synced with `-a` once clamped `static/` to 700 and locked `appuser` out of every static route (all 500s).
 
 ## Push Notifications
 
@@ -516,7 +516,7 @@ Reports from E2EE DMs carry reporter-provided plaintext the server never indepen
 
 ### Chat UI
 
-Main room auto-opens on login. Path-based routing (`/chat`, `/chat/r/{id}`, `/chat/d/{user}`, `/chat/m/{id}`, `/chat/msg/{id}`). Single HTML file (`server/chat/chat.html`).
+Main room auto-opens on login. Path-based routing (`/chat`, `/chat/r/{id}`, `/chat/d/{user}`, `/chat/m/{id}`, `/chat/msg/{id}`). Single HTML file (`services/companion/chat/chat.html`).
 
 - **Design system**: CSS custom properties for grays (7 levels, WCAG AA/AAA), fonts (xxs-xl), spacing (4px scale), radius (sm-pill), shadows (sm-lg). 12 user color pairs + self color.
 - **Bubble style**: user-colored pastels (assigned at registration), dark text, time bottom-right
@@ -582,7 +582,7 @@ python tests/stress_test/run.py --insecure
 
 # On VPS
 python tests/stress_test/run.py --url https://stonetechno.deftlab.dev \
-    --db /root/services/stone-techno/server/data/chat.db
+    --db /root/services/stone-techno/services/companion/data/chat.db
 
 # Clean up interrupted run
 python tests/stress_test/run.py --cleanup-only

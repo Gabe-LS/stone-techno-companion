@@ -1,6 +1,6 @@
 """Stage 3 mock service-worker harness (real Chromium, synchronous).
 
-Loads the REAL server/static/sw.js source into a mock service-worker
+Loads the REAL services/companion/static/sw.js source into a mock service-worker
 environment (self/fetch/caches/navigator all stubbed with recording mocks)
 and fires synthetic push/notificationclick/notificationclose/
 pushsubscriptionchange events at it, so the actual push/click/close/resub

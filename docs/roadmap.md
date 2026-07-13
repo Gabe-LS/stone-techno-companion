@@ -106,7 +106,7 @@ code that Stage 3 is going to delete.
     were extracted from the actual code and already corrected drift in CLAUDE.md
     (transport polling/cache numbers, timetable "Also" cross-references, the undocumented
     read-only shared-picks mode) and fixed a broken Playwright check (commit cd345e3)
-- [ ] **Feature freeze on `pipeline/scraper/render.py`.** No new features land in the legacy
+- [ ] **Feature freeze on `services/data/scraper/render.py`.** No new features land in the legacy
   HTML/CSS/JS generator from this point on. Bug fixes and the Bucket 1 menu fixes above are
   allowed (they're migration-proof); anything net-new that only exists to make the
   current site nicer is out of scope until it can be built once, in Next.js, in Stage 3
@@ -120,7 +120,7 @@ code that Stage 3 is going to delete.
   and are linked from this file
 - Retrospective findings are captured (in `docs/invariants.md` and/or the relevant ADR),
   not left in raw logs
-- No commits touch `pipeline/scraper/render.py` except the Bucket 1 fixes and true bug fixes
+- No commits touch `services/data/scraper/render.py` except the Bucket 1 fixes and true bug fixes
 - The full test suite is green: `python -m pytest tests/ -v` (315 tests: 241 chat + 20
   transport + moderation/db/ws/api/admin-roles suites), notification suite separately
   (`python tests/notif_e2e/run.py --all`, run outside the command sandbox)
@@ -150,7 +150,7 @@ change.
     push scheduler, ICS export, transport proxy, DOP tile proxy, chat)
   - [ ] `services/data`: today's `pipeline/` (scrape → enrich → normalize → AVIF, writes
     `lineup.db`)
-  - [ ] `packages/`: shared design tokens (ported from `server/static/shared.css`) and
+  - [ ] `packages/`: shared design tokens (ported from `services/companion/static/shared.css`) and
     shared TypeScript types generated from the new OpenAPI contracts below
 - [ ] **Formalize API contracts, contract-first**
   - [ ] OpenAPI spec for the existing companion API (`services/companion`): the surface
@@ -193,13 +193,13 @@ compose file" (see blueprint section F, "Deploy + monitoring" row).
 ### 3.3 Stage 3: The Next.js front, ported in risk order
 
 **Goal.** Build the platform's actual front end, cutting each surface over from
-`pipeline/scraper/render.py`'s generated HTML to Next.js one at a time, cheapest and
+`services/data/scraper/render.py`'s generated HTML to Next.js one at a time, cheapest and
 lowest-risk first, hardest last, and prove the push notification invariants work on the
 new front early, not as a surprise at the end.
 
 **Workstreams**
 
-- [ ] **Scaffold + design tokens + nav.** Port design tokens from `server/static/shared.css`
+- [ ] **Scaffold + design tokens + nav.** Port design tokens from `services/companion/static/shared.css`
   (color variables, spacing scale, radius scale, shadow scale, font scale) into
   `packages/`. Build the unified nav component **once**, here, per ADR 0002. This is
   where the Bucket 2 work deferred in Stage 1 finally happens, as a native Next.js
@@ -211,7 +211,7 @@ new front early, not as a surprise at the end.
   to Line-up / Timetable / Transport (the known "zero nav" gap, deliberately left open
   until this component ships); (d) grouped/labeled menu sections where lists are long
 - [ ] **Port transport first** (`docs/parity/transport.md`): standalone SPA today
-  (`server/static/pages/transport.html`), clean existing API (`/api/transport/*`),
+  (`services/companion/static/pages/transport.html`), clean existing API (`/api/transport/*`),
   lowest risk of the four surfaces. No shared state with lineup/chat to get wrong
 - [ ] **Then the PWA shell** (`docs/parity/pwa-shell.md`): same-origin serving, root-scope
   `sw.js`, single manifest, `start_url: "/"`. This is where the push invariants in blueprint
@@ -248,7 +248,7 @@ new front early, not as a surprise at the end.
 
 - Every content page (transport, PWA shell behaviors, lineup, timetable) is served by
   Next.js at parity
-- `pipeline/scraper/render.py`'s HTML generation is deleted
+- `services/data/scraper/render.py`'s HTML generation is deleted
 - The push harnesses pass against the fully cut-over front
 
 **Gating tests.** Per surface: that surface's `docs/parity/*.md` checklist, plus
@@ -277,7 +277,7 @@ new hand-written page in `render.py` or `chat.html`, even if the backend is read
 
 - [ ] **Multi-event data model**: event picker; festival/route/artist data becomes
   config-driven rows instead of files (transport itineraries move off hand-edited
-  `server/static/timetable-transport.json` and CLI flags like `--event-id`/`--event-name`
+  `services/companion/static/timetable-transport.json` and CLI flags like `--event-id`/`--event-name`
   into the data model). Needs ADR 0003 (ingestion model for event #2) resolved first:
   hand-written scraper module vs. organizer self-serve vs. partnership feeds changes the
   data model's shape
@@ -381,12 +381,12 @@ decisions the phased path (section E) calls out directly.
 These apply for the whole migration, regardless of which stage is active.
 
 - **Live-event override.** If a festival is imminent (the transport config in
-  `server/static/timetable-transport.json` is dated around the current window), that
+  `services/companion/static/timetable-transport.json` is dated around the current window), that
   overrides every other rule in this file: freeze architecture work entirely, ship at
   most the safest cosmetic fixes, and resume normal stage work only after the event.
   This is the same rule recorded in `docs/menu-sequencing-strategy.md` and it applies to
   the whole migration, not just menu work.
-- **Feature freeze on `pipeline/scraper/render.py`.** In force from Stage 1 onward until
+- **Feature freeze on `services/data/scraper/render.py`.** In force from Stage 1 onward until
   Stage 3 deletes it. Bug fixes are allowed; new features are not. If a change would only
   make the current hand-generated HTML nicer without being a bug fix or one of the four
   Bucket 1 menu fixes, it waits for Next.js.

@@ -10,14 +10,14 @@ scenario also gets its own room). This is the Stage-1 "emission" suite:
 server -> wire, no browser/CDP, driven with asyncio.
 
 Stage 2 adds a "browser" suite (scenarios/client.py): real headless Chromium
-via Playwright's SYNC API, driving server/chat/chat.html's actual client-side
+via Playwright's SYNC API, driving services/companion/chat/chat.html's actual client-side
 notification code. Playwright's sync API cannot run inside an asyncio event
 loop, so the browser suite is launched from its own plain synchronous
 function (_main_browser), never from inside asyncio.run() -- the two suites
 share nothing but the NotifServer *class* (each gets its own instance) and
 never run in the same event loop.
 
-Stage 3 adds a "sw" suite (scenarios/sw.py): the real server/static/sw.js
+Stage 3 adds a "sw" suite (scenarios/sw.py): the real services/companion/static/sw.js
 source loaded into a mock service-worker environment (sw_harness.SWLab),
 exercising push/notificationclick/notificationclose/pushsubscriptionchange
 handler behavior. Also sync Playwright, launched from its own plain

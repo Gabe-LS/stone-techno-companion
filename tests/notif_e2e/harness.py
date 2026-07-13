@@ -1,6 +1,6 @@
 """Module B -- isolated server lifecycle + fixtures for the notif_e2e harness.
 
-Spins up a real, isolated copy of server/api.py (uvicorn subprocess) against
+Spins up a real, isolated copy of services/companion/api.py (uvicorn subprocess) against
 scratch chat.db and hearts.db files, with a freshly generated VAPID keypair,
 and exposes direct-SQL fixture helpers plus a small `websockets`-based chat
 client (WSClient) for driving senders/recipients in scenarios.
@@ -9,17 +9,17 @@ Reuses the proven patterns in tests/e2ee_browser_check.py: get_free_port,
 subprocess-based uvicorn startup with a stdout reader thread, sensitive-env
 stripping, and a wait-for-ready HTTP poll against /chat/api/config.
 
-One deliberate departure from that file: server/api.py's hearts.db path
+One deliberate departure from that file: services/companion/api.py's hearts.db path
 (`DB_PATH = Path(__file__).resolve().parent / "data" / "hearts.db"`) is
 hardcoded relative to the source file, with no environment override (unlike
 chat_db.CHAT_DB_PATH). tests/e2ee_browser_check.py never touches it -- it
 deliberately keeps VAPID_PRIVATE_KEY unset so push code short-circuits before
 touching hearts.db. This harness must exercise real push, including lineup
 push, so it cannot dodge the same way. Instead, NotifServer.start() copies
-server/ into a scratch directory (excluding data/, chat/uploads, chat/tmp,
+services/companion/ into a scratch directory (excluding data/, chat/uploads, chat/tmp,
 __pycache__, *.pem, .env*) and launches uvicorn with that directory as its
 cwd, so `Path(__file__).resolve().parent / "data"` resolves inside the
-scratch tree instead of the real repo's server/data/. This requires no edits
+scratch tree instead of the real repo's services/companion/data/. This requires no edits
 to any existing file -- only copying real files into a new location this
 harness creates and owns.
 
@@ -88,7 +88,7 @@ _COPY_IGNORE = shutil.ignore_patterns(
     ".env",
     ".env.*",
     "*.pyc",
-    # server/static/ holds symlinks into ../../output/ (photos, thumbs,
+    # services/companion/static/ holds symlinks into ../../../services/data/output/ (photos, thumbs,
     # bios.json, index.html, timetable.json). In a scratch copy those dangle,
     # and a dangling `photos`/`thumbs` symlink makes api.py's
     # mkdir(exist_ok=True) raise FileExistsError. Drop them; api.py recreates
@@ -120,11 +120,11 @@ def _iso_now() -> str:
 
 
 def _hash_token(token: str) -> str:
-    """Mirror server/chat_db.py's hash_token: sessions.token stores only a
+    """Mirror services/companion/chat_db.py's hash_token: sessions.token stores only a
     SHA-256 hash at rest (since commit 8be87cf, "hash session and magic-link
     tokens at rest"). The harness inserts sessions directly into the scratch
     DB, so it must hash here too -- the raw token is what goes over the wire
-    (cookie / WS URL path segment) and server/chat_db.py's get_user_by_token
+    (cookie / WS URL path segment) and services/companion/chat_db.py's get_user_by_token
     hashes the incoming token before comparing against this column."""
     return hashlib.sha256(token.encode()).hexdigest()
 
@@ -135,11 +135,11 @@ def gen_vapid_keys() -> dict:
     Returns {"private_pem": str, "public_b64": str, "claims_email": str}.
 
     private_pem is a PKCS8 PEM string (unencrypted) -- accepted both by
-    server/api.py's `_check_vapid_key_consistency` (via py_vapid's
+    services/companion/api.py's `_check_vapid_key_consistency` (via py_vapid's
     `Vapid.from_pem`, which loads through `cryptography`'s
     `load_pem_private_key`, itself PEM-subtype-agnostic) and by pywebpush's
     `vapid_private_key` argument when the value contains "BEGIN" (see
-    server/chat_ws.py's `if "BEGIN" not in vapid_private_key and not
+    services/companion/chat_ws.py's `if "BEGIN" not in vapid_private_key and not
     os.path.isfile(...)` check -- a raw PEM string, not a file path, is
     accepted directly). public_b64 is the base64url-unpadded uncompressed
     EC point, matching what `_check_vapid_key_consistency` derives from the
@@ -177,9 +177,9 @@ def _wait_until(predicate, timeout: float, interval: float, desc: str) -> None:
 
 
 def _prepare_scratch_server_dir(scratch_root: Path) -> Path:
-    """Copy server/ into scratch_root so api.py's __file__-relative hearts.db
+    """Copy services/companion/ into scratch_root so api.py's __file__-relative hearts.db
     path resolves inside the scratch tree. symlinks=True so real symlinks
-    under server/static/ (pointing at output/, which may not exist in a
+    under services/companion/static/ (pointing at output/, which may not exist in a
     fresh checkout) are recreated as symlinks rather than dereferenced --
     dereferencing a dangling symlink would raise during copytree.
     """
@@ -197,7 +197,7 @@ class InjectedSub:
 
 
 class NotifServer:
-    """An isolated server/api.py instance on a free port, with scratch
+    """An isolated services/companion/api.py instance on a free port, with scratch
     chat.db + hearts.db and a freshly generated VAPID keypair.
 
     start()/stop() are synchronous -- this launches uvicorn as a real
@@ -366,7 +366,7 @@ class NotifServer:
         self, display_name: str, username: str | None = None, country: str = "US"
     ) -> str:
         """Insert a complete chat.db users row (provider='test') and return
-        user_id. Columns cover everything server/chat_ws.py's handle_chat_ws
+        user_id. Columns cover everything services/companion/chat_ws.py's handle_chat_ws
         reads off the row (username, color_index, avatar_url, country,
         device_fingerprint) plus the client's profile-complete gate fields
         (username/country/avatar_url) -- see chat.html's route(). No row is
@@ -410,7 +410,7 @@ class NotifServer:
         pick/schedule sessions, keyed by session_id/share_token).
 
         The DB column stores only hash_token(token) (SHA-256 hex), matching
-        server/chat_db.py's create_session/get_user_by_token since commit
+        services/companion/chat_db.py's create_session/get_user_by_token since commit
         8be87cf -- the raw token is returned here for callers to use as the
         WS URL segment / cookie value, never written to the DB itself.
         """
@@ -441,7 +441,7 @@ class NotifServer:
             conn.close()
 
     def main_room_id(self) -> str:
-        """id of the auto-created main room. server/chat_api.py's mount_chat
+        """id of the auto-created main room. services/companion/chat_api.py's mount_chat
         calls chat_db.seed_event_rooms(db, event_id, "Stone Techno 2026") at
         import time with a hardcoded room id of "general" -- queried here by
         is_main=1 rather than hardcoded, so this stays correct if that ever
@@ -629,7 +629,7 @@ class WSClient:
     async def send_message(self, room_id: str, text: str) -> str:
         """Send a plaintext "text" message. Returns the temp_id used, so the
         caller can correlate the eventual message_acked frame (which carries
-        temp_id, room_id, id, created_at -- see server/chat_ws.py's
+        temp_id, room_id, id, created_at -- see services/companion/chat_ws.py's
         send_message handler)."""
         temp_id = f"tmp-{uuid.uuid4().hex}"
         await self.send_event(
@@ -664,7 +664,7 @@ class WSClient:
 
 async def post_idle_beacon(base_url: str, token: str) -> None:
     """POST /chat/api/push/idle with the chat session cookie -- mirrors the
-    client's sendBeacon idle signal (see server/chat_api.py's chat_push_idle,
+    client's sendBeacon idle signal (see services/companion/chat_api.py's chat_push_idle,
     which zeroes manager._last_ws_activity[user_id] so the user is
     immediately push-eligible instead of waiting for the 30s fallback)."""
     async with httpx.AsyncClient() as client:

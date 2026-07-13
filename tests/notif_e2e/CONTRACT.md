@@ -111,7 +111,7 @@ def gen_vapid_keys() -> dict: ...
     # the base64url uncompressed public key. These are set into the server process env.
 
 class NotifServer:
-    """An isolated app server (server/api.py) on a free port with scratch DBs and generated VAPID."""
+    """An isolated app server (services/companion/api.py) on a free port with scratch DBs and generated VAPID."""
     def __init__(self) -> None: ...
     def start(self) -> None: ...   # create scratch dir, scratch chat.db (CHAT_DB_PATH) + hearts.db,
                                    # strip sensitive env, inject generated VAPID_* env, launch uvicorn in

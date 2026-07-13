@@ -4,7 +4,7 @@ info:
   version: 0.1.0
   description: >-
     This document describes CURRENT behavior as-built for the non-chat HTTP surface of
-    `server/api.py` (favorites/picks, schedule, session and cross-device PIN sync, push
+    `services/companion/api.py` (favorites/picks, schedule, session and cross-device PIN sync, push
     subscriptions, ICS export, the public-transport departures/walk proxy, the DOP tile
     proxy, and static file routes). It is bug-compatible: every quirk, inconsistency, and
     accidental behavior found in the code is documented as-is, marked "AS-BUILT:" in the
@@ -12,7 +12,7 @@ info:
     is the contract the Next.js front (Stage 3 of the platform migration) consumes; any
     future change to the real API must update this file in the same PR (contract-first).
 
-    Out of scope: the chat REST API (`server/chat_api.py`), all WebSocket endpoints (see
+    Out of scope: the chat REST API (`services/companion/chat_api.py`), all WebSocket endpoints (see
     `docs/api/README.md` for a prose appendix), and the future lineup-data read API
     (designed separately in `docs/api/lineup-data-api.md`).
   contact:
@@ -572,7 +572,7 @@ paths:
         - name: slot_id
           in: path
           required: true
-          description: A timetable slot UUID as produced by `slot_uuid()` (pipeline/scraper/timetable_json.py).
+          description: A timetable slot UUID as produced by `slot_uuid()` (services/data/scraper/timetable_json.py).
           schema:
             type: string
             pattern: "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
@@ -1043,7 +1043,7 @@ paths:
     get:
       tags: [static]
       summary: Favicon (SVG)
-      description: 404 if the file is missing from server/static/. No caching headers set (default Starlette FileResponse behavior applies -- ETag/Last-Modified, no explicit Cache-Control).
+      description: 404 if the file is missing from services/companion/static/. No caching headers set (default Starlette FileResponse behavior applies -- ETag/Last-Modified, no explicit Cache-Control).
       responses:
         "200":
           description: SVG favicon.
@@ -1268,7 +1268,7 @@ paths:
       tags: [static]
       summary: Processed artist photos (AVIF), static mount
       description: >-
-        `StaticFiles` mount at /photos over server/static/photos/ (directory
+        `StaticFiles` mount at /photos over services/companion/static/photos/ (directory
         auto-created at startup if missing). Starlette handles path-traversal
         protection and 404s for this mount; no per-file endpoint code exists here.
       parameters:
@@ -1292,7 +1292,7 @@ paths:
     get:
       tags: [static]
       summary: YouTube video thumbnails (AVIF), static mount
-      description: "`StaticFiles` mount at /thumbs over server/static/thumbs/ (directory auto-created at startup if missing)."
+      description: "`StaticFiles` mount at /thumbs over services/companion/static/thumbs/ (directory auto-created at startup if missing)."
       parameters:
         - name: filename
           in: path
@@ -1315,7 +1315,7 @@ paths:
       tags: [static]
       summary: Self-hosted third-party frontend assets, static mount
       description: >-
-        `StaticFiles` mount at /vendor over server/static/vendor/ (e.g. MapLibre GL
+        `StaticFiles` mount at /vendor over services/companion/static/vendor/ (e.g. MapLibre GL
         bundle, dop-cache tiles) so the app has no external CDN dependency.
         Directory auto-created at startup if missing.
       parameters:

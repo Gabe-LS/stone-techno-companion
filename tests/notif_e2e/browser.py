@@ -154,7 +154,7 @@ def push_subscribe_success_script(endpoint: str, p256dh_b64: str, auth_b64: str)
     (or a future one) sees the same bytes toJSON() reports as base64.
 
     endpoint MUST be an allowlisted host for POST /chat/api/push/subscribe
-    to accept it (server/chat_api.py's _is_valid_push_endpoint checks
+    to accept it (services/companion/chat_api.py's _is_valid_push_endpoint checks
     scheme == "https" and hostname suffix in {.googleapis.com, ...}) --
     callers should pass an "https://fcm.googleapis.com/fcm/send/<token>" URL.
 
@@ -355,7 +355,7 @@ def _make_websocket_handler(recorder, ws_sent: list, ws_received: list, user_id:
 
 
 class BrowserSession:
-    """One logged-in browser context/page driving server/chat/chat.html,
+    """One logged-in browser context/page driving services/companion/chat/chat.html,
     with every client-side spy/override from SPY_SCRIPT installed and WS +
     push-related network traffic captured.
 

@@ -5,7 +5,7 @@ the platform migration described in `docs/roadmap.md`.
 
 ## `companion-openapi.yaml`
 
-OpenAPI 3.1 document for the non-chat HTTP surface of `server/api.py`: session creation
+OpenAPI 3.1 document for the non-chat HTTP surface of `services/companion/api.py`: session creation
 and cross-device PIN sync, favorites (picks), personal schedule, push subscription
 lifecycle, ICS calendar export, the public-transport departures/walk proxy, the DOP
 aerial-tile proxy, and every static/catch-all route. It documents CURRENT behavior
@@ -37,7 +37,7 @@ against `UUID_RE` (422) and rate-limits (30 req/60s); `GET /bios.json` now sets
 
 ## Out of scope
 
-- **Chat REST API** (`server/chat_api.py`): stays as-is behind the future front and
+- **Chat REST API** (`services/companion/chat_api.py`): stays as-is behind the future front and
   gets its own OpenAPI contract only when chat itself is ported to Next.js.
 - **WebSocket endpoints**: not representable in OpenAPI, see the appendix below for
   the two WS surfaces that exist today.
@@ -49,7 +49,7 @@ against `UUID_RE` (422) and rate-limits (30 req/60s); `GET /bios.json` now sets
 ## Contract-first rule
 
 Per the Stage 2 roadmap: the Next.js front (Stage 3) is written against these contract
-files, not against a reading of `server/api.py`. Any change to the real, running API
+files, not against a reading of `services/companion/api.py`. Any change to the real, running API
 (new endpoint, changed parameter, changed response shape, changed status code, changed
 rate limit or cache header) must update the matching `.yaml` file in the SAME pull
 request as the code change. A PR that changes behavior without touching the contract
@@ -63,7 +63,7 @@ Two independent WebSocket surfaces exist. Neither is described in the OpenAPI fi
 above (OpenAPI 3.1 has no first-class WebSocket support); this section is the prose
 contract for both until a dedicated AsyncAPI (or similar) document is warranted.
 
-**Lineup sync WebSocket** (`server/api.py`, `GET /ws/{code}`, upgraded to a WS
+**Lineup sync WebSocket** (`services/companion/api.py`, `GET /ws/{code}`, upgraded to a WS
 connection): one connection per browser tab, joined to a session's connection set
 keyed by the resolved session id (never the share token directly; a share-token code
 still resolves to the underlying session's broadcast group). Caps at 20 concurrent
@@ -82,10 +82,10 @@ sync PIN for that session, so an already-open tab can refresh its state). An inv
 `code` (fails the token-format regex, or matches no session) closes the socket
 immediately with close code 1008.
 
-**Chat WebSocket** (`server/chat_ws.py`, mounted via `chat_api.mount_chat`): fully out
+**Chat WebSocket** (`services/companion/chat_ws.py`, mounted via `chat_api.mount_chat`): fully out
 of scope for this contract (chat REST is out of scope, and the WS surface is the
 real-time half of that same system). Its message event names, for reference only (see
-`server/chat_ws.py` and `server/chat/chat.html` for the actual contract, which belongs
+`services/companion/chat_ws.py` and `services/companion/chat/chat.html` for the actual contract, which belongs
 to chat's own future contract document): `message`, `message_acked`,
 `message_rejected`, `message_removed`, `messages_expired`, `room_history`,
 `reaction_updated`, `typing`, `presence`, `badge_update`, `badge_counts`,
