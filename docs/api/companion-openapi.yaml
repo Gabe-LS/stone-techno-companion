@@ -511,9 +511,7 @@ paths:
         Idempotent (SQL `UNION` de-dupes). Broadcasts the updated `picks` array to
         every connected WebSocket client on this session (except none excluded here
         since the caller isn't itself a WS client) as a background task. Rate limit
-        bucket "pick": 600 req / 3600s per IP -- this same bucket is also consumed by
-        `POST /api/session/{code}/push/subscribe` (AS-BUILT: subscribing to push
-        counts against the same per-IP budget as favoriting artists).
+        bucket "pick": 600 req / 3600s per IP.
       parameters:
         - $ref: "#/components/parameters/codeParam"
         - name: artist_id
@@ -639,9 +637,10 @@ paths:
       summary: Register (or update) a Web Push subscription for this session
       description: >-
         Upserts on `endpoint` (a re-subscribe with the same endpoint just refreshes
-        keys and re-points it at this session). AS-BUILT: uses the "pick" rate-limit
-        bucket, not a dedicated push bucket -- shared with the favorite add/remove
-        endpoints. AS-BUILT: a non-JSON request body is not caught and surfaces as an
+        keys and re-points it at this session). Rate limit bucket "push_subscribe":
+        30 req / 3600s per IP, dedicated (no longer shared with the favorite
+        add/remove "pick" bucket, since heavy favoriting could otherwise starve push
+        enrollment). AS-BUILT: a non-JSON request body is not caught and surfaces as an
         unhandled 500 rather than a 422 (see PushSubscribeRequest schema note).
       parameters:
         - $ref: "#/components/parameters/codeParam"
@@ -726,22 +725,20 @@ paths:
       summary: Download a calendar (.ics) file for a single timetable slot
       description: >-
         Reads from the server-side `timetable.json` cache (mtime-checked, reloaded
-        on change), not the database directly. AS-BUILT: `slot_id` has NO format
-        validation (unlike `artist_id`/other `slot_id` params elsewhere in this file,
-        which are UUID_RE-checked) -- it is used only as a dict lookup key, so an
-        arbitrary string is accepted and simply 404s if not a real slot. AS-BUILT: no
-        rate limiting on this endpoint at all. A 10-minute VALARM reminder is always
-        embedded. Times are converted from the event's configured IANA timezone
-        (falls back to Europe/Berlin on an invalid/missing timezone) to UTC; no
-        VTIMEZONE block is emitted (all times are absolute UTC, avoiding the need to
-        embed timezone transition rules).
+        on change), not the database directly. `slot_id` is UUID_RE-checked (same
+        pattern as `artist_id`/other `slot_id` params elsewhere in this file) before
+        the dict lookup. Rate limit bucket "ics": 30 req / 60s per IP. A 10-minute
+        VALARM reminder is always embedded. Times are converted from the event's
+        configured IANA timezone (falls back to Europe/Berlin on an invalid/missing
+        timezone) to UTC; no VTIMEZONE block is emitted (all times are absolute UTC,
+        avoiding the need to embed timezone transition rules).
       parameters:
         - name: slot_id
           in: path
           required: true
-          description: "AS-BUILT: accepted as any string, not format-validated server-side."
           schema:
             type: string
+            pattern: "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
             example: "9c858901-8a57-4791-81fe-4c455b099bc9"
       responses:
         "200":
@@ -781,6 +778,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "422":
+          description: "slot_id fails the UUID_RE format check."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
 
   /api/transport/departures:
     get:
@@ -1116,13 +1121,17 @@ paths:
       tags: [static]
       summary: Artist bios and sets (lazy-loaded lineup data)
       description: >-
-        AS-BUILT: unlike manifest.json/sw.js/shared.css/shared.js/timetable-transport.json,
-        this route sets NO explicit Cache-Control header (default FileResponse
-        caching semantics only), despite being a content file that changes on every
-        deploy exactly like those others.
+        Cache-Control no-cache, matching manifest.json/sw.js/shared.css/shared.js/
+        timetable-transport.json, so a content deploy shipping a new bios.json is
+        picked up immediately.
       responses:
         "200":
           description: Bios/sets JSON, keyed by artist id.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: "no-cache"
           content:
             application/json:
               schema:

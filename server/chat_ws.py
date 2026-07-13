@@ -2309,6 +2309,16 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
 
     except WebSocketDisconnect:
         pass
+    except RuntimeError as e:
+        # Starlette raises this (instead of WebSocketDisconnect) when the
+        # client disconnects mid-receive without a close frame -- the
+        # common case being iOS killing a PWA (backgrounded, screen-locked,
+        # force-closed). Treat it as a normal disconnect, not an error; any
+        # other RuntimeError message is a genuine unexpected failure.
+        if str(e) == 'WebSocket is not connected. Need to call "accept" first.':
+            pass
+        else:
+            logger.exception("Chat WebSocket error for user %s", user_id)
     except Exception:
         logger.exception("Chat WebSocket error for user %s", user_id)
     finally:

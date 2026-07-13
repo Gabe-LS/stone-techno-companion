@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import sqlite3
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
@@ -151,6 +152,31 @@ class BlockingWS(FakeWebSocket):
         if item is None:
             raise Exception("WebSocketDisconnect")
         return item
+
+
+class _RuntimeDisconnectWS(FakeWebSocket):
+    """Raises the exact Starlette RuntimeError produced when a client
+    disconnects mid-receive without a close frame (e.g. iOS killing a PWA),
+    instead of WebSocketDisconnect."""
+
+    async def receive_text(self) -> str:
+        if self._recv_index < len(self.to_receive):
+            msg = self.to_receive[self._recv_index]
+            self._recv_index += 1
+            return msg
+        raise RuntimeError('WebSocket is not connected. Need to call "accept" first.')
+
+
+class _RuntimeOtherWS(FakeWebSocket):
+    """Raises an unrelated RuntimeError, to confirm the disconnect-race fix
+    doesn't blanket-catch every RuntimeError."""
+
+    async def receive_text(self) -> str:
+        if self._recv_index < len(self.to_receive):
+            msg = self.to_receive[self._recv_index]
+            self._recv_index += 1
+            return msg
+        raise RuntimeError("some other unexpected runtime failure")
 
 
 # --- ConnectionManager ---
@@ -1264,3 +1290,25 @@ class TestVapidClaimsIsolation:
                 f"claims dict for {endpoint} arrived with aud={aud_at_entry} "
                 "already set -- shared dict leaked another service's audience"
             )
+
+
+class TestDisconnectLogging:
+    @pytest.mark.asyncio
+    async def test_disconnect_race_runtime_error_not_logged_as_error(
+        self, db, user1, session1, event_id, caplog
+    ):
+        ws = _RuntimeDisconnectWS()
+        with caplog.at_level(logging.ERROR, logger="chat_ws"):
+            await _run_ws(ws, session1["token"], event_id, db)
+        assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+
+    @pytest.mark.asyncio
+    async def test_unrelated_runtime_error_still_logged_as_error(
+        self, db, user1, session1, event_id, caplog
+    ):
+        ws = _RuntimeOtherWS()
+        with caplog.at_level(logging.ERROR, logger="chat_ws"):
+            await _run_ws(ws, session1["token"], event_id, db)
+        errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
+        assert len(errors) == 1
+        assert "Chat WebSocket error for user" in errors[0].message

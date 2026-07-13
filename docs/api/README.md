@@ -15,14 +15,9 @@ get fixed deliberately in their own change, not silently while writing this cont
 
 Notable AS-BUILT quirks captured in the file:
 
-- `POST /api/session/{code}/push/subscribe` shares the "pick" rate-limit bucket
-  (600 req / 3600s per IP) with the favorite add/remove endpoints, instead of having
-  its own budget.
 - `DELETE /api/session/{code}/push/subscribe` and `GET /api/session/{code}/push/status`
   have no rate limiting at all, unlike almost every other mutating/read endpoint in the
   file.
-- `GET /ics/{slot_id}` has no rate limiting, and `slot_id` has no format validation
-  (unlike the UUID-checked `artist_id`/`slot_id` params on the pick/schedule endpoints).
 - `GET /api/transport/departures` and `GET /api/transport/walk` share ONE per-IP
   rate-limit hit list (`_check_transport_rate` keys only by client IP, not by endpoint
   or route/direction), even though each is called with a different limit (30 req/60s
@@ -31,11 +26,14 @@ Notable AS-BUILT quirks captured in the file:
 - `GET /api/transport/departures`'s `time` query param regex accepts a single-digit
   hour (`^\d{1,2}:\d{2}$`) despite the documented `HH:MM` convention; its `date` regex
   only checks digit-group shape, not calendar validity.
-- `GET /bios.json` sets no explicit `Cache-Control` header, unlike the otherwise
-  equivalent `manifest.json`/`sw.js`/`shared.css`/`shared.js`/`timetable-transport.json`
-  routes, which all set `no-cache`.
 - `POST`/`DELETE` push subscription bodies are parsed via raw `request.json()` with no
   Pydantic model; a malformed body surfaces as an unhandled 500, not a 422.
+
+Fixed on 2026-07-13 (quirks that existed at extraction time and were resolved the same
+day, kept here as history): push subscribe now has its own `push_subscribe` bucket
+(30 req/3600s) instead of sharing "pick"; `GET /ics/{slot_id}` now validates `slot_id`
+against `UUID_RE` (422) and rate-limits (30 req/60s); `GET /bios.json` now sets
+`Cache-Control: no-cache`. Regression tests in `tests/test_lineup_api.py`.
 
 ## Out of scope
 

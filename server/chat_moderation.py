@@ -465,10 +465,18 @@ async def moderate_message(
     ai_errored = isinstance(ai_result, Exception)
     drug_errored = isinstance(drug_result, Exception)
     if ai_errored:
-        logger.error("[MOD] OpenAI moderation error: %s", ai_result)
+        logger.error(
+            "[MOD] OpenAI moderation error: %s: %s",
+            type(ai_result).__name__,
+            repr(ai_result),
+        )
         ai_result = None
     if drug_errored:
-        logger.error("[MOD] Content detection error: %s", drug_result)
+        logger.error(
+            "[MOD] Content detection error: %s: %s",
+            type(drug_result).__name__,
+            repr(drug_result),
+        )
         drug_result = None
 
     if (ai_errored or drug_errored) and os.environ.get("OPENAI_API_KEY"):

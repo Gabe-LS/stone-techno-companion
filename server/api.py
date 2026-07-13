@@ -41,6 +41,8 @@ RATE_LIMITS = {
     "schedule": (600, 3600),
     "load": (600, 3600),
     "sync_pin": (12, 3600),
+    "push_subscribe": (30, 3600),
+    "ics": (30, 60),
 }
 
 _sync_pins: dict[str, tuple[str, float]] = {}
@@ -870,7 +872,7 @@ def _is_valid_push_endpoint(endpoint: str) -> bool:
 async def push_subscribe(code: str, request: Request):
     if not TOKEN_RE.match(code):
         raise HTTPException(422, "Invalid code format")
-    _check_rate(_get_client_ip(request), "pick")
+    _check_rate(_get_client_ip(request), "push_subscribe")
     body = await request.json()
     endpoint = body.get("endpoint", "")
     keys = body.get("keys", {})
@@ -938,7 +940,10 @@ def push_status(code: str, request: Request):
 
 
 @app.get("/ics/{slot_id}")
-def generate_ics(slot_id: str):
+def generate_ics(slot_id: str, request: Request):
+    if not UUID_RE.match(slot_id):
+        raise HTTPException(422, "Invalid slot ID format")
+    _check_rate(_get_client_ip(request), "ics")
     timetable = _load_timetable()
     if not timetable:
         raise HTTPException(404, "Timetable not available")
@@ -1442,7 +1447,11 @@ async def serve_sw():
 async def serve_bios():
     file_path = STATIC_DIR / "bios.json"
     if file_path.exists():
-        return FileResponse(file_path, media_type="application/json")
+        return FileResponse(
+            file_path,
+            media_type="application/json",
+            headers={"Cache-Control": "no-cache"},
+        )
     raise HTTPException(404, "Not found")
 
 
