@@ -1,0 +1,558 @@
+/*
+ * Ported from services/companion/static/pages/transport.html's inline
+ * <style> blocks. Values reuse the shared design tokens
+ * (packages/design-tokens/tokens.css, loaded globally by app/layout.tsx) --
+ * this file only adds the same page-local semantic exceptions the legacy
+ * page documented (the blue "next departure" highlight and the NE2 brand
+ * yellow), plus transport-specific layout.
+ *
+ * Deviation from the legacy page: the legacy .sticky-top used a dual offset
+ * (28px under its own desktop cmd-bar, var(--header-h) on mobile) because
+ * the page's own bespoke chrome was only 28px tall on desktop. The Next.js
+ * scaffold's shared Nav header is var(--header-h) at every width, so
+ * .stickyTop here sticks at that single offset everywhere -- see
+ * docs/parity/transport.md notes in the final port report.
+ */
+
+.page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 var(--space-xl) var(--space-xl);
+
+  /* Semantic exceptions kept page-local, same as the legacy page's own CSS
+     comment: the blue "upcoming departure" highlight and the NE2 operator's
+     brand yellow-on-charcoal. docs/parity/transport.md #216. */
+  --color-ne2-bg: #2d2d2d;
+  --color-ne2-text: #f5c518;
+  --transport-next-bg: #f0f7ff;
+  --transport-next-border: #3b82f6;
+  --transport-next-text: #1d4ed8;
+  --color-delay: var(--color-accent);
+  --color-canceled-bg: #fef2f2;
+}
+
+@media (max-width: 768px) {
+  .page {
+    padding: 0 var(--space-md) var(--space-xl);
+  }
+}
+
+.stickyTop {
+  position: sticky;
+  top: var(--header-h);
+  z-index: var(--z-sticky);
+  background: var(--color-bg);
+  padding-bottom: var(--space-md);
+  padding-top: var(--space-lg);
+}
+
+.fadeAfter {
+  position: relative;
+}
+.fadeAfter::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 36px;
+  background: var(--fade-gradient);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+.fadeAfter.stuck::after {
+  opacity: 1;
+}
+
+.routeTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  padding: var(--space-md) 0 var(--space-sm);
+  border-bottom: 2px solid var(--color-text);
+}
+@media (max-width: 768px) {
+  .routeTitle {
+    font-size: var(--font-xl);
+    padding: var(--space-sm) 0 6px;
+  }
+}
+
+.routeTitleMain {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.routeArrow {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin: 0 0.14em;
+}
+.routeArrow svg {
+  height: 0.42em;
+  width: auto;
+}
+
+.navArrow {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin: 0 0.12em;
+}
+.navArrow svg {
+  height: 0.65em;
+  width: auto;
+  transform: translateY(-0.12em);
+}
+
+.dirToggleBtn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 6px;
+  margin-left: 2px;
+  cursor: pointer;
+  color: var(--color-muted);
+  display: flex;
+  align-items: center;
+  font-size: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+.dirToggleBtn:active {
+  color: var(--color-text);
+}
+@media (hover: hover) {
+  .dirToggleBtn:hover {
+    color: var(--color-text);
+  }
+}
+.dirToggleBtn svg {
+  height: 0.42em;
+  width: auto;
+  display: block;
+  transform: translateY(0.11em);
+}
+
+/* Desktop-only itinerary quick switch (Zollverein / DUS Airport). Legacy
+   markup for this lived in the page's own cmd-bar; here it's page content
+   next to the route title, since the shared Nav bar is generic chrome
+   common to every page, not aware of transport's two itineraries. */
+.cmdGroupDesktop {
+  display: none;
+}
+@media (min-width: 769px) {
+  .cmdGroupDesktop {
+    display: flex;
+    gap: var(--space-sm);
+  }
+}
+
+.itineraryBtn {
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: 6px 14px;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+@media (hover: hover) {
+  .itineraryBtn:hover {
+    background: var(--color-surface-hover);
+  }
+}
+.itineraryBtn.active {
+  background: var(--gray-900);
+  color: #fff;
+  border-color: var(--gray-900);
+}
+
+.locationBanner {
+  background: var(--gray-50);
+  border: 1px solid var(--color-surface-hover);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  margin-top: var(--space-md);
+  font-size: var(--font-sm);
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.locationBanner button {
+  background: var(--gray-900);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 7px 16px;
+  min-width: 102px; /* width of "Locate me" so toggling to "Update" doesn't shift layout */
+  font-size: var(--font-sm);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.locationBanner button:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+.locationBanner button:active {
+  opacity: 0.8;
+}
+@media (hover: hover) {
+  .locationBanner button:not(:disabled):hover {
+    background: var(--gray-800);
+  }
+}
+
+.locationText {
+  flex: 1;
+  min-width: 0;
+}
+
+/* --- Day tabs --- */
+
+.dayTabBar {
+  display: flex;
+  gap: 2px;
+  margin-top: var(--space-md);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.dayTabBar::-webkit-scrollbar {
+  display: none;
+}
+
+.dayTab {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  padding: 7px 14px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--font-sm);
+  font-weight: 600;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) {
+  .dayTab:hover:not(.active) {
+    background: var(--color-surface-hover);
+  }
+}
+.dayTab.active {
+  background: var(--color-text);
+  color: var(--color-bg);
+  border-color: var(--color-text);
+}
+
+.dayTabCount {
+  display: block;
+  font-weight: 400;
+  font-size: var(--font-xs);
+  color: var(--gray-500);
+  margin-top: 2px;
+}
+.dayTab.active .dayTabCount {
+  color: var(--gray-400);
+}
+
+.dAbbr,
+.dtAbbr {
+  display: none;
+}
+.dayTabBar.compact .dFull,
+.dayTabBar.compact .dtFull {
+  display: none;
+}
+.dayTabBar.compact .dAbbr,
+.dayTabBar.compact .dtAbbr {
+  display: inline;
+}
+
+/* --- Live indicator --- */
+
+.liveIndicator {
+  display: flex;
+  visibility: hidden;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  font-size: var(--font-xs);
+  color: var(--color-text);
+  opacity: 0.7;
+  margin-top: var(--space-sm);
+}
+.liveIndicator.active {
+  visibility: visible;
+}
+
+.liveDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-success);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* --- Departure list --- */
+
+.depList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.depItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  padding: var(--space-md);
+  margin-bottom: var(--space-sm);
+  background: var(--gray-50);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-surface-hover);
+}
+
+.depItem.isPast {
+  color: var(--gray-500);
+}
+.depItem.isPast .depTime {
+  color: var(--gray-500);
+}
+.depItem.isPast .lineBadge {
+  opacity: 0.35;
+}
+.depItem.isPast .depDest {
+  color: var(--gray-500);
+}
+.depItem.isPast .depWalk,
+.depItem.isPast .depCountdown,
+.depItem.isPast .depArr,
+.depItem.isPast .depArrLabel,
+.depItem.isPast .depSub {
+  color: var(--gray-500);
+}
+
+.depItem.isTooLate {
+  color: var(--gray-500);
+}
+.depItem.isTooLate .depTime {
+  color: var(--gray-500);
+  text-decoration: line-through;
+}
+.depItem.isTooLate .lineBadge {
+  opacity: 0.2;
+}
+.depItem.isTooLate .depDest {
+  color: var(--gray-500);
+}
+.depItem.isTooLate .depWalk {
+  color: var(--gray-500);
+}
+
+.depItem.isNext {
+  background: var(--transport-next-bg);
+  border-color: var(--transport-next-border);
+}
+.depItem.isNext .depTime {
+  color: var(--transport-next-text);
+  font-weight: 700;
+}
+.depItem.isNext .depTime.delayed {
+  color: var(--color-delay);
+}
+
+.depItem.isCanceled {
+  background: var(--color-canceled-bg);
+  color: var(--color-accent);
+}
+.depItem.isCanceled .depTime {
+  text-decoration: line-through;
+  color: var(--color-accent);
+  opacity: 0.5;
+}
+
+.depTimeCol {
+  flex-shrink: 0;
+  width: 3.2rem;
+}
+
+.depTime {
+  font-size: var(--font-lg);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+@media (max-width: 768px) {
+  .depTime {
+    font-size: var(--font-base);
+  }
+  .depTimeCol {
+    width: 2.8rem;
+  }
+}
+.depTime.delayed {
+  color: var(--color-delay);
+}
+
+.lineBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-xs);
+  font-weight: 700;
+  padding: var(--space-xs) 0;
+  border-radius: var(--radius-sm);
+  width: 2.75rem;
+  flex-shrink: 0;
+  position: relative;
+  background: var(--gray-700);
+  color: #fff;
+}
+.l-107 {
+  background: var(--gray-900);
+  color: #fff;
+}
+.l-NE2 {
+  background: var(--color-ne2-bg);
+  color: var(--color-ne2-text);
+}
+.l-re {
+  background: #b5179e;
+  color: #fff;
+}
+.l-s {
+  background: #2e7d32;
+  color: #fff;
+}
+
+.rtDot {
+  position: absolute;
+  bottom: -3px;
+  right: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--gray-50);
+}
+.rtDot.green {
+  background: var(--color-success);
+}
+.rtDot.red {
+  background: var(--color-delay);
+}
+
+.depMiddle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.depDest {
+  font-size: var(--font-sm);
+  color: var(--color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cancelBadge {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--font-xs);
+  font-weight: 700;
+  padding: 1px 0.35rem;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  width: fit-content;
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.depRight {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+  gap: 1px;
+}
+
+.depWalk {
+  font-size: var(--font-xs);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.depCountdown {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.depArr {
+  font-size: var(--font-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+.depArrLabel {
+  color: var(--color-text-secondary);
+  font-size: var(--font-xs);
+}
+.depArr.delayed {
+  color: var(--color-delay);
+}
+
+.depSub {
+  font-size: var(--font-xs);
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.emptyState {
+  text-align: center;
+  padding: var(--space-xl) var(--space-lg);
+  color: var(--color-text-secondary);
+  font-size: var(--font-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

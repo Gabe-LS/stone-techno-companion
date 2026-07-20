@@ -25,6 +25,7 @@ const nextConfig: NextConfig = {
     return [
       { source: "/api/:path*", destination: `${BACKEND_ORIGIN}/api/:path*` },
       { source: "/chat/api/:path*", destination: `${BACKEND_ORIGIN}/chat/api/:path*` },
+      { source: "/timetable-transport.json", destination: `${BACKEND_ORIGIN}/timetable-transport.json` },
     ];
   },
 };

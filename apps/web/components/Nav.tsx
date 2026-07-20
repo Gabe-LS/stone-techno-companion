@@ -4,10 +4,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import styles from "./Nav.module.css";
+import { dbg } from "../lib/debug";
+import { resolveRouteSlug, routeSlugFor } from "../lib/transport/logic";
 
 type NavItem = {
   label: string;
   href: string;
+  /** Only set for the Transport sub-rows: the exact ?route= slug this link
+   * targets, so highlighting can distinguish the 4 directions on one path. */
+  slug?: string;
 };
 
 type NavGroup = {
@@ -27,13 +32,55 @@ const PRIMARY_NAV: NavItem[] = [
   { label: "Transport", href: "/transport" },
 ];
 
-// Mobile menu is grouped (design input (d)). Only one group exists today;
-// more groups (e.g. "Account") can be appended here without touching the
-// render logic below.
-const NAV_GROUPS: NavGroup[] = [{ id: "pages", label: "Pages", items: PRIMARY_NAV }];
+// The four transport directions, in the exact order the legacy mobile
+// submenu used (docs/parity/transport.md #194). This is the mobile menu's
+// replacement for the old page's own hamburger (docs/parity/transport.md
+// section 8) -- the desktop itinerary quick-switch stays page-local (see
+// components/transport/TransportBoard.tsx) since it only makes sense on
+// /transport, unlike this generic bar shown on every page.
+const TRANSPORT_NAV: NavItem[] = [
+  { label: "DUS Airport → Essen", href: "/transport?route=dus-airport-essen", slug: "dus-airport-essen" },
+  { label: "Essen → DUS Airport", href: "/transport?route=essen-dus-airport", slug: "essen-dus-airport" },
+  { label: "Zollverein → Essen", href: "/transport?route=zollverein-essen", slug: "zollverein-essen" },
+  { label: "Essen → Zollverein", href: "/transport?route=essen-zollverein", slug: "essen-zollverein" },
+];
+
+// Mobile menu is grouped (design input (d)).
+const NAV_GROUPS: NavGroup[] = [
+  { id: "pages", label: "Pages", items: PRIMARY_NAV },
+  { id: "transport", label: "Transport", items: TRANSPORT_NAV },
+];
 
 function isActive(pathname: string, href: string): boolean {
-  return pathname === href || pathname.startsWith(`${href}/`);
+  const path = href.split("?")[0];
+  return pathname === path || pathname.startsWith(`${path}/`);
+}
+
+// The transport sub-rows need the exact direction, not just the path: read
+// the current ?route= (normalized through the same slug/alias resolution
+// TransportBoard uses) and re-check it whenever TransportBoard's swap icon
+// updates the URL (custom "stc:transport-route-change" event, since
+// history.pushState/replaceState don't fire "popstate") or on back/forward.
+function useCurrentTransportSlug(): string {
+  const [slug, setSlug] = useState("zollverein-essen");
+
+  useEffect(() => {
+    function update() {
+      if (typeof window === "undefined") return;
+      const sp = new URLSearchParams(window.location.search);
+      const { route, direction } = resolveRouteSlug(sp.get("route"));
+      setSlug(routeSlugFor(route, direction));
+    }
+    update();
+    window.addEventListener("stc:transport-route-change", update);
+    window.addEventListener("popstate", update);
+    return () => {
+      window.removeEventListener("stc:transport-route-change", update);
+      window.removeEventListener("popstate", update);
+    };
+  }, []);
+
+  return slug;
 }
 
 function NavBadge({ count }: { count: number }) {
@@ -47,6 +94,7 @@ function NavBadge({ count }: { count: number }) {
 
 export default function Nav() {
   const pathname = usePathname();
+  const currentTransportSlug = useCurrentTransportSlug();
   const [open, setOpen] = useState(false);
   // Placeholder unread count for the mobile menu badge. Wired to a real
   // source once chat unread counts are surfaced to the Next.js front
@@ -114,8 +162,19 @@ export default function Nav() {
   }, [open]);
 
   function closeMenu() {
+    dbg("[NAV] closeMenu");
     setOpen(false);
     hamburgerRef.current?.focus();
+  }
+
+  function toggleMenu() {
+    dbg("[NAV] toggleMenu");
+    setOpen((o) => !o);
+  }
+
+  function isItemActive(item: NavItem): boolean {
+    if (item.slug) return pathname === "/transport" && currentTransportSlug === item.slug;
+    return isActive(pathname, item.href);
   }
 
   const hamburgerLabel = unreadCount > 0 ? `Menu, ${unreadCount} unread` : "Menu";
@@ -136,6 +195,7 @@ export default function Nav() {
                 href={item.href}
                 className={active ? `${styles.navLink} ${styles.navLinkActive}` : styles.navLink}
                 aria-current={active ? "page" : undefined}
+                onClick={() => dbg(`[NAV] ${item.label}`)}
               >
                 {item.label}
               </Link>
@@ -151,7 +211,7 @@ export default function Nav() {
           aria-haspopup="dialog"
           aria-expanded={open}
           aria-controls="nav-menu-panel"
-          onClick={() => setOpen((o) => !o)}
+          onClick={toggleMenu}
         >
           <span className={styles.hamburgerIcon} aria-hidden="true">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -182,14 +242,30 @@ export default function Nav() {
                 </h2>
                 <ul className={styles.groupList} aria-labelledby={`nav-group-${group.id}`}>
                   {group.items.map((item) => {
-                    const active = isActive(pathname, item.href);
+                    const active = isItemActive(item);
                     return (
                       <li key={item.href}>
                         <Link
                           href={item.href}
                           className={active ? `${styles.mobileLink} ${styles.mobileLinkActive}` : styles.mobileLink}
                           aria-current={active ? "page" : undefined}
-                          onClick={() => setOpen(false)}
+                          data-slug={item.slug}
+                          onClick={(e) => {
+                            dbg(`[NAV] ${item.label} (menu)`);
+                            setOpen(false);
+                            // The 4 transport directions are full-page
+                            // navigations, not client routing (matches
+                            // docs/parity/transport.md #195, and sidesteps a
+                            // real bug: TransportBoard seeds its route/
+                            // direction state from the page's initial props
+                            // only on mount, so a client-side searchParams
+                            // change while already on /transport wouldn't
+                            // otherwise be picked up).
+                            if (item.slug) {
+                              e.preventDefault();
+                              window.location.href = item.href;
+                            }
+                          }}
                         >
                           {item.label}
                         </Link>

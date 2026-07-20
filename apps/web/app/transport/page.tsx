@@ -1,21 +1,29 @@
 import type { Metadata } from "next";
-import styles from "../page.module.css";
+import { resolveRouteSlug } from "../../lib/transport/logic";
+import TransportBoard from "../../components/transport/TransportBoard";
 
+// Static placeholder, overwritten client-side on load and on every direction
+// toggle to "<from> -> <to> * Transport" (docs/parity/transport.md #229).
+// Kept a static string here (not derived from the request's ?route=) on
+// purpose, for parity with the legacy page's own pre-JS <title>.
 export const metadata: Metadata = {
-  title: "Transport - Stone Techno Companion",
+  title: "107 / NE2 — Zollverein → Hbf",
 };
 
-export default function TransportPage() {
+interface TransportPageProps {
+  searchParams: Promise<{ route?: string; date?: string; time?: string }>;
+}
+
+export default async function TransportPage({ searchParams }: TransportPageProps) {
+  const sp = await searchParams;
+  const { route, direction } = resolveRouteSlug(sp.route ?? null);
+
   return (
-    <div className={styles.page}>
-      <h1 className={styles.title}>Transport</h1>
-      <p className={styles.body}>
-        The realtime departure board is coming next. This route is a placeholder
-        for the Next.js port of <code>services/companion/static/pages/transport.html</code>
-        (see <code>docs/parity/transport.md</code> for the full acceptance checklist),
-        chosen as the first surface to port per <code>docs/roadmap.md</code> section 3.3.
-      </p>
-      <p className={styles.note}>Nothing here talks to the backend yet.</p>
-    </div>
+    <TransportBoard
+      initialRoute={route}
+      initialDirection={direction}
+      dateOverride={sp.date ?? null}
+      timeOverride={sp.time ?? null}
+    />
   );
 }
