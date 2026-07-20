@@ -24,9 +24,13 @@
  */
 
 .page {
-  max-width: 960px;
-  margin: 0 auto;
-  padding: 0 var(--space-xl) var(--space-xl);
+  /* No width, margin, or horizontal padding of its own: every mount of this
+     board lives inside MethodPicker's .page container, which already owns
+     the page's single max-width and gutters (DESIGN-STANDARDS.md #4: one
+     max-width container per page; every block aligns to it). A second
+     nested container here previously inset the whole board relative to the
+     other method tabs. */
+  padding: 0 0 var(--space-xl);
 
   /* Semantic exceptions kept page-local, same as the legacy page's own CSS
      comment: the blue "upcoming departure" highlight and the NE2 operator's
@@ -45,11 +49,6 @@
   --color-s-bg: #2e7d32;
 }
 
-@media (max-width: 768px) {
-  .page {
-    padding: 0 var(--space-md) var(--space-xl);
-  }
-}
 
 /* Embedded usage (the Duesseldorf board expanded inline inside the Plane
    tab's airport row): no page-level max-width/margin, since it's nested
