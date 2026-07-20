@@ -2,12 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import styles from "./TransportBoard.module.css";
+import styles from "./LiveBoard.module.css";
 import DayTabs from "./DayTabs";
 import DepartureList from "./DepartureList";
-import GettingThere from "./GettingThere";
-import { ArrowRightIcon, DirectionSwapIcon, NavArrowIcon } from "./icons";
-import { dbg, setDbgTag } from "../../lib/debug";
+import { ArrowRightIcon, DirectionSwapIcon } from "./icons";
+import { dbg } from "../../lib/debug";
 import {
   buildRows,
   curBaseBlock,
@@ -35,11 +34,20 @@ import type {
 const POLL_INTERVAL_MS = 90000;
 const LOCAL_RENDER_INTERVAL_MS = 30000;
 
-interface TransportBoardProps {
-  initialRoute: RouteKey;
+interface LiveBoardProps {
+  // Fixed for the lifetime of this component -- unlike the pre-restructure
+  // TransportBoard, a LiveBoard no longer switches between itineraries
+  // itself (that's now the method picker's job, one level up). It only
+  // toggles inbound/outbound within this one itinerary.
+  route: RouteKey;
   initialDirection: Direction;
   dateOverride: string | null;
   timeOverride: string | null;
+  // True when mounted inline inside the Plane tab's Duesseldorf airport row
+  // rather than as the whole "Local transit" tab panel -- drops the
+  // page-level max-width/margin and the sticky positioning, both of which
+  // only make sense when this board owns the top of the viewport.
+  embedded?: boolean;
 }
 
 function pad2(n: number): string {
@@ -53,18 +61,12 @@ function track(event: string, data?: Record<string, unknown>) {
   if (w.umami) w.umami.track(event, data);
 }
 
-export default function TransportBoard({
-  initialRoute,
-  initialDirection,
-  dateOverride,
-  timeOverride,
-}: TransportBoardProps) {
+export default function LiveBoard({ route, initialDirection, dateOverride, timeOverride, embedded = false }: LiveBoardProps) {
   const router = useRouter();
   const pathname = usePathname();
 
   const [data, setData] = useState<TimetableData | null>(null);
   const [loadError, setLoadError] = useState(false);
-  const [route, setRoute] = useState<RouteKey>(initialRoute);
   const [direction, setDirection] = useState<Direction>(initialDirection);
   const [activeDay, setActiveDay] = useState(0);
 
@@ -84,9 +86,8 @@ export default function TransportBoard({
 
   // Refs mirror the latest state for the persistent 90s/30s intervals, which
   // are created once on mount (see effect below) and must always read the
-  // CURRENT route/direction/activeDay/data, not whatever was current when
-  // the interval was created.
-  const routeRef = useRef(route);
+  // CURRENT direction/activeDay/data, not whatever was current when the
+  // interval was created.
   const directionRef = useRef(direction);
   const activeDayRef = useRef(activeDay);
   const dataRef = useRef(data);
@@ -97,7 +98,6 @@ export default function TransportBoard({
   // post-commit sync is not a meaningful timing change from an inline
   // assignment.
   useEffect(() => {
-    routeRef.current = route;
     directionRef.current = direction;
     activeDayRef.current = activeDay;
     dataRef.current = data;
@@ -107,14 +107,10 @@ export default function TransportBoard({
   const stickyRef = useRef<HTMLDivElement>(null);
   const nextRowEl = useRef<HTMLLIElement | null>(null);
 
-  useEffect(() => {
-    setDbgTag("transport");
-  }, []);
-
   // --- Realtime fetch (section 3/4) --------------------------------------
 
   const fetchRealtime = useCallback(
-    async (fetchRoute: RouteKey, fetchDirection: Direction, dayData: TransportDay | undefined) => {
+    async (fetchDirection: Direction, dayData: TransportDay | undefined) => {
       if (!dayData) return;
       const now = getNow(dateOverride, timeOverride);
       const isToday = isSameCalendarDate(parseDate(dayData.date), now);
@@ -128,7 +124,7 @@ export default function TransportBoard({
 
       try {
         const res = await fetch(
-          `/api/transport/departures?date=${encodeURIComponent(dateStr)}&time=${encodeURIComponent(timeStr)}&dir=${fetchDirection}&route=${fetchRoute}&limit=5`,
+          `/api/transport/departures?date=${encodeURIComponent(dateStr)}&time=${encodeURIComponent(timeStr)}&dir=${fetchDirection}&route=${route}&limit=5`,
         );
         const result: { departures?: RealtimeEntry[]; ts: string } = await res.json();
         if (!result.departures) return;
@@ -154,7 +150,7 @@ export default function TransportBoard({
         setRealtimeActive(false);
       }
     },
-    [dateOverride, timeOverride],
+    [route, dateOverride, timeOverride],
   );
 
   // --- Initial data load ---------------------------------------------------
@@ -165,15 +161,16 @@ export default function TransportBoard({
       .then((r) => r.json())
       .then((d: TimetableData) => {
         if (cancelled) return;
-        let effectiveRoute = initialRoute;
-        if (effectiveRoute === "duesseldorf" && !d.duesseldorf) effectiveRoute = "zollverein";
+        if (route === "duesseldorf" && !d.duesseldorf) {
+          setLoadError(true);
+          return;
+        }
         setData(d);
-        if (effectiveRoute !== initialRoute) setRoute(effectiveRoute);
-        const view = curViewBlock(d, effectiveRoute, initialDirection);
+        const view = curViewBlock(d, route, initialDirection);
         const now = getNow(dateOverride, timeOverride);
         const idx = findTodayIndex(view.days, now);
         setActiveDay(idx);
-        void fetchRealtime(effectiveRoute, initialDirection, view.days[idx]);
+        void fetchRealtime(initialDirection, view.days[idx]);
       })
       .catch(() => {
         if (!cancelled) setLoadError(true);
@@ -189,8 +186,8 @@ export default function TransportBoard({
   useEffect(() => {
     const pollId = setInterval(() => {
       if (!dataRef.current) return;
-      const view = curViewBlock(dataRef.current, routeRef.current, directionRef.current);
-      void fetchRealtime(routeRef.current, directionRef.current, view.days[activeDayRef.current]);
+      const view = curViewBlock(dataRef.current, route, directionRef.current);
+      void fetchRealtime(directionRef.current, view.days[activeDayRef.current]);
     }, POLL_INTERVAL_MS);
 
     const renderId = setInterval(() => {
@@ -201,14 +198,14 @@ export default function TransportBoard({
       clearInterval(pollId);
       clearInterval(renderId);
     };
-  }, [fetchRealtime]);
+  }, [route, fetchRealtime]);
 
   // --- Walk time (section 5) ------------------------------------------------
 
-  const fetchWalkRoute = useCallback(async (lat: number, lng: number, walkRoute: RouteKey, walkDirection: Direction) => {
+  const fetchWalkRoute = useCallback(async (lat: number, lng: number, walkDirection: Direction) => {
     try {
       const res = await fetch(
-        `/api/transport/walk?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}&dir=${walkDirection}&route=${walkRoute}`,
+        `/api/transport/walk?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}&dir=${walkDirection}&route=${route}`,
       );
       if (!res.ok) return null;
       const d = await res.json();
@@ -217,14 +214,14 @@ export default function TransportBoard({
     } catch {
       return null;
     }
-  }, []);
+  }, [route]);
 
   const updateLocation = useCallback(
-    async (lat: number, lng: number, viewRoute: RouteKey, viewDirection: Direction, view: TransportViewBlock, fallbackStop: { lat: number; lng: number }) => {
+    async (lat: number, lng: number, viewDirection: Direction, view: TransportViewBlock, fallbackStop: { lat: number; lng: number }) => {
       setLastGps({ lat, lng });
       setBannerText("Calculating route...");
 
-      const result = await fetchWalkRoute(lat, lng, viewRoute, viewDirection);
+      const result = await fetchWalkRoute(lat, lng, viewDirection);
       if (result) {
         const mins = result.durationS ? Math.ceil(result.durationS / 60) : Math.ceil((result.distanceM / 1000 / WALK_SPEED_KMH) * 60);
         setWalkMinutes(mins);
@@ -263,7 +260,7 @@ export default function TransportBoard({
         setLocateDisabled(false);
         if (!data) return;
         const view = curViewBlock(data, route, direction);
-        void updateLocation(pos.coords.latitude, pos.coords.longitude, route, direction, view, data.stop);
+        void updateLocation(pos.coords.latitude, pos.coords.longitude, direction, view, data.stop);
       },
       () => {
         setLocateDisabled(false);
@@ -297,20 +294,26 @@ export default function TransportBoard({
     setRealtimeSpillover([]);
     setRealtimeActive(false);
 
+    // Always keep the URL in sync, embedded or not -- when embedded (the
+    // Duesseldorf board expanded inline under the Plane tab), the route
+    // param is already present (that's what triggered the expansion), so
+    // this just updates its direction half; when swapping collapses the
+    // board back to "essen-*" the param stays valid and shareable either way.
     const sp = new URLSearchParams(window.location.search);
     sp.set("route", newSlug);
+    sp.delete("method");
     router.replace(`${pathname}?${sp.toString()}`, { scroll: false });
     window.dispatchEvent(new Event("stc:transport-route-change"));
 
     if (lastGps) {
-      void updateLocation(lastGps.lat, lastGps.lng, route, newDirection, newView, data.stop);
+      void updateLocation(lastGps.lat, lastGps.lng, newDirection, newView, data.stop);
     } else {
       setWalkMinutes(null);
       setBannerText("Walk time unknown");
       setLocateLabel("Locate me");
     }
 
-    void fetchRealtime(route, newDirection, newView.days[newActiveDay]);
+    void fetchRealtime(newDirection, newView.days[newActiveDay]);
   }, [data, route, direction, activeDay, lastGps, pathname, router, updateLocation, fetchRealtime]);
 
   const onTabClick = useCallback(
@@ -320,7 +323,7 @@ export default function TransportBoard({
       setActiveDay(idx);
       if (data) {
         const view = curViewBlock(data, route, direction);
-        void fetchRealtime(route, direction, view.days[idx]);
+        void fetchRealtime(direction, view.days[idx]);
       }
     },
     [data, route, direction, fetchRealtime],
@@ -329,6 +332,7 @@ export default function TransportBoard({
   // --- Sticky header "stuck" state (fade-after gradient) --------------------
 
   useEffect(() => {
+    if (embedded) return;
     const el = stickyRef.current;
     if (!el || !el.parentNode) return;
     const sentinel = document.createElement("div");
@@ -352,7 +356,7 @@ export default function TransportBoard({
       observer.disconnect();
       sentinel.remove();
     };
-  }, []);
+  }, [embedded]);
 
   // --- Title (section 10) ---------------------------------------------------
 
@@ -388,17 +392,13 @@ export default function TransportBoard({
   }, [rows]);
 
   const showReverse = Boolean(data && curBaseBlock(data, route).reverse);
-  const zollvereinSlug = routeSlugFor("zollverein", "outbound");
-  const duesseldorfSlug = routeSlugFor("duesseldorf", "outbound");
-
-  function navTo(slug: string) {
-    dbg(`[NAV] ${slug}`);
-    window.location.href = `/transport?route=${slug}`;
-  }
 
   return (
-    <div className={styles.page}>
-      <div ref={stickyRef} className={`${styles.stickyTop} ${styles.fadeAfter} ${stuck ? styles.stuck : ""}`}>
+    <div className={embedded ? `${styles.page} ${styles.embedded}` : styles.page}>
+      <div
+        ref={stickyRef}
+        className={`${embedded ? styles.stickyEmbedded : styles.stickyTop} ${embedded ? "" : styles.fadeAfter} ${stuck ? styles.stuck : ""}`}
+      >
         <div className={styles.routeTitle}>
           <div className={styles.routeTitleMain}>
             <span>
@@ -419,30 +419,6 @@ export default function TransportBoard({
               </button>
             )}
           </div>
-          <div className={styles.cmdGroupDesktop}>
-            <button
-              type="button"
-              className={`${styles.itineraryBtn} ${route === "zollverein" ? styles.active : ""}`}
-              onClick={() => navTo(zollvereinSlug)}
-            >
-              Zollverein{" "}
-              <span className={styles.navArrow}>
-                <NavArrowIcon />
-              </span>{" "}
-              Essen
-            </button>
-            <button
-              type="button"
-              className={`${styles.itineraryBtn} ${route === "duesseldorf" ? styles.active : ""}`}
-              onClick={() => navTo(duesseldorfSlug)}
-            >
-              DUS Airport{" "}
-              <span className={styles.navArrow}>
-                <NavArrowIcon />
-              </span>{" "}
-              Essen
-            </button>
-          </div>
         </div>
 
         <div className={styles.locationBanner}>
@@ -456,7 +432,7 @@ export default function TransportBoard({
 
         <div className={`${styles.liveIndicator} ${realtimeActive ? styles.active : ""}`}>
           <span className={styles.liveDot} />
-          <span className={styles.liveUpdated}>{liveUpdatedText || " "}</span>
+          <span className={styles.liveUpdated}>{liveUpdatedText || " "}</span>
         </div>
       </div>
 
@@ -478,8 +454,6 @@ export default function TransportBoard({
           />
         ) : null}
       </div>
-
-      <GettingThere />
     </div>
   );
 }

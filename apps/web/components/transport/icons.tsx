@@ -18,24 +18,6 @@ export function ArrowRightIcon() {
   );
 }
 
-// Smaller chevron variant used inline in nav rows (matches the legacy
-// .nav-arrow viewBox, distinct from the route-title's .route-arrow above).
-export function NavArrowIcon() {
-  return (
-    <svg viewBox="7.5 3.5 9 17" fill="currentColor" aria-hidden="true">
-      <path
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"
-      />
-    </svg>
-  );
-}
-
 // --- "Getting there" method icons (docs/getting-there-design.md #3) -------
 // Simple line icons keyed by getting-there.json's method `id`. An
 // unrecognized id falls back to PinIcon rather than failing to render, so a
@@ -73,6 +55,21 @@ export function CarIcon() {
       <rect x="3.5" y="16" width="17" height="3.4" rx="1.4" stroke="currentColor" strokeWidth="1.6" />
       <circle cx="7.5" cy="19.4" r="1.3" fill="currentColor" />
       <circle cx="16.5" cy="19.4" r="1.3" fill="currentColor" />
+    </svg>
+  );
+}
+
+// "Local transit" (the tram/light-rail board) -- deliberately distinct from
+// TrainIcon (used for the long-distance "Train" method) so the two tabs
+// don't read as duplicates.
+export function TransitIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="4" y="5" width="16" height="11" rx="3" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M4 10.5h16" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M12 2v3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <circle cx="8.2" cy="19.2" r="1.2" fill="currentColor" />
+      <circle cx="15.8" cy="19.2" r="1.2" fill="currentColor" />
     </svg>
   );
 }

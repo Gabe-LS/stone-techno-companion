@@ -35,9 +35,9 @@ const PRIMARY_NAV: NavItem[] = [
 // The four transport directions, in the exact order the legacy mobile
 // submenu used (docs/parity/transport.md #194). This is the mobile menu's
 // replacement for the old page's own hamburger (docs/parity/transport.md
-// section 8) -- the desktop itinerary quick-switch stays page-local (see
-// components/transport/TransportBoard.tsx) since it only makes sense on
-// /transport, unlike this generic bar shown on every page.
+// section 8). Each link's ?route= slug now also selects the right method
+// tab on /transport (docs/getting-there-design.md "Decision: unified
+// method layout") -- unaffected here, since these are plain deep links.
 const TRANSPORT_NAV: NavItem[] = [
   { label: "DUS Airport → Essen", href: "/transport?route=dus-airport-essen", slug: "dus-airport-essen" },
   { label: "Essen → DUS Airport", href: "/transport?route=essen-dus-airport", slug: "essen-dus-airport" },
@@ -58,9 +58,10 @@ function isActive(pathname: string, href: string): boolean {
 
 // The transport sub-rows need the exact direction, not just the path: read
 // the current ?route= (normalized through the same slug/alias resolution
-// TransportBoard uses) and re-check it whenever TransportBoard's swap icon
-// updates the URL (custom "stc:transport-route-change" event, since
-// history.pushState/replaceState don't fire "popstate") or on back/forward.
+// MethodPicker/LiveBoard use) and re-check it whenever a swap icon or method
+// tab click updates the URL (custom "stc:transport-route-change" event,
+// since history.pushState/replaceState don't fire "popstate") or on
+// back/forward.
 function useCurrentTransportSlug(): string {
   const [slug, setSlug] = useState("zollverein-essen");
 
@@ -256,7 +257,7 @@ export default function Nav() {
                             // The 4 transport directions are full-page
                             // navigations, not client routing (matches
                             // docs/parity/transport.md #195, and sidesteps a
-                            // real bug: TransportBoard seeds its route/
+                            // real bug: MethodPicker seeds its route/method/
                             // direction state from the page's initial props
                             // only on mount, so a client-side searchParams
                             // change while already on /transport wouldn't

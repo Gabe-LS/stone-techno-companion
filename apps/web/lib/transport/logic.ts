@@ -55,6 +55,31 @@ export function routeSlugFor(route: RouteKey, direction: Direction): string {
   return direction === "inbound" ? "essen-zollverein" : "zollverein-essen";
 }
 
+// Like resolveRouteSlug, but returns null for an absent/unrecognized slug
+// instead of silently falling back to the default -- callers that need to
+// distinguish "the URL explicitly asked for X" from "nothing was specified"
+// (the unified method picker's route-slug-wins-over-?method= rule) use this.
+export function explicitRouteSlug(slug: string | null | undefined): ResolvedRoute | null {
+  if (!slug) return null;
+  const resolved = ROUTE_SLUGS[slug];
+  if (!resolved) return null;
+  return { route: resolved[0], direction: resolved[1] };
+}
+
+// True when an internal "getting-there" item link (e.g.
+// "/transport?route=dus-airport-essen") targets the Duesseldorf itinerary --
+// used to detect the airport row that should expand inline into the live
+// board rather than rendering as a plain outbound link. Data-driven: any
+// getting-there.json item whose link resolves to the duesseldorf route gets
+// this treatment, not just a hardcoded "DUS" id/title check.
+export function linkTargetsDuesseldorf(link: string): boolean {
+  if (!link.startsWith("/transport")) return false;
+  const qIndex = link.indexOf("?");
+  if (qIndex === -1) return false;
+  const sp = new URLSearchParams(link.slice(qIndex + 1));
+  return explicitRouteSlug(sp.get("route"))?.route === "duesseldorf";
+}
+
 // --- Date/time helpers ---------------------------------------------------
 
 export interface ParsedDate {
@@ -334,6 +359,48 @@ export function shortDate(date: string): string {
     .split("/")
     .slice(0, 2)
     .join("/");
+}
+
+// --- Unified method picker (docs/getting-there-design.md "Decision: unified
+// method layout") -------------------------------------------------------
+
+// The live tram board's method id. Not present in getting-there.json (it has
+// no curated items, only the live board), so it's appended to the picker's
+// tab list rather than read from the data file like train/plane/car/bus.
+export const LOCAL_TRANSIT_METHOD_ID = "local-transit";
+
+// Calendar-day ordinal (UTC-anchored, ignores time-of-day) for comparing
+// "DD.MM.YYYY" dates without timezone drift.
+function dateOrdinal(d: ParsedDate): number {
+  return Date.UTC(d.year, d.month - 1, d.day);
+}
+
+export interface FestivalWindow {
+  startOrdinal: number;
+  endOrdinal: number;
+}
+
+// The smart-default window: the earliest day present anywhere in
+// timetable-transport.json (across the Zollverein and Duesseldorf boards,
+// both directions) MINUS one day, through the latest day present. Minus one
+// day covers a fly-in traveler landing the evening before the first festival
+// day. Returns null only if the data has no day entries at all (shouldn't
+// happen against real data, but keeps this total).
+export function festivalDateWindow(data: TimetableData): FestivalWindow | null {
+  const blocks: (TransportViewBlock | undefined)[] = [data, data.reverse, data.duesseldorf, data.duesseldorf?.reverse];
+  const ordinals: number[] = [];
+  for (const block of blocks) {
+    if (!block) continue;
+    for (const day of block.days) ordinals.push(dateOrdinal(parseDate(day.date)));
+  }
+  if (ordinals.length === 0) return null;
+  const dayMs = 24 * 60 * 60 * 1000;
+  return { startOrdinal: Math.min(...ordinals) - dayMs, endOrdinal: Math.max(...ordinals) };
+}
+
+export function isWithinFestivalWindow(now: NowInfo, window: FestivalWindow): boolean {
+  const nowOrdinal = Date.UTC(now.year, now.month - 1, now.day);
+  return nowOrdinal >= window.startOrdinal && nowOrdinal <= window.endOrdinal;
 }
 
 // --- "Getting there" personalization (docs/getting-there-design.md #7) -----

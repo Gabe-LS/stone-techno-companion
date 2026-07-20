@@ -1,6 +1,6 @@
 "use client";
 
-import styles from "./TransportBoard.module.css";
+import styles from "./LiveBoard.module.css";
 import { countdownText, stripEssenPrefix } from "../../lib/transport/logic";
 import type { RouteKey } from "../../lib/transport/types";
 import type { RowViewModel } from "../../lib/transport/logic";

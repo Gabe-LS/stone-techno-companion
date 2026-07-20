@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import styles from "./TransportBoard.module.css";
+import styles from "./LiveBoard.module.css";
 import { shortDate, slashDate } from "../../lib/transport/logic";
 import type { TransportDay } from "../../lib/transport/types";
 

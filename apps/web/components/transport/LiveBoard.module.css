@@ -12,6 +12,15 @@
  * scaffold's shared Nav header is var(--header-h) at every width, so
  * .stickyTop here sticks at that single offset everywhere -- see
  * docs/parity/transport.md notes in the final port report.
+ *
+ * Renamed from TransportBoard.module.css as part of the "unified method
+ * layout" restructure (docs/getting-there-design.md): this board is now a
+ * single fixed-itinerary board (mounted once for "Local transit", once
+ * embedded inline for the Duesseldorf airport board under "Plane"), not the
+ * whole page. The itinerary quick-switch button styles are gone -- that
+ * choice is now made one level up, by the method tab bar
+ * (MethodPicker.module.css) -- and an .embedded variant was added for the
+ * nested-inside-a-card usage.
  */
 
 .page {
@@ -37,6 +46,15 @@
   }
 }
 
+/* Embedded usage (the Duesseldorf board expanded inline inside the Plane
+   tab's airport row): no page-level max-width/margin, since it's nested
+   inside a "Getting there" item card that already constrains width. */
+.embedded {
+  max-width: none;
+  margin: 0;
+  padding: var(--space-md) 0 0;
+}
+
 .stickyTop {
   position: sticky;
   top: var(--header-h);
@@ -44,6 +62,15 @@
   background: var(--color-bg);
   padding-bottom: var(--space-md);
   padding-top: var(--space-lg);
+}
+
+/* Embedded boards don't stick to the viewport -- they live inside a card
+   further down the page, not at the top of the scroll container. */
+.stickyEmbedded {
+  position: static;
+  background: none;
+  padding-bottom: var(--space-md);
+  padding-top: 0;
 }
 
 .fadeAfter {
@@ -84,6 +111,10 @@
   }
 }
 
+.embedded .routeTitle {
+  font-size: var(--font-xl);
+}
+
 .routeTitleMain {
   display: flex;
   align-items: center;
@@ -100,18 +131,6 @@
 .routeArrow svg {
   height: 0.42em;
   width: auto;
-}
-
-.navArrow {
-  display: inline-flex;
-  align-items: center;
-  vertical-align: middle;
-  margin: 0 0.12em;
-}
-.navArrow svg {
-  height: 0.65em;
-  width: auto;
-  transform: translateY(-0.12em);
 }
 
 .dirToggleBtn {
@@ -140,45 +159,6 @@
   width: auto;
   display: block;
   transform: translateY(0.11em);
-}
-
-/* Desktop-only itinerary quick switch (Zollverein / DUS Airport). Legacy
-   markup for this lived in the page's own cmd-bar; here it's page content
-   next to the route title, since the shared Nav bar is generic chrome
-   common to every page, not aware of transport's two itineraries. */
-.cmdGroupDesktop {
-  display: none;
-}
-@media (min-width: 769px) {
-  .cmdGroupDesktop {
-    display: flex;
-    gap: var(--space-sm);
-  }
-}
-
-.itineraryBtn {
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-pill);
-  padding: 6px 14px;
-  font-size: var(--font-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
-}
-@media (hover: hover) {
-  .itineraryBtn:hover {
-    background: var(--color-surface-hover);
-  }
-}
-.itineraryBtn.active {
-  background: var(--gray-900);
-  color: #fff;
-  border-color: var(--gray-900);
 }
 
 .locationBanner {

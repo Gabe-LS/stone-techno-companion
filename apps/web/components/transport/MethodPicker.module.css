@@ -1,59 +1,38 @@
 /*
- * "Getting there" section (docs/getting-there-design.md). Sits below the
- * live departure boards on /transport, sharing the page's design tokens
- * (packages/design-tokens/tokens.css) -- kept in its own module rather than
- * TransportBoard.module.css since it's a self-contained, data-driven block
- * with no coupling to the live-board realtime state.
+ * Unified method picker (docs/getting-there-design.md "Decision: unified
+ * method layout"). Replaces the old two-section layout (live boards on top,
+ * a separate collapsible "Getting there" section below): ONE tab bar picks
+ * the travel method, and exactly one panel renders below it -- either the
+ * full live board (Local transit), curated rows with an inline-expandable
+ * live board (Plane), or plain curated rows (Train/Car/Bus). Shares the
+ * page's design tokens (packages/design-tokens/tokens.css). The tab/item
+ * styling below is carried over from the former GettingThere.module.css
+ * almost unchanged; only the section-collapse styles are gone (there's
+ * nothing to collapse now -- the picker IS the page) and a few rules were
+ * added for the DUS expand toggle and its embedded board.
  */
 
-.section {
-  margin-top: var(--space-2xl);
-  padding-top: var(--space-lg);
-  border-top: 1px solid var(--color-border);
+.page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--space-xl) var(--space-xl) var(--space-2xl);
 }
-
-.headerBtn {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  text-align: left;
-  color: var(--color-text);
-  -webkit-tap-highlight-color: transparent;
+@media (max-width: 768px) {
+  .page {
+    padding: var(--space-lg) var(--space-md) var(--space-xl);
+  }
 }
 
 .heading {
   font-size: var(--font-xl);
   font-weight: 700;
   letter-spacing: -0.01em;
-  margin: 0;
+  margin: 0 0 var(--space-md);
 }
 @media (max-width: 768px) {
   .heading {
     font-size: var(--font-lg);
   }
-}
-
-.chevron {
-  flex-shrink: 0;
-  color: var(--color-muted);
-  transition: transform var(--transition-fast);
-}
-.chevron svg {
-  width: 20px;
-  height: 20px;
-  display: block;
-}
-.headerBtn[aria-expanded="true"] .chevron {
-  transform: rotate(180deg);
-}
-
-.body {
-  margin-top: var(--space-md);
 }
 
 .methodTabs {
@@ -94,9 +73,13 @@
   border-color: var(--gray-900);
 }
 
+.panel {
+  margin-top: var(--space-lg);
+}
+
 .items {
   list-style: none;
-  margin: var(--space-md) 0 0;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -172,13 +155,59 @@
   }
 }
 
+/* The Duesseldorf airport row's expand/collapse control -- same visual
+   weight as .itemLink (it replaces an outbound link with a toggle), plus a
+   rotating chevron so the "this reveals something below" affordance reads
+   the same way the old section-collapse header used to. */
+.expandBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: var(--space-sm);
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--color-text);
+  cursor: pointer;
+  border-bottom: 1px solid var(--color-text);
+  -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) {
+  .expandBtn:hover {
+    color: var(--color-muted);
+    border-color: var(--color-muted);
+  }
+}
+
+.chevron {
+  display: inline-flex;
+  color: var(--color-muted);
+  transition: transform var(--transition-fast);
+}
+.chevron svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+.embeddedBoard {
+  margin-top: var(--space-md);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-border);
+}
+
 .emptyState {
   color: var(--color-text-secondary);
   font-size: var(--font-sm);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .section * {
+  .page * {
     transition: none !important;
   }
 }
