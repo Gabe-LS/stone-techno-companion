@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Local dev runs Python 3.14.6 (see CLAUDE.md). setup-python resolves the
+      # latest available 3.14 patch release, so this stays in step with local dev.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      # Only the server dependencies are installed: the core suite exercises
+      # chat_db / chat_moderation / chat_ws / chat_api / api (all under
+      # services/companion) plus the transport proxy in api.py. pyvips and the
+      # ffmpeg subprocess calls in chat_api.py are only reached inside request
+      # handlers (avatar/media upload, video frame extraction) that no
+      # collected test calls, so libvips/ffmpeg system packages are not needed
+      # here (pyvips itself installs fine via pip; it only dlopen()s libvips
+      # when actually used).
+      - name: Install dependencies
+        run: |
+          pip install -r services/companion/requirements.txt
+          pip install pytest
+
+      # test_notifications.py is excluded: it drives real push/notification
+      # flows and needs a Playwright + headless Chromium setup that isn't
+      # provisioned in this workflow (see CLAUDE.md's "Chat Tests" section).
+      # It is run separately, outside CI, for now.
+      #
+      # Everything else under tests/ is safe to collect and run here: the
+      # standalone Playwright/browser scripts (transport_*_check.py,
+      # e2ee_browser_check.py, verify_push_both.py, notif_badge_browser_check.py,
+      # c1_fail_closed_check.py, p2_downgrade_check.py, tests/notif_e2e/,
+      # tests/stress_test/) are not named test_*.py, so pytest's default
+      # collection never picks them up.
+      - name: Run core test suite
+        run: python -m pytest tests/ -q --ignore=tests/test_notifications.py
