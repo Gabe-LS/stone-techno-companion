@@ -75,24 +75,14 @@
     background: var(--color-surface-hover);
   }
 }
-/* Unified active-state convention with Nav.module.css's .navLinkActive: an
-   accent underline below the control (same 2px height/color/mechanism),
-   not an inverted fill. Day tabs (LiveBoard.module.css .dayTab.active) use
-   the identical ::after so both tab tiers read as one family. */
+/* Active state for PILL-shaped tabs is a solid fill inversion, never an
+   underline (owner decision 2026-07-20: underlines on pills look wrong).
+   The Nav's accent underline applies only to its full-height bar items.
+   Day tabs (LiveBoard.module.css .dayTab.active) use the same fill. */
 .methodTabActive {
-  background: var(--color-surface-hover);
-  color: var(--color-text);
-  border-color: var(--color-border);
-}
-.methodTabActive::after {
-  content: "";
-  position: absolute;
-  left: var(--space-md);
-  right: var(--space-md);
-  bottom: -1px;
-  height: 2px;
-  background: var(--color-accent);
-  border-radius: var(--radius-sm);
+  background: var(--gray-900);
+  color: #fff;
+  border-color: var(--gray-900);
 }
 
 .panel {

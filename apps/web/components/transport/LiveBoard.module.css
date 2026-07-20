@@ -238,11 +238,10 @@
   display: none;
 }
 
-/* Secondary tab tier -- same pill/underline family as MethodPicker.module.css's
-   .methodTab/.methodTabActive (one level down: day tabs live inside a board,
-   not at the top of the page), not the former boxy 6px-radius / solid-fill
-   treatment that matched neither the method tabs nor Nav.module.css's
-   accent-underline convention. */
+/* Secondary tab tier -- same pill family as MethodPicker.module.css's
+   .methodTab/.methodTabActive. Active state is the solid fill inversion:
+   underlines on pill-shaped controls are forbidden (owner decision
+   2026-07-20); the Nav's accent underline is for full-height bar items only. */
 .dayTab {
   position: relative;
   flex: 1;
@@ -272,19 +271,9 @@
   }
 }
 .dayTab.active {
-  background: var(--color-surface-hover);
-  color: var(--color-text);
-  border-color: var(--color-border);
-}
-.dayTab.active::after {
-  content: "";
-  position: absolute;
-  left: var(--space-md);
-  right: var(--space-md);
-  bottom: -1px;
-  height: 2px;
-  background: var(--color-accent);
-  border-radius: var(--radius-sm);
+  background: var(--gray-900);
+  color: #fff;
+  border-color: var(--gray-900);
 }
 
 .dayTabCount {
