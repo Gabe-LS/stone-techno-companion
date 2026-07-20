@@ -1,0 +1,229 @@
+.header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-header);
+}
+
+.bar {
+  height: var(--header-h);
+  background: var(--gray-900);
+  color: #fff;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  padding: 0 var(--space-lg);
+  font-family: var(--font-family);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  color: #fff;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  text-decoration: none;
+  letter-spacing: 0.02em;
+}
+.brand:focus:not(:focus-visible) {
+  outline: none;
+}
+.brand:focus-visible {
+  outline: 1px solid #fff;
+  outline-offset: 2px;
+}
+
+/* --- Desktop nav bar: Line-up | Timetable | Chat | Transport, every page --- */
+.desktopNav {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-xl);
+}
+@media (max-width: 768px) {
+  .desktopNav {
+    display: none;
+  }
+}
+
+/* Unified active-state convention: an accent underline. Applied to the
+   horizontal desktop items directly below; the mobile vertical list mirrors
+   the same idea rotated 90 degrees (a left-edge accent bar, see .mobileLinkActive). */
+.navLink {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  color: var(--gray-400);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+.navLink:focus:not(:focus-visible) {
+  outline: none;
+}
+.navLink:focus-visible {
+  outline: 1px solid #fff;
+  outline-offset: -2px;
+}
+@media (hover: hover) {
+  .navLink:hover {
+    color: #fff;
+  }
+}
+.navLinkActive {
+  color: #fff;
+}
+.navLinkActive::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--color-accent);
+  border-radius: var(--radius-sm);
+}
+
+/* --- Hamburger (mobile only) --- */
+.hamburgerBtn {
+  display: none;
+  position: relative;
+  align-items: center;
+  justify-content: center;
+  width: var(--header-h);
+  height: var(--header-h);
+  background: none;
+  border: none;
+  color: #fff;
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+@media (max-width: 768px) {
+  .hamburgerBtn {
+    display: flex;
+  }
+}
+.hamburgerBtn:focus:not(:focus-visible) {
+  outline: none;
+}
+.hamburgerBtn:focus-visible {
+  outline: 1px solid #fff;
+  outline-offset: -2px;
+}
+
+.hamburgerIcon {
+  display: flex;
+}
+
+/* Numbered unread badge on the hamburger button. Hidden entirely when count
+   is 0 (NavBadge returns null in that case). Sized to keep its digits at the
+   project's 12px text floor (font-xs) rather than shrinking the font. */
+.badge {
+  position: absolute;
+  top: 4px;
+  right: 2px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  color: #fff;
+  font-size: var(--font-xs);
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+}
+
+/* --- Mobile overlay menu --- */
+.overlay {
+  position: fixed;
+  top: var(--header-h);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-menu-overlay);
+  background: rgba(0, 0, 0, 0.3);
+}
+@media (min-width: 769px) {
+  .overlay {
+    display: none;
+  }
+}
+
+.panel {
+  position: fixed;
+  top: var(--header-h);
+  left: 0;
+  right: 0;
+  z-index: var(--z-menu);
+  background: var(--gray-900);
+  box-shadow: var(--shadow-modal);
+  max-height: calc(100vh - var(--header-h));
+  overflow-y: auto;
+}
+@media (min-width: 769px) {
+  .panel {
+    display: none;
+  }
+}
+
+.group {
+  padding: var(--space-sm) 0;
+}
+.group + .group {
+  border-top: 1px solid var(--gray-700);
+}
+
+.groupLabel {
+  margin: 0;
+  padding: var(--space-sm) var(--space-lg) var(--space-xs);
+  font-size: var(--font-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--gray-400);
+}
+
+.groupList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mobileLink {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--gray-700);
+  border-left: 3px solid transparent;
+  color: #fff;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none;
+  padding: 14px var(--space-lg) 14px calc(var(--space-lg) - 3px);
+  font-family: var(--font-family);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.mobileLink:focus:not(:focus-visible) {
+  outline: none;
+}
+.mobileLink:focus-visible {
+  outline: 1px solid #fff;
+  outline-offset: -2px;
+}
+@media (hover: hover) {
+  .mobileLink:hover {
+    background: var(--gray-800);
+  }
+}
+.mobileLinkActive {
+  border-left-color: var(--color-accent);
+  background: var(--gray-800);
+}
