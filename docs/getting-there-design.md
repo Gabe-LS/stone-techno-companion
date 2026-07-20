@@ -226,3 +226,51 @@ that city's Hbf — were independently confirmed, and chaining them into one
 this doc's freshness rules argue against; the JSON instead describes the
 transfer *shape* — "change at Köln Hbf," "shuttle to Dortmund Hbf" — and lets
 the duration stay a hint, not a promise).
+
+## Decision: unified method layout (2026-07-20)
+
+The two-section page described above (live departure boards on top, this
+section collapsed below) is retired in favor of ONE top-level method picker:
+a single tab bar — Train | Plane | Car | Bus | Local transit — where exactly
+one panel renders below it. `apps/web/components/transport/MethodPicker.tsx`
+now owns the whole `/transport` page; `GettingThere.tsx` and the old
+route-switching `TransportBoard.tsx` are gone, replaced by `MethodPicker.tsx`
+and a route-fixed `LiveBoard.tsx` (the same live-board component, mounted
+once full-panel under "Local transit" and once embedded inline under
+"Plane").
+
+- **Tabs are still data-driven**: `Train`/`Plane`/`Car`/`Bus` come from
+  `getting-there.json`'s `methods` array exactly as before (section 3 above
+  is unchanged). `Local transit` is appended after them — it has no curated
+  items, only the live tram board, so it isn't and can't be represented in
+  `getting-there.json`.
+- **Plane's Duesseldorf row expands inline.** Any Plane item whose `link`
+  resolves to the Duesseldorf route (currently just the DUS row) renders as
+  an expand/collapse toggle instead of an outbound link; expanding it mounts
+  the live airport board (`LiveBoard route="duesseldorf" embedded`) directly
+  inside the row, both directions, swap included. CGN/DTM keep their plain
+  outbound links, unchanged.
+- **Smart default.** On load, if no explicit `?route=` or `?method=` is
+  present, the page opens on **Local transit** during the festival window,
+  else **Train**. The window is derived from `timetable-transport.json`
+  itself — the earliest day present across both boards, minus one day (for a
+  fly-in arriving the evening before), through the latest day present — not
+  hardcoded. `apps/web/lib/transport/logic.ts`'s `festivalDateWindow()` /
+  `isWithinFestivalWindow()` implement this; `MethodPicker.tsx` logs the
+  decision via `dbg()`.
+- **URL contract**: the existing `?route=` slugs (and every legacy alias)
+  resolve exactly as before and now also select the right tab — a
+  Zollverein-mapped slug opens Local transit, a Duesseldorf-mapped slug opens
+  Plane with the board pre-expanded. The active method is independently
+  shareable via `?method=` (e.g. `?method=car`). An explicit, recognized
+  `?route=` always wins over `?method=` when both are present. An
+  unrecognized `?route=` (or none at all) falls through to `?method=`, then
+  to the smart default — this already matched the pre-existing "unrecognized
+  route falls back to default exactly like no param at all" behavior
+  (`docs/parity/transport.md` #26); it now simply means the default itself is
+  smart-default-driven rather than hardcoded to the Zollverein board.
+- **No change inside either live board.** Both directions, the swap icon,
+  day tabs, realtime polling, and walk time all behave exactly as documented
+  in `docs/parity/transport.md` — only the chrome around them (the old
+  itinerary quick-switch buttons in the sticky header) is gone, since
+  switching itineraries is now the top-level tab bar's job.

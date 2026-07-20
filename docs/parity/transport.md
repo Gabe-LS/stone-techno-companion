@@ -20,6 +20,21 @@ Source of truth for the current implementation:
 - `services/data/transport/capture-api.mjs` (the offline generator for that JSON)
 - `tests/test_transport.py` and the four standalone Playwright checks
 
+> **Note (2026-07-20):** the Next.js port's own component structure changed
+> under a later restructure -- see "Decision: unified method layout" in
+> `docs/getting-there-design.md`. `apps/web/components/transport/
+> TransportBoard.tsx` and `GettingThere.tsx` (referenced throughout this
+> file, since it predates that restructure) no longer exist; they were
+> replaced by `MethodPicker.tsx` (the whole page: a Train | Plane | Car | Bus
+> | Local transit tab bar) and `LiveBoard.tsx` (the same live-board behavior
+> this file documents, now mounted once full-panel under "Local transit" and
+> once embedded inline under "Plane", instead of switching between the two
+> itineraries itself). The live-board BEHAVIOR this file documents (sections
+> 2-7, 11) is unchanged and still applies verbatim to `LiveBoard.tsx`; only
+> the page-level chrome around it (sections 1, 8, 10) changed. Checkboxes
+> below are left as originally recorded; changed-context items carry their
+> own dated notes rather than being silently unchecked.
+
 This file is the exhaustive, testable checklist for the Next.js port of `/transport`. The port ships only when every box below is checked against a real running instance of the port, not against this document alone. Every item states an input and the exact observable output; where the current code and `CLAUDE.md`'s prose summary disagree, this file follows the code (verified by reading and by the test suite) and the disagreement is flagged explicitly in "Notes on documentation drift" at the end.
 
 ---
@@ -35,10 +50,23 @@ This file is the exhaustive, testable checklist for the Next.js port of `/transp
 - [x] Legacy alias `?route=duesseldorf-essen` resolves identically to `dus-airport-essen` (present in the slug map even though not surfaced in any UI control).
 - [x] Legacy alias `?route=essen-duesseldorf` resolves identically to `essen-dus-airport` (present in the slug map even though not surfaced in any UI control).
 - [x] An unrecognized `?route=` value (anything not in the slug map, e.g. `?route=bogus`) falls back to the default (`zollverein` outbound) exactly like no param at all.
+  > **Note (2026-07-20):** under the unified method picker, "the default" is
+  > no longer hardcoded to the Zollverein board -- it's whatever the
+  > smart-default rule picks (Local transit during the festival window,
+  > Train outside it; see "Decision: unified method layout" in
+  > `docs/getting-there-design.md`). An unrecognized `?route=` still falls
+  > through to exactly the same place bare `/transport` does (this item's
+  > own "exactly like no param at all" already covers it), so the invariant
+  > holds; only what "the default" resolves to changed.
 - [x] `GET /public-transport` returns HTTP 301 with `Location: /transport` (old bookmarked URL kept alive). Verify status code is exactly 301, not 302 or 307. (Verified directly against the unchanged FastAPI backend on port 64728; this route is untouched by the port.)
 - [ ] `/public-transport?route=dus-airport-essen` (with a query string) still 301-redirects to `/transport`. Confirm whether the query string is preserved or dropped by testing the actual `Location` header byte-for-byte (current server code passes no query string through: `RedirectResponse("/transport", status_code=301)`, so the query string is dropped and the redirected page lands on the default zollverein-essen view, not on the requested Düsseldorf view. This looks like an oversight but is the current, testable behavior; port must match it exactly unless product explicitly asks for the fix). Backend-only, unchanged; not independently re-tested with a query string this pass (only the bare-URL 301 was re-verified).
 - [x] Clean URL routing: `/transport` is served via the generic static-page catch-all (`static/pages/{slug}.html`, slug regex `[a-z0-9][a-z0-9-]*`, no per-route registration needed). The Next.js port's routing for `/transport` must behave equivalently: a single route owns all four directional views, distinguished only by `?route=`, not by four separate paths. (The Next.js port is literally one route, `app/transport/page.tsx`, for all four views -- structurally guarantees this.)
 - [x] The in-page direction-swap icon (`#dir-toggle`) rewrites only the `route` query param via `history.replaceState`, preserving any other query params already on the URL (e.g. test-only `?date=`/`?time=` overrides) and the path (`/transport`). No page reload occurs. (Ported via `router.replace()` reading `new URLSearchParams(window.location.search)` and only overwriting `route`; "no page reload" verified by a `window.__stc_test_marker` surviving the click. Preservation of an unrelated extra param through a swap specifically wasn't separately asserted this pass, though the `?date=&time=` overrides were used successfully across multiple page loads.)
+  > **Note (2026-07-20):** under the unified method picker, the swap icon
+  > (now in `LiveBoard.tsx`) additionally clears `?method=` whenever it sets
+  > `?route=` -- an explicit route slug always implies its method (Local
+  > transit or Plane), so the two params are never left contradicting each
+  > other. `?date=`/`?time=` overrides are still preserved untouched.
 - [x] After clicking the swap icon on `zollverein-essen`, the URL becomes `/transport?route=essen-zollverein` and clicking again returns to `/transport?route=zollverein-essen` (round-trips exactly, confirmed by `transport_reverse_check.py`).
 - [x] After clicking the swap icon on `dus-airport-essen`, the URL becomes `/transport?route=essen-dus-airport` and back. (Forward leg directly asserted; the return leg reuses the identical `toggleDirection` code path already round-trip-verified for Zollverein.)
 - [x] Reloading the page at a URL produced by the swap (e.g. `/transport?route=essen-zollverein`) reproduces the exact same view as before the reload (shareable/reloadable direction views). (Every route/alias case in the test script is a fresh `page.goto()`, which is itself a reload of that exact URL.)
@@ -198,6 +226,14 @@ For every departure row (`<li class="dep-item">`), computed per render pass over
 ## 8. Mobile hamburger menu and nav
 
 - [ ] Desktop command bar (viewport wider than the 768px breakpoint) shows: Line-up, Timetable, Chat, a visually separated Transport group with two buttons "Zollverein -> Essen" and "DUS Airport -> Essen" (chevron icon between the words, not a literal arrow character), and the hamburger is hidden. Screenshot-confirmed at 1280px width (all elements visible, hamburger absent); the exact 768px breakpoint edge wasn't independently probed this pass.
+  > **Note (2026-07-20):** these two page-local itinerary quick-switch
+  > buttons (`TransportBoard.tsx`'s `cmdGroupDesktop`) are REMOVED by the
+  > unified method picker restructure -- switching between the Zollverein
+  > and Duesseldorf itineraries is now the top-level Local transit / Plane
+  > tabs' job (`MethodPicker.tsx`), so the duplicate page-local control was
+  > dropped rather than kept alongside it. The shared `Nav` component's own
+  > chrome described elsewhere in this section (desktop nav row, hamburger,
+  > mobile Transport submenu) is unaffected.
 - [x] At or below the 768px breakpoint, the desktop `.cmd-group`-equivalent and its separator are hidden; the hamburger button appears on the right. This part of the chrome is now the shared `Nav` component's existing, already-tested responsive behavior (unchanged by this port beyond adding a new menu group), confirmed via the 390px mobile screenshot (hamburger visible, desktop nav row absent).
 - [ ] Tapping ANYWHERE on the bar except the hamburger itself or the chat nav-icon toggles the dropdown menu. NOT ported as-is: the shared `Nav` component only toggles via the hamburger button itself (`onClick={toggleMenu}` on the button, not a delegated whole-bar handler) -- a deliberate divergence from the legacy page's own bespoke chrome, see the port's final report for the explicit call-out.
 - [x] Crossing the 768px breakpoint while the mobile menu is open closes it. Pre-existing, unchanged `Nav` behavior (`matchMedia` change listener), not touched by this port.
@@ -258,6 +294,19 @@ All five items below describe **other pages** (`services/data/scraper/render.py`
 - [ ] `python tests/transport_duesseldorf_realtime_check.py`. Same as above: legacy-page script (and, per the doc's own note, currently broken against the legacy markup regardless); not re-run or fixed this pass -- out of scope for the Next.js port.
 - [ ] `python tests/transport_routes_check.py`. Same as above: legacy-page script, not re-run this pass.
 - [x] **New for the Next.js port**: `tests/web/transport_nextjs_check.py` (standalone Playwright, Python, run OUTSIDE the sandbox against a locally-running `next dev` + the companion backend) -- 32 checks across two verification passes, all green: the four route slugs plus every legacy alias render the correct title/stop names; day tabs render the correct day counts, dates (slash-only, never dots), and compact-vs-full breakpoint behavior; the swap icon flips direction, rewrites the URL without a full reload, and round-trips; day-tab clicks switch the rendered panel and are `dbg()`-logged; the `?date=&time=` override auto-selects the matching day tab; a mocked departures response renders a canceled row struck-through, a delayed row in red showing the realtime (not scheduled) time, and the live "Updated ..." indicator; Düsseldorf-specific realtime fields (platform/train-number sub-line, delayed arrival) render correctly; the `/timetable-transport.json` load-failure empty state renders; and the backend's unchanged `/public-transport` 301 redirect still works.
+  > **Note (2026-07-20):** rewritten for the unified method picker (56
+  > checks, all green) -- same coverage as above (still exercised, since
+  > `LiveBoard.tsx`'s behavior is byte-for-byte the old `TransportBoard.tsx`
+  > board logic), plus new checks added for the restructure: route slugs
+  > select the right tab (not just the right title), the festival-window
+  > smart default (both sides -- today's real date, outside the window, and
+  > a `?date=` override inside it), `?method=` is shareable and survives a
+  > reload, an explicit `?route=` wins over `?method=` when both are
+  > present, tab switching shows exactly one panel, and the Plane tab's
+  > Duesseldorf row expands/collapses its embedded live board and syncs
+  > `?route=`/`?method=` accordingly. The `/public-transport` 301 redirect
+  > check was backend-only and isn't in this script (see section 12's own
+  > list of backend-covering tests instead).
 - [x] All standalone Playwright checks for this port were run OUTSIDE the command sandbox (headless Chromium needs Mach-port access), against a real `next dev` instance (BACKEND_ORIGIN pointed at a locally-running companion backend) -- not against isolated scratch-DB server instances, since `/transport` has no auth/DB dependency to isolate.
 
 ---
