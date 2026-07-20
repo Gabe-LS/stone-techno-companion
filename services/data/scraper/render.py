@@ -215,6 +215,29 @@ def _render_markdown(text: str) -> str:
     return "".join(s.out).strip()
 
 
+def _strip_booking(text: str) -> str:
+    import re as _re
+
+    paragraphs = text.split("\n\n")
+    kept = []
+    for p in paragraphs:
+        lines = p.strip().splitlines()
+        if any(
+            _re.match(
+                r"^(bookings?|management|press|promos?|agency|contact|licensing|selected performance)\b",
+                line.strip(),
+                _re.IGNORECASE,
+            )
+            or ("@" in line and (">" in line or ":" in line))
+            or _re.match(r"^https?://\S+$", line.strip())
+            or _re.match(r"^www\.\S+$", line.strip())
+            for line in lines
+        ):
+            break
+        kept.append(p)
+    return "\n\n".join(kept).strip()
+
+
 def render_output_html(
     title: str,
     ordered_sections: list[dict],
@@ -1137,28 +1160,6 @@ def render_output_html(
         parts.append("  </div>")  # end #list-view
 
     # Bio lookup (deduped by artist id)
-    def _strip_booking(text: str) -> str:
-        import re as _re
-
-        paragraphs = text.split("\n\n")
-        kept = []
-        for p in paragraphs:
-            lines = p.strip().splitlines()
-            if any(
-                _re.match(
-                    r"^(bookings?|management|press|promos?|agency|contact|licensing|selected performance)\b",
-                    line.strip(),
-                    _re.IGNORECASE,
-                )
-                or ("@" in line and (">" in line or ":" in line))
-                or _re.match(r"^https?://\S+$", line.strip())
-                or _re.match(r"^www\.\S+$", line.strip())
-                for line in lines
-            ):
-                break
-            kept.append(p)
-        return "\n\n".join(kept).strip()
-
     artist_videos = videos or {}
 
     bio_lookup: dict[str, dict] = {}

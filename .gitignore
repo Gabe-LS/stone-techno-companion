@@ -27,6 +27,7 @@ services/companion/chat.db-wal
 services/companion/chat/uploads/
 services/companion/chat-uploads/
 services/companion/chat/tmp/
+services/companion/static/api
 services/companion/static/bios.json
 services/companion/static/index.html
 services/companion/static/photos

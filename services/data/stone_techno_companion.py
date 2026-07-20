@@ -25,6 +25,7 @@ from scraper.db import (
     upsert_lineup,
 )
 from scraper.images import process_artist_photos
+from scraper.lineup_api_json import generate_lineup_api_json
 from scraper.render import render_output_html
 from scraper.timetable_json import generate_timetable_json
 from scraper.scrape import (
@@ -76,6 +77,9 @@ def deploy_to_vps(output_dir: Path, output_path: Path) -> None:
         thumbs_src = output_dir / "thumbs"
         if thumbs_src.is_dir():
             shutil.copytree(thumbs_src, staging_path / "thumbs")
+        api_src = output_dir / "api"
+        if api_src.is_dir():
+            shutil.copytree(api_src, staging_path / "api")
         # Normalize staging permissions before syncing: the staging dir is a
         # mkdtemp (mode 700), and rsync -a copies that mode onto the VPS
         # static dir itself, locking out the container's non-root appuser
@@ -98,7 +102,7 @@ def deploy_to_vps(output_dir: Path, output_path: Path) -> None:
             check=True,
         )
         # Prune stale files only inside the fully regenerated directories.
-        for subdir in ("photos", "thumbs"):
+        for subdir in ("photos", "thumbs", "api"):
             if (staging_path / subdir).is_dir():
                 subprocess.run(
                     [
@@ -244,6 +248,20 @@ def main() -> None:
             timetable_path = output_dir / "timetable.json"
             timetable_path.write_text(timetable_json, encoding="utf-8")
             print(f"Wrote {timetable_path}")
+
+        generate_lineup_api_json(
+            db,
+            event_id,
+            output_dir,
+            ordered_sections,
+            all_assignments,
+            all_locations,
+            stage_curators,
+            stage_colors,
+            all_videos,
+            has_timetable=has_timetable,
+        )
+        print(f"Wrote {output_dir / 'api' / 'v1'}")
     finally:
         db.close()
 
