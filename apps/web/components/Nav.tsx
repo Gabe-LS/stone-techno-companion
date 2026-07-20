@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import styles from "./Nav.module.css";
 import { dbg } from "../lib/debug";
 import { resolveRouteSlug, routeSlugFor } from "../lib/transport/logic";
+import Badge from "./ui/Badge";
 
 type NavItem = {
   label: string;
@@ -82,15 +83,6 @@ function useCurrentTransportSlug(): string {
   }, []);
 
   return slug;
-}
-
-function NavBadge({ count }: { count: number }) {
-  if (count <= 0) return null;
-  return (
-    <span className={styles.badge} aria-hidden="true">
-      {count > 99 ? "99+" : count}
-    </span>
-  );
 }
 
 export default function Nav() {
@@ -221,7 +213,7 @@ export default function Nav() {
               <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </span>
-          <NavBadge count={unreadCount} />
+          <Badge count={unreadCount} className={styles.badgePosition} />
         </button>
       </nav>
 

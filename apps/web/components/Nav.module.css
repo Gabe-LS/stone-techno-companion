@@ -7,7 +7,7 @@
 .bar {
   height: var(--header-h);
   background: var(--gray-900);
-  color: #fff;
+  color: var(--color-on-dark);
   display: flex;
   align-items: stretch;
   justify-content: space-between;
@@ -18,7 +18,7 @@
 .brand {
   display: flex;
   align-items: center;
-  color: #fff;
+  color: var(--color-on-dark);
   font-size: var(--font-sm);
   font-weight: 600;
   text-decoration: none;
@@ -28,8 +28,8 @@
   outline: none;
 }
 .brand:focus-visible {
-  outline: 1px solid #fff;
-  outline-offset: 2px;
+  outline: var(--focus-ring-width) solid var(--color-on-dark);
+  outline-offset: var(--focus-ring-offset);
 }
 
 /* --- Desktop nav bar: Line-up | Timetable | Chat | Transport, every page --- */
@@ -46,7 +46,11 @@
 
 /* Unified active-state convention: an accent underline. Applied to the
    horizontal desktop items directly below; the mobile vertical list mirrors
-   the same idea rotated 90 degrees (a left-edge accent bar, see .mobileLinkActive). */
+   the same idea rotated 90 degrees (a left-edge accent bar, see .mobileLinkActive).
+   This underline convention is deliberately scoped to Nav bar items only
+   (DESIGN-STANDARDS.md #2: "This convention exists only there") -- it is
+   the one place besides ExternalLink allowed to set text-decoration
+   semantics via a decorative ::after bar (not text-decoration itself). */
 .navLink {
   position: relative;
   display: flex;
@@ -64,16 +68,16 @@
   outline: none;
 }
 .navLink:focus-visible {
-  outline: 1px solid #fff;
-  outline-offset: -2px;
+  outline: var(--focus-ring-width) solid var(--color-on-dark);
+  outline-offset: calc(-1 * var(--focus-ring-offset));
 }
 @media (hover: hover) {
   .navLink:hover {
-    color: #fff;
+    color: var(--color-on-dark);
   }
 }
 .navLinkActive {
-  color: #fff;
+  color: var(--color-on-dark);
 }
 .navLinkActive::after {
   content: "";
@@ -96,7 +100,7 @@
   height: var(--header-h);
   background: none;
   border: none;
-  color: #fff;
+  color: var(--color-on-dark);
   padding: 0;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -110,32 +114,25 @@
   outline: none;
 }
 .hamburgerBtn:focus-visible {
-  outline: 1px solid #fff;
-  outline-offset: -2px;
+  outline: var(--focus-ring-width) solid var(--color-on-dark);
+  outline-offset: calc(-1 * var(--focus-ring-offset));
 }
 
 .hamburgerIcon {
   display: flex;
 }
 
-/* Numbered unread badge on the hamburger button. Hidden entirely when count
-   is 0 (NavBadge returns null in that case). Sized to keep its digits at the
-   project's 12px text floor (font-xs) rather than shrinking the font. */
-.badge {
+/* Numbered unread badge on the hamburger button: uses the shared Badge
+   primitive (components/ui/Badge.tsx) for size/color/shape; this class only
+   supplies the POSITION, which is this button's own layout concern (Badge
+   itself declares no position rules, see Badge.module.css).
+   semantic-exception: `right: 2px` is a one-off visual nudge (the badge's
+   optical center against the hamburger glyph), not a spacing-scale value --
+   not reusable, not worth a token. */
+.badgePosition {
   position: absolute;
-  top: 4px;
+  top: var(--space-xs);
   right: 2px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
-  border-radius: var(--radius-pill);
-  background: var(--color-accent);
-  color: #fff;
-  font-size: var(--font-xs);
-  font-weight: 700;
-  line-height: 18px;
-  text-align: center;
-  box-shadow: var(--shadow-sm);
 }
 
 /* --- Mobile overlay menu --- */
@@ -146,7 +143,7 @@
   right: 0;
   bottom: 0;
   z-index: var(--z-menu-overlay);
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--overlay-bg);
 }
 @media (min-width: 769px) {
   .overlay {
@@ -194,19 +191,23 @@
   padding: 0;
 }
 
+/* semantic-exception: the 14px vertical padding intentionally matches
+   services/companion/static/shared.css's .cmd-dropdown button row padding
+   (`14px var(--space-lg)`) verbatim -- a cross-codebase parity value, not a
+   value on this app's 4px spacing scale. */
 .mobileLink {
   display: block;
   width: 100%;
   background: none;
   border: none;
   border-top: 1px solid var(--gray-700);
-  border-left: 3px solid transparent;
-  color: #fff;
+  border-left: var(--accent-bar-width) solid transparent;
+  color: var(--color-on-dark);
   font-size: var(--font-sm);
   font-weight: 600;
   text-align: left;
   text-decoration: none;
-  padding: 14px var(--space-lg) 14px calc(var(--space-lg) - 3px);
+  padding: 14px var(--space-lg) 14px calc(var(--space-lg) - var(--accent-bar-width));
   font-family: var(--font-family);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -215,8 +216,8 @@
   outline: none;
 }
 .mobileLink:focus-visible {
-  outline: 1px solid #fff;
-  outline-offset: -2px;
+  outline: var(--focus-ring-width) solid var(--color-on-dark);
+  outline-offset: calc(-1 * var(--focus-ring-offset));
 }
 @media (hover: hover) {
   .mobileLink:hover {
