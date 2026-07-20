@@ -4,6 +4,12 @@
   box-sizing: border-box;
 }
 
+html {
+  /* Reserve the scrollbar track permanently so the layout does not shift
+     when a page becomes tall enough to scroll. */
+  scrollbar-gutter: stable;
+}
+
 html,
 body {
   height: 100%;

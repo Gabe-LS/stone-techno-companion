@@ -7,6 +7,9 @@ import type { NextConfig } from "next";
 const BACKEND_ORIGIN = process.env.BACKEND_ORIGIN ?? "https://localhost:64728";
 
 const nextConfig: NextConfig = {
+  // Hide the floating dev-tools button; it reads as a mystery UI element
+  // during design review and never ships to production anyway.
+  devIndicators: false,
   // apps/web has its own lockfile, so Turbopack would otherwise infer
   // apps/web as the project root and refuse to resolve files outside it
   // (e.g. packages/design-tokens/tokens.css, imported by app/layout.tsx).
