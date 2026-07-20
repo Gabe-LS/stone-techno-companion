@@ -23,16 +23,15 @@
   }
 }
 
+/* Page title (DESIGN-STANDARDS.md #1 Typography roles): exactly one per
+   page, font-xl/700, one size at every width. This used to drop to font-lg
+   on mobile -- the same size as LiveBoard.module.css's .routeTitle section
+   title, which must always read strictly smaller than this heading. */
 .heading {
   font-size: var(--font-xl);
   font-weight: 700;
   letter-spacing: -0.01em;
   margin: 0 0 var(--space-md);
-}
-@media (max-width: 768px) {
-  .heading {
-    font-size: var(--font-lg);
-  }
 }
 
 .methodTabs {
@@ -50,7 +49,7 @@
   color: var(--color-text-secondary);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-pill);
-  padding: 7px 14px;
+  padding: var(--space-sm) var(--space-md);
   font-size: var(--font-sm);
   font-weight: 600;
   cursor: pointer;
@@ -98,17 +97,22 @@
   gap: var(--space-sm);
 }
 
+/* Card, content-card density (DESIGN-STANDARDS.md #3 Containers):
+   --color-surface background, 1px --color-border, --radius-md, padded
+   --space-lg. The left edge stays a 3px accent ring (same color as the
+   other 3 sides at rest) so .itemBoosted below can recolor it to flag a
+   country-boosted row without a second background tone -- every card here
+   shares the one --color-surface fill. */
 .item {
-  border: 1px solid var(--color-surface-hover);
-  border-left: 3px solid var(--color-surface-hover);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-border);
   border-radius: var(--radius-md);
-  background: var(--gray-50);
-  padding: var(--space-md);
+  background: var(--color-surface);
+  padding: var(--space-lg);
 }
 
 .itemBoosted {
   border-left-color: var(--gray-900);
-  background: var(--color-surface);
 }
 
 .itemTop {
@@ -119,9 +123,12 @@
   flex-wrap: wrap;
 }
 
+/* Row title (DESIGN-STANDARDS.md #1 Typography roles): font-base/600 --
+   this used to be weight 700, the only "row title" instance heavier than
+   its documented role. */
 .itemName {
   font-size: var(--font-base);
-  font-weight: 700;
+  font-weight: 600;
   color: var(--color-text);
 }
 
@@ -132,9 +139,12 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Body / summary (DESIGN-STANDARDS.md #1 Typography roles): font-base/400 --
+   this used to be font-sm, the odd one out for the role this field is
+   literally named after. */
 .itemSummary {
   margin-top: 2px;
-  font-size: var(--font-sm);
+  font-size: var(--font-base);
   color: var(--color-text-secondary);
 }
 
@@ -173,47 +183,48 @@
 }
 @media (hover: hover) {
   .itemLink:hover {
-    color: var(--color-muted);
-    border-color: var(--color-muted);
+    color: var(--color-text-secondary);
+    border-color: var(--color-text-secondary);
   }
 }
 
-/* The Duesseldorf airport row's expand/collapse control -- same visual
-   weight as .itemLink (it replaces an outbound link with a toggle), plus a
-   rotating chevron so the "this reveals something below" affordance reads
-   the same way the old section-collapse header used to. */
+/* Button (DESIGN-STANDARDS.md #2 Controls): solid --gray-900 pill, white
+   text, --font-sm 600 -- the same style as LiveBoard.module.css's "Locate
+   me" (.locationBanner button), the page's reference Button. This used to
+   be styled as an underlined link, which the standard reserves exclusively
+   for controls that leave the site; an in-page expander must look like a
+   button even though it (like a link) reveals more content, hence the
+   chevron for that affordance instead of underline styling. */
 .expandBtn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   margin-top: var(--space-sm);
-  background: none;
+  background: var(--gray-900);
+  color: #fff;
   border: none;
-  padding: 0;
+  border-radius: var(--radius-pill);
+  padding: 7px 16px;
   font-size: var(--font-sm);
   font-weight: 600;
-  color: var(--color-text);
   cursor: pointer;
-  border-bottom: 1px solid var(--color-text);
   -webkit-tap-highlight-color: transparent;
 }
 .expandBtn:focus:not(:focus-visible) {
   outline: none;
 }
 .expandBtn:focus-visible {
-  outline: 1px solid var(--color-text);
+  outline: 1px solid var(--gray-900);
   outline-offset: 2px;
 }
 @media (hover: hover) {
   .expandBtn:hover {
-    color: var(--color-muted);
-    border-color: var(--color-muted);
+    background: var(--gray-800);
   }
 }
 
 .chevron {
   display: inline-flex;
-  color: var(--color-muted);
   transition: transform var(--transition-fast);
 }
 .chevron svg {

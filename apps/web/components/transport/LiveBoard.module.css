@@ -78,9 +78,18 @@
   padding-top: 0;
 }
 
-.fadeAfter {
-  position: relative;
-}
+/* No position declared here on purpose: this class is only ever combined
+   with .stickyTop (never .stickyEmbedded, see LiveBoard.tsx), which is
+   itself `position: sticky` -- already a positioned ancestor for the
+   ::after below. A `position: relative` here used to sit in the cascade
+   AFTER .stickyTop's `position: sticky` (same specificity, later source
+   order wins), silently demoting the header to `position: relative` --
+   its `top: var(--header-h)` then applied as a permanent downward offset
+   instead of a sticky-scroll threshold. That single bug was both the dead
+   gap under the method tabs (DESIGN-STANDARDS.md #4 Rhythm) and the reason
+   the header never actually stayed pinned while scrolling, which threw off
+   the auto-scroll-to-next-departure math (DESIGN-STANDARDS.md #3, "no
+   clipped card at rest"). */
 .fadeAfter::after {
   content: "";
   position: absolute;
@@ -97,27 +106,27 @@
   opacity: 1;
 }
 
+/* Section title (DESIGN-STANDARDS.md #1 Typography roles): font-lg/600, one
+   size everywhere (desktop, mobile, and the embedded DUS board alike) --
+   always strictly smaller than the page's own h1 ("Transport", font-xl/700
+   in MethodPicker.module.css .heading). The old 2px solid border read as a
+   heavier rule than a section header needs; a 1px --color-border divider
+   matches every other hairline on the page. */
 .routeTitle {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: var(--space-md);
-  font-size: var(--font-2xl);
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-size: var(--font-lg);
+  font-weight: 600;
   padding: var(--space-md) 0 var(--space-sm);
-  border-bottom: 2px solid var(--color-text);
+  border-bottom: 1px solid var(--color-border);
 }
 @media (max-width: 768px) {
   .routeTitle {
-    font-size: var(--font-xl);
     padding: var(--space-sm) 0 6px;
   }
-}
-
-.embedded .routeTitle {
-  font-size: var(--font-xl);
 }
 
 .routeTitleMain {
@@ -138,21 +147,27 @@
   width: auto;
 }
 
+/* Proper icon button (DESIGN-STANDARDS.md #2 Controls): a round hit target
+   with the same hover/focus semantics as every other control on the page,
+   not a bare glyph that only changes color. */
 .dirToggleBtn {
   flex-shrink: 0;
   background: none;
   border: none;
+  border-radius: var(--radius-pill);
   padding: 6px;
   margin-left: 2px;
   cursor: pointer;
-  color: var(--color-muted);
+  color: var(--color-text-secondary);
   display: flex;
   align-items: center;
   font-size: inherit;
+  transition: background var(--transition-fast), color var(--transition-fast);
   -webkit-tap-highlight-color: transparent;
 }
 .dirToggleBtn:active {
   color: var(--color-text);
+  background: var(--color-surface-hover);
 }
 .dirToggleBtn:focus:not(:focus-visible) {
   outline: none;
@@ -164,6 +179,7 @@
 @media (hover: hover) {
   .dirToggleBtn:hover {
     color: var(--color-text);
+    background: var(--color-surface-hover);
   }
 }
 .dirToggleBtn svg {
@@ -173,11 +189,15 @@
   transform: translateY(0.11em);
 }
 
+/* Card (DESIGN-STANDARDS.md #3 Containers): --color-surface background, 1px
+   --color-border, --radius-md -- same as every other card/row on the page.
+   This is an info strip, so it takes the data-row density (--space-sm
+   --space-md), not the content-card density. */
 .locationBanner {
-  background: var(--gray-50);
-  border: 1px solid var(--color-surface-hover);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  padding: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
   margin-top: var(--space-md);
   font-size: var(--font-sm);
   color: var(--color-text);
@@ -190,7 +210,7 @@
   background: var(--gray-900);
   color: #fff;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   padding: 7px 16px;
   min-width: 102px; /* width of "Locate me" so toggling to "Update" doesn't shift layout */
   font-size: var(--font-sm);
@@ -229,7 +249,7 @@
 
 .dayTabBar {
   display: flex;
-  gap: 2px;
+  gap: var(--space-xs);
   margin-top: var(--space-md);
   overflow-x: auto;
   scrollbar-width: none;
@@ -238,16 +258,24 @@
   display: none;
 }
 
-/* Secondary tab tier -- same pill family as MethodPicker.module.css's
-   .methodTab/.methodTabActive. Active state is the solid fill inversion:
-   underlines on pill-shaped controls are forbidden (owner decision
-   2026-07-20); the Nav's accent underline is for full-height bar items only. */
+/* Secondary tab tier (DESIGN-STANDARDS.md #2 Controls): same pill family as
+   MethodPicker.module.css's .methodTab/.methodTabActive, but visibly
+   lighter -- smaller padding than the primary tier, single line (short
+   weekday + short date inline, the date at --font-xs), and the date carries
+   no color of its own so it always matches the label's color, including
+   when active (see .dayTabCount below). Active state is the solid fill
+   inversion, same as the primary tier: underlines on pill-shaped controls
+   are forbidden (owner decision 2026-07-20); the Nav's accent underline is
+   for full-height bar items only. */
 .dayTab {
   position: relative;
   flex: 1;
   min-width: 0;
+  overflow: hidden;
   text-align: center;
-  padding: 7px 14px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: var(--space-xs) var(--space-sm);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-pill);
   background: var(--color-surface);
@@ -276,12 +304,19 @@
   border-color: var(--gray-900);
 }
 
+/* No `color` declared here on purpose -- it inherits from .dayTab, which is
+   how the date stays "the same color as the label" at rest AND flips to
+   pure white with it when active. This used to hardcode
+   --color-text-secondary, which won on the active pill too (a declared
+   color on a child always beats an inherited one), leaving dark-gray date
+   text on the solid black fill -- the worst single defect flagged in
+   review. Single-line layout: inline next to the day name, not stacked
+   under it. */
 .dayTabCount {
-  display: block;
+  display: inline;
+  margin-left: var(--space-xs);
   font-weight: 400;
   font-size: var(--font-xs);
-  color: var(--color-text-secondary);
-  margin-top: 2px;
 }
 
 .dAbbr,
@@ -346,14 +381,21 @@
   gap: var(--space-sm);
 }
 
+/* Card, data-row density (DESIGN-STANDARDS.md #3 Containers): --color-surface
+   background, 1px --color-border, --radius-md, padded --space-sm --space-md.
+   The isNext/isCanceled/isPast/isTooLate states below are the page's own
+   documented semantic exceptions (see the transport-next, color-delay, and
+   color-canceled-bg custom properties at the top of this file) and keep
+   their own background/border overrides for status, not the resting card
+   look. */
 .depItem {
   display: flex;
   align-items: center;
   gap: var(--space-lg);
-  padding: var(--space-md);
-  background: var(--gray-50);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-surface);
   border-radius: var(--radius-md);
-  border: 1px solid var(--color-surface-hover);
+  border: 1px solid var(--color-border);
 }
 
 .depItem.isPast {
@@ -420,16 +462,16 @@
   width: 3.2rem;
 }
 
+/* Primary datum (DESIGN-STANDARDS.md #1 Typography roles): font-base/700,
+   one size at every width -- this used to bump up to font-lg on desktop
+   only, the single element on the page inventing its own size. */
 .depTime {
-  font-size: var(--font-lg);
+  font-size: var(--font-base);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--color-text);
 }
 @media (max-width: 768px) {
-  .depTime {
-    font-size: var(--font-base);
-  }
   .depTimeCol {
     width: 2.8rem;
   }
@@ -476,7 +518,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  border: 1.5px solid var(--gray-50);
+  border: 1.5px solid var(--color-surface);
 }
 .rtDot.green {
   background: var(--color-success);

@@ -83,7 +83,7 @@
           "link": "/transport?route=dus-airport-essen",
           "link_label": "Live departure board (Airport to Essen)",
           "countries": [],
-          "notes": "See the live board above for realtime departures on the day."
+          "notes": null
         },
         {
           "title": "Cologne Bonn Airport (CGN)",

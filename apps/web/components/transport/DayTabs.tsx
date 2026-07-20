@@ -28,7 +28,13 @@ export default function DayTabs({ days, activeDay, onSelect }: DayTabsProps) {
       if (!el) return;
       const n = el.children.length;
       if (!n) return;
-      setCompact(el.clientWidth / n < 96);
+      // Threshold raised from 96 to 160 when the tabs went single-line
+      // (DESIGN-STANDARDS.md #2 Controls, "Fri 10/07" style): the old value
+      // was tuned for the two-line stacked layout (day name on its own row,
+      // date on the row below), where each row only needed to fit half the
+      // content. On one line, "Friday 10/07/2026" needs meaningfully more
+      // width per tab before it stops overflowing its pill.
+      setCompact(el.clientWidth / n < 160);
     }
 
     measure();
