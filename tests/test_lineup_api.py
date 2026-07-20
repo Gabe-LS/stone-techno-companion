@@ -88,6 +88,28 @@ class TestBiosCacheControl:
         assert r.headers["cache-control"] == "no-cache"
 
 
+class TestGettingThereStaticRoute:
+    """GET /getting-there.json -- served the same way as timetable-transport.json
+    (docs/getting-there-design.md section 5): a hand-maintained static file,
+    no-cache so an edit ships on the next request without a container rebuild.
+    """
+
+    def test_serves_file_with_no_cache_header(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(api, "STATIC_DIR", tmp_path)
+        (tmp_path / "getting-there.json").write_text(
+            '{"event_id": "stone-techno-2026", "methods": []}'
+        )
+        r = client.get("/getting-there.json")
+        assert r.status_code == 200
+        assert r.headers["cache-control"] == "no-cache"
+        assert r.json() == {"event_id": "stone-techno-2026", "methods": []}
+
+    def test_missing_file_is_404(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(api, "STATIC_DIR", tmp_path)
+        r = client.get("/getting-there.json")
+        assert r.status_code == 404
+
+
 class TestLineupDataApi:
     """GET /api/v1/events/{event_id}[/lineup|/timetable|/artists/{artist_id}].
 

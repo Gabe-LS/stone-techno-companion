@@ -1,0 +1,141 @@
+{
+  "event_id": "stone-techno-2026",
+  "methods": [
+    {
+      "id": "train",
+      "label": "Train",
+      "position": 1,
+      "items": [
+        {
+          "origin": "Cologne",
+          "summary": "Direct regional express (RE1) or a faster ICE, straight into Essen Hbf.",
+          "duration_hint": "~30-60 min direct, depending on the service",
+          "link": "https://www.bahn.de/",
+          "link_label": "Search on bahn.de",
+          "countries": ["DE"],
+          "notes": null
+        },
+        {
+          "origin": "Frankfurt",
+          "summary": "Frequent direct ICE service (around 20 a day) straight into Essen Hbf.",
+          "duration_hint": "~1h55 direct",
+          "link": "https://www.bahn.de/",
+          "link_label": "Search on bahn.de",
+          "countries": ["DE"],
+          "notes": null
+        },
+        {
+          "origin": "Hamburg",
+          "summary": "Frequent direct ICE service straight into Essen Hbf.",
+          "duration_hint": "~2h45 direct",
+          "link": "https://www.bahn.de/",
+          "link_label": "Search on bahn.de",
+          "countries": ["DE"],
+          "notes": null
+        },
+        {
+          "origin": "Berlin",
+          "summary": "Frequent direct ICE service straight into Essen Hbf.",
+          "duration_hint": "~3h45 direct",
+          "link": "https://www.bahn.de/",
+          "link_label": "Search on bahn.de",
+          "countries": ["DE"],
+          "notes": null
+        },
+        {
+          "origin": "Amsterdam",
+          "summary": "One direct NS International ICE a day; otherwise change in Cologne or Duisburg.",
+          "duration_hint": "~2h15 direct, ~3h with a change",
+          "link": "https://www.nsinternational.com/en/germany/train-essen",
+          "link_label": "Book via NS International",
+          "countries": ["NL"],
+          "notes": null
+        },
+        {
+          "origin": "Brussels",
+          "summary": "Occasional direct ICE through to Essen; otherwise change onto a regional/ICE service in Cologne, which has frequent onward connections.",
+          "duration_hint": "~3h10 direct, ~3h with a change",
+          "link": "https://www.bahn.de/",
+          "link_label": "Search on bahn.de",
+          "countries": ["BE"],
+          "notes": null
+        },
+        {
+          "origin": "Paris",
+          "summary": "Some Thalys/ICE services run through to Essen without a change; others require changing onto a regional/ICE service in Cologne.",
+          "duration_hint": "~5h-5h30, sometimes with a change in Cologne",
+          "link": "https://www.sncf-connect.com/",
+          "link_label": "Search on SNCF Connect",
+          "countries": ["FR"],
+          "notes": null
+        }
+      ]
+    },
+    {
+      "id": "plane",
+      "label": "Plane",
+      "position": 2,
+      "items": [
+        {
+          "title": "Düsseldorf Airport (DUS)",
+          "summary": "The primary airport for the festival, with the region's widest range of international connections. The airport has its own train station.",
+          "duration_hint": "~25-30 min by direct regional train to Essen Hbf",
+          "link": "/transport?route=dus-airport-essen",
+          "link_label": "Live departure board (Airport to Essen)",
+          "countries": [],
+          "notes": "See the live board above for realtime departures on the day."
+        },
+        {
+          "title": "Cologne Bonn Airport (CGN)",
+          "summary": "Secondary airport further south, worth checking for extra carriers or cheaper fares. It also has its own train station at the terminal.",
+          "duration_hint": "~15 min by S-Bahn to Cologne Hbf, then change for Essen",
+          "link": "https://www.bahn.de/",
+          "link_label": "Search on bahn.de",
+          "countries": [],
+          "notes": null
+        },
+        {
+          "title": "Dortmund Airport (DTM)",
+          "summary": "Smaller secondary airport, mainly budget carriers. No direct train at the airport itself.",
+          "duration_hint": "Shuttle bus to Dortmund Hbf, then change for Essen",
+          "link": "https://www.bahn.de/",
+          "link_label": "Search on bahn.de",
+          "countries": [],
+          "notes": null
+        }
+      ]
+    },
+    {
+      "id": "car",
+      "label": "Car",
+      "position": 3,
+      "items": [
+        {
+          "title": "UNESCO Welterbe Zollverein",
+          "summary": "Gelsenkirchener Strasse 181, 45309 Essen, Germany — use this address for GPS/navigation.",
+          "duration_hint": null,
+          "link": "https://www.google.com/maps/dir/?api=1&destination=Gelsenkirchener+Strasse+181%2C+45309+Essen%2C+Germany",
+          "link_label": "Open in Google Maps",
+          "countries": [],
+          "notes": "Free parking at lots A1, A2 and B2 near the Coal Mine site; the paid parking deck at the Coking Plant (Im Welterbe 11) is roughly EUR1.80/hour, EUR7.50/day."
+        }
+      ]
+    },
+    {
+      "id": "bus",
+      "label": "Bus",
+      "position": 4,
+      "items": [
+        {
+          "title": "FlixBus to Essen Hauptbahnhof",
+          "summary": "Long-distance coach network reaching Essen Hbf from cities across Europe, usually the cheapest option if you don't mind a longer ride.",
+          "duration_hint": null,
+          "link": "https://www.flixbus.com/bus/essen",
+          "link_label": "Search FlixBus routes",
+          "countries": [],
+          "notes": null
+        }
+      ]
+    }
+  ]
+}

@@ -1530,6 +1530,22 @@ async def serve_timetable_transport():
     raise HTTPException(404, "Not found")
 
 
+@app.get("/getting-there.json")
+async def serve_getting_there():
+    # Hand-maintained "Getting there" content for /transport (coarse,
+    # durable travel-method rows -- see docs/getting-there-design.md).
+    # no-cache so a content edit is picked up on the next request without a
+    # container rebuild, same convention as timetable-transport.json above.
+    file_path = STATIC_DIR / "getting-there.json"
+    if file_path.exists():
+        return FileResponse(
+            file_path,
+            media_type="application/json",
+            headers={"Cache-Control": "no-cache"},
+        )
+    raise HTTPException(404, "Not found")
+
+
 @app.get("/shared.css")
 async def serve_shared_css():
     file_path = STATIC_DIR / "shared.css"
