@@ -70,3 +70,45 @@ panel are visibly lighter, never the reverse.
 Every PR touching apps/web styling states which sections of this file it was checked
 against. Visual review happens on real screenshots at 390px and 1280px, both themes
 when theming lands, before a styling change is called done.
+
+`tests/web/css_standards_check.py` runs this automatically (wired into
+`.github/workflows/ci.yml`, pure file reading, no browser/dev-server needed): it
+fails a PR that introduces (a) a raw hex color outside `packages/design-tokens/tokens.css`
+and not within 20 lines of a `semantic-exception` marker comment, (b) a raw px value on
+`font-size`, `border-radius`, `padding*`, `margin*`, `gap`, or `top`/`right`/`bottom`/`left`/`inset`
+outside the `0`/`1px`/`2px` allowlist and not exception-marked, or (c) `text-decoration:
+underline` outside `components/ui/ExternalLink.module.css` and `components/Nav.module.css`.
+A value that is a genuine one-off (a legacy-parity literal, a decorative micro-nudge,
+an operator brand color) gets a `/* semantic-exception */` comment near its declaration
+instead of a token — see `components/transport/LiveBoard.module.css`'s NE2/next-departure
+block and `components/Nav.module.css`'s `.mobileLink` for the pattern. Everything else
+should resolve to a token from `packages/design-tokens/tokens.css`'s semantic component
+layer (below) before it is ever typed as a raw literal.
+
+## 7. Component inventory
+
+Every UI primitive lives in `apps/web/components/ui/`, each with its own `*.module.css`
+that consumes ONLY tokens from `packages/design-tokens/tokens.css` (primitives + the
+semantic component layer — control heights, button/pill/badge/focus-ring/icon-size/
+card/toast/input/overlay tokens, all documented inline in that file). **New UI code
+uses one of these primitives first.** If none fits, that is a standards change: extend
+this file and the token layer together (a new primitive without matching tokens, or a
+token with no consumer, is a smell) rather than inventing a one-off style in a page's
+own CSS module.
+
+| Primitive | When to use | Token group it consumes |
+|---|---|---|
+| `Button` | The app's one solid-fill in-page action (DESIGN-STANDARDS.md #2: "Locate me", expanders, future primary actions). Polymorphic: renders `<a>` when given `href` (an in-page control styled as a button because it never leaves the site), else `<button>`. | `--btn-*` |
+| `IconButton` | A single-glyph control with a proper round hit target (never a bare icon that only recolors on hover) — e.g. the transport direction-swap arrow. | `--icon-btn-*`, `--focus-ring-*` |
+| `Pill` | A tab/picker control, `tier="primary"` (page-level method/section pickers) or `tier="secondary"` (in-panel day/period pickers, lighter padding). Active state is always the solid fill inversion — pills are never underlined (owner decision 2026-07-20). | `--pill-*` |
+| `Badge` | A numbered count chip, hidden entirely at zero (returns `null`, never renders "0"). Declares no `position` — the consumer places it via `className` (see `Nav.module.css`'s `.badgePosition`). Not for always-visible text status labels (e.g. transport's "Canceled" tag) — those stay page-local, reusing `--badge-radius`/`--badge-font-size` where the look matches without adopting the hide-at-zero counter semantics. | `--badge-*` |
+| `Toast` | The app-wide notification style (CLAUDE.md "Conventions": word-based duration, balanced text, max 360px). Style only for now — no page fires one yet; the timing/dismiss behavior is wired up by the first caller. | `--toast-*` |
+| `ExternalLink` | Any link that leaves the site: underlined, `--color-text`, always with the external-link icon, always `target="_blank" rel="noopener noreferrer"`. The only underlined style in the app besides the Nav bar's own accent-underline active state (`components/Nav.module.css`, a distinct, Nav-only convention — DESIGN-STANDARDS.md #2). | `--color-text`, `--icon-size-sm`, `--focus-ring-*` |
+
+Tokens with no primitive consumer yet, predicted from `docs/parity/lineup.md` /
+`docs/parity/timetable.md` / the chat sections of `CLAUDE.md` (control heights,
+card densities, input, overlay/scrim, divider, icon-size-md): these apply directly
+in page/feature CSS modules today (e.g. `--card-*` in `LiveBoard.module.css`'s
+`.depItem`, `--overlay-bg` in `Nav.module.css`'s `.overlay`) and graduate to a
+dedicated primitive (`Card`, `Input`, action-sheet) only once a second real
+consumer needs the same behavior, not preemptively.
