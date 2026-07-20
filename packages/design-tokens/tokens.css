@@ -1,0 +1,94 @@
+/*
+ * Design tokens shared between the legacy render.py/chat.html world and the
+ * Next.js front end (apps/web). Ported from services/companion/static/shared.css.
+ *
+ * Variable NAMES are kept identical to shared.css on purpose: both worlds stay
+ * in sync during the Stage 3 migration (docs/roadmap.md section 3.3). If a
+ * value changes here, port the same change back to shared.css until render.py
+ * is retired, and vice versa.
+ *
+ * This file ports only the :root custom properties. Component/utility CSS
+ * (the .cmd-bar, .hamburger, .toast rules etc. in shared.css) is NOT ported
+ * here — it belongs to the render.py-generated pages. The Next.js port builds
+ * its own components against these tokens.
+ */
+
+:root {
+  /* Gray scale — WCAG AA/AAA compliant on white */
+  --gray-900: #111827;
+  --gray-800: #1f2937;
+  --gray-700: #374151;
+  --gray-500: #6b7280;
+  --gray-400: #9ca3af;
+  --gray-200: #e5e7eb;
+  --gray-100: #f3f4f6;
+  --gray-50: #f9fafb;
+
+  /* Semantic colors */
+  --color-text: var(--gray-900);
+  --color-text-secondary: var(--gray-700);
+  --color-muted: var(--gray-500);
+  --color-muted-icon: #888;
+  --color-disabled: var(--gray-400);
+  --color-border: var(--gray-200);
+  --color-surface: var(--gray-100);
+  --color-surface-hover: var(--gray-200);
+  --color-bg: #fff;
+  --color-accent: #b91c1c;
+  --color-success: #047857;
+
+  /* Font */
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+
+  /* Font scale — em-based, 16px browser default */
+  --font-2xl: 2rem;
+  --font-xl: 1.5rem;
+  --font-lg: 1.125rem;
+  --font-base: 1rem;
+  --font-sm: 0.875rem;
+  --font-xs: 0.75rem;
+  --font-2xs: 0.69rem;
+
+  /* Spacing scale — 4px base */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+
+  /* Border radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
+  --shadow-md: 0 2px 8px rgba(0,0,0,0.12);
+  --shadow-lg: 0 4px 16px rgba(0,0,0,0.16);
+  --shadow-modal: 0 8px 24px rgba(0,0,0,0.12);
+
+  /* Transitions */
+  --transition-fast: 0.15s;
+
+  /* Z-index scale */
+  --z-sticky: 10;
+  --z-header: 40;
+  --z-menu-overlay: 47;
+  --z-menu: 49;
+  --z-modal: 100;
+  --z-popup: 200;
+  --z-toast: 300;
+
+  /* Layout */
+  --header-h: 48px;
+
+  /* Sticky-header fade */
+  --fade-gradient: linear-gradient(to bottom, rgba(255,255,255,1) 0%, rgba(255,255,255,0.9) 20%, rgba(255,255,255,0.75) 35%, rgba(255,255,255,0.5) 55%, rgba(255,255,255,0.15) 78%, rgba(255,255,255,0) 100%);
+}
+
+/* Mobile header height override — matches shared.css's @media (max-width: 767px) rule */
+@media (max-width: 767px) {
+  :root { --header-h: 54px; }
+}
