@@ -29,7 +29,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r services/companion/requirements.txt
-          pip install pytest
+          pip install pytest pytest-asyncio
 
       # test_notifications.py is excluded: it drives real push/notification
       # flows and needs a Playwright + headless Chromium setup that isn't
