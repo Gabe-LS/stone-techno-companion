@@ -5,16 +5,20 @@
 }
 
 html {
-  /* Reserve the scrollbar track permanently so the layout does not shift
-     when a page becomes tall enough to scroll. */
-  scrollbar-gutter: stable;
+  /* The document (not the body) must be the one scroll container:
+     overflow-y: scroll renders the track permanently, so page width is
+     identical on short and long pages (no layout shift) and full-bleed
+     bars end at a real scrollbar instead of a blank strip. overflow-x
+     uses clip, not hidden: hidden would silently turn the element into
+     a scroll container of its own. */
+  overflow-y: scroll;
+  overflow-x: clip;
+  height: 100%;
 }
 
-html,
 body {
-  height: 100%;
-  max-width: 100vw;
-  overflow-x: hidden;
+  min-height: 100%;
+  overflow-x: clip;
 }
 
 body {
