@@ -4,7 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import styles from "./MethodPicker.module.css";
 import LiveBoard from "./LiveBoard";
-import { BusIcon, CarIcon, ChevronDownIcon, ExternalLinkIcon, PinIcon, PlaneIcon, TrainIcon, TransitIcon } from "./icons";
+import { BusIcon, CarIcon, ChevronDownIcon, PinIcon, PlaneIcon, TrainIcon, TransitIcon } from "./icons";
+import Pill from "../ui/Pill";
+import Button from "../ui/Button";
+import ExternalLink from "../ui/ExternalLink";
 import { dbg, setDbgTag } from "../../lib/debug";
 import {
   LOCAL_TRANSIT_METHOD_ID,
@@ -85,18 +88,24 @@ function ItemLink({ item }: { item: GettingThereItem }) {
   if (internal) {
     // No item in current data links internally except the DUS row, which is
     // handled separately (expand-inline, not a link) -- kept for parity
-    // with any future internal getting-there link.
+    // with any future internal getting-there link. Internal navigation
+    // never leaves the site, so it renders as a Button (DESIGN-STANDARDS.md
+    // #2: "if it stays on the page, it looks like a button"), not the
+    // underlined ExternalLink style.
     return (
-      <a href={item.link} className={styles.itemLink} onClick={onLinkClick}>
-        {item.link_label}
-      </a>
+      <span className={styles.itemLinkWrap}>
+        <Button href={item.link} onClick={onLinkClick}>
+          {item.link_label}
+        </Button>
+      </span>
     );
   }
   return (
-    <a href={item.link} className={styles.itemLink} target="_blank" rel="noopener noreferrer" onClick={onLinkClick}>
-      {item.link_label}
-      <ExternalLinkIcon />
-    </a>
+    <span className={styles.itemLinkWrap}>
+      <ExternalLink href={item.link} onClick={onLinkClick}>
+        {item.link_label}
+      </ExternalLink>
+    </span>
   );
 }
 
@@ -159,8 +168,7 @@ function PlanePanel({
             {item.notes && <p className={styles.itemNotes}>{item.notes}</p>}
             {expandable ? (
               <>
-                <button
-                  type="button"
+                <Button
                   className={styles.expandBtn}
                   aria-expanded={dusExpanded}
                   onClick={onDusToggle}
@@ -169,7 +177,7 @@ function PlanePanel({
                   <span className={`${styles.chevron} ${dusExpanded ? styles.chevronOpen : ""}`}>
                     <ChevronDownIcon />
                   </span>
-                </button>
+                </Button>
                 {dusExpanded && (
                   <div className={styles.embeddedBoard}>
                     <LiveBoard
@@ -365,17 +373,17 @@ export default function MethodPicker({
       {(gtData || gtLoadError) && (
         <div className={styles.methodTabs} role="tablist" aria-label="Transport method">
           {tabs.map((tab) => (
-            <button
+            <Pill
               key={tab.id}
-              type="button"
+              tier="primary"
               role="tab"
               aria-selected={tab.id === resolvedMethodId}
-              className={`${styles.methodTab} ${tab.id === resolvedMethodId ? styles.methodTabActive : ""}`}
+              active={tab.id === resolvedMethodId}
               onClick={() => onMethodClick(tab.id)}
             >
               {methodIcon(tab.id)}
               {tab.label}
-            </button>
+            </Pill>
           ))}
         </div>
       )}

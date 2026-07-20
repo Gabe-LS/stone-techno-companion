@@ -6,6 +6,8 @@ import styles from "./LiveBoard.module.css";
 import DayTabs from "./DayTabs";
 import DepartureList from "./DepartureList";
 import { ArrowRightIcon, DirectionSwapIcon } from "./icons";
+import Button from "../ui/Button";
+import IconButton from "../ui/IconButton";
 import { dbg } from "../../lib/debug";
 import {
   buildRows,
@@ -409,23 +411,18 @@ export default function LiveBoard({ route, initialDirection, dateOverride, timeO
               {view ? view.route.to : "Essen Hbf"}
             </span>
             {showReverse && (
-              <button
-                type="button"
-                className={styles.dirToggleBtn}
-                aria-label="Show the opposite direction"
-                onClick={toggleDirection}
-              >
+              <IconButton className={styles.dirToggle} ariaLabel="Show the opposite direction" onClick={toggleDirection}>
                 <DirectionSwapIcon />
-              </button>
+              </IconButton>
             )}
           </div>
         </div>
 
         <div className={styles.locationBanner}>
           <span className={styles.locationText}>{bannerText}</span>
-          <button type="button" onClick={onLocateClick} disabled={locateDisabled}>
+          <Button className={styles.locateBtn} onClick={onLocateClick} disabled={locateDisabled}>
             {locateLabel}
-          </button>
+          </Button>
         </div>
 
         <DayTabs days={days} activeDay={activeDay} onSelect={onTabClick} />

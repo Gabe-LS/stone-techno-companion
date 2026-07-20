@@ -21,6 +21,12 @@
  * choice is now made one level up, by the method tab bar
  * (MethodPicker.module.css) -- and an .embedded variant was added for the
  * nested-inside-a-card usage.
+ *
+ * The "Locate me" button and the direction-swap icon button now render
+ * through the shared UI primitives (components/ui/Button,
+ * components/ui/IconButton) instead of page-local rules -- only the
+ * page-specific layout wrappers (.locateBtn, .dirToggle) remain here. See
+ * DESIGN-STANDARDS.md "Component inventory".
  */
 
 .page {
@@ -32,9 +38,13 @@
      other method tabs. */
   padding: 0 0 var(--space-xl);
 
-  /* Semantic exceptions kept page-local, same as the legacy page's own CSS
-     comment: the blue "upcoming departure" highlight and the NE2 operator's
-     brand yellow-on-charcoal. docs/parity/transport.md #216. */
+  /* semantic-exception: page-local color tokens kept off the shared
+     tokens.css on purpose, same as the legacy page's own CSS comment: the
+     blue "upcoming departure" highlight and the NE2 operator's brand
+     yellow-on-charcoal. docs/parity/transport.md #216. Neither is a
+     reusable app-wide decision (they're specific transit-operator/brand
+     colors), so they stay page-local rather than joining the shared
+     semantic layer. */
   --color-ne2-bg: #2d2d2d;
   --color-ne2-text: #f5c518;
   --transport-next-bg: #f0f7ff;
@@ -42,7 +52,7 @@
   --transport-next-text: #1d4ed8;
   --color-delay: var(--color-accent);
   --color-canceled-bg: #fef2f2;
-  /* RE/S line-badge brand colors -- same "semantic exception" bucket as the
+  /* RE/S line-badge brand colors -- same semantic-exception bucket as the
      NE2 pair above, moved here for one place of ownership instead of two
      bare hex literals down in .l-re/.l-s. */
   --color-re-bg: #b5179e;
@@ -120,8 +130,12 @@
   font-size: var(--font-lg);
   font-weight: 600;
   padding: var(--space-md) 0 var(--space-sm);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: var(--divider-width) solid var(--divider-color);
 }
+/* semantic-exception: `6px` is an intentional sub-space-scale mobile
+   tightening of the bottom padding (--space-sm/8px reads as a hair too
+   loose once the row wraps at this width) -- a one-off visual nudge, not a
+   spacing-scale decision. */
 @media (max-width: 768px) {
   .routeTitle {
     padding: var(--space-sm) 0 6px;
@@ -146,42 +160,14 @@
   width: auto;
 }
 
-/* Proper icon button (DESIGN-STANDARDS.md #2 Controls): a round hit target
-   with the same hover/focus semantics as every other control on the page,
-   not a bare glyph that only changes color. */
-.dirToggleBtn {
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  border-radius: var(--radius-pill);
-  padding: 6px;
+/* Wraps the IconButton primitive for the direction-swap control: only the
+   page-specific left margin (spacing it from the route title text) and the
+   icon's own em-relative sizing/alignment, both intrinsic to this one
+   arrow glyph rather than reusable IconButton chrome. */
+.dirToggle {
   margin-left: 2px;
-  cursor: pointer;
-  color: var(--color-text-secondary);
-  display: flex;
-  align-items: center;
-  font-size: inherit;
-  transition: background var(--transition-fast), color var(--transition-fast);
-  -webkit-tap-highlight-color: transparent;
 }
-.dirToggleBtn:active {
-  color: var(--color-text);
-  background: var(--color-surface-hover);
-}
-.dirToggleBtn:focus:not(:focus-visible) {
-  outline: none;
-}
-.dirToggleBtn:focus-visible {
-  outline: 1px solid var(--color-text);
-  outline-offset: 2px;
-}
-@media (hover: hover) {
-  .dirToggleBtn:hover {
-    color: var(--color-text);
-    background: var(--color-surface-hover);
-  }
-}
-.dirToggleBtn svg {
+.dirToggle svg {
   height: 0.42em;
   width: auto;
   display: block;
@@ -193,10 +179,10 @@
    This is an info strip, so it takes the data-row density (--space-sm
    --space-md), not the content-card density. */
 .locationBanner {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-sm) var(--space-md);
+  background: var(--card-bg);
+  border: var(--card-border-width) solid var(--card-border-color);
+  border-radius: var(--card-radius);
+  padding: var(--card-padding-data-y) var(--card-padding-data-x);
   margin-top: var(--space-md);
   font-size: var(--font-sm);
   color: var(--color-text);
@@ -205,38 +191,13 @@
   gap: var(--space-sm);
 }
 
-.locationBanner button {
-  background: var(--gray-900);
-  color: #fff;
-  border: none;
-  border-radius: var(--radius-pill);
-  padding: 7px 16px;
+/* Wraps the Button primitive: only page-specific layout (a fixed min-width
+   so toggling "Locate me" -> "Update" never reflows the row, per the
+   pre-existing comment below) -- everything else (fill, radius, hover,
+   focus, disabled) comes from components/ui/Button. */
+.locateBtn {
   min-width: 102px; /* width of "Locate me" so toggling to "Update" doesn't shift layout */
-  font-size: var(--font-sm);
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
   flex-shrink: 0;
-  -webkit-tap-highlight-color: transparent;
-}
-.locationBanner button:disabled {
-  opacity: 0.7;
-  cursor: default;
-}
-.locationBanner button:active {
-  opacity: 0.8;
-}
-.locationBanner button:focus:not(:focus-visible) {
-  outline: none;
-}
-.locationBanner button:focus-visible {
-  outline: 1px solid var(--gray-900);
-  outline-offset: 2px;
-}
-@media (hover: hover) {
-  .locationBanner button:not(:disabled):hover {
-    background: var(--gray-800);
-  }
 }
 
 .locationText {
@@ -257,60 +218,14 @@
   display: none;
 }
 
-/* Secondary tab tier (DESIGN-STANDARDS.md #2 Controls): same pill family as
-   MethodPicker.module.css's .methodTab/.methodTabActive, but visibly
-   lighter -- smaller padding than the primary tier, single line (short
-   weekday + short date inline, the date at --font-xs), and the date carries
-   no color of its own so it always matches the label's color, including
-   when active (see .dayTabCount below). Active state is the solid fill
-   inversion, same as the primary tier: underlines on pill-shaped controls
-   are forbidden (owner decision 2026-07-20); the Nav's accent underline is
-   for full-height bar items only. */
-.dayTab {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-align: center;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  padding: var(--space-xs) var(--space-sm);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-pill);
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
-  font-size: var(--font-sm);
-  font-weight: 600;
-  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-.dayTab:focus:not(:focus-visible) {
-  outline: none;
-}
-.dayTab:focus-visible {
-  outline: 1px solid var(--color-text);
-  outline-offset: 2px;
-}
-@media (hover: hover) {
-  .dayTab:hover:not(.active) {
-    background: var(--color-surface-hover);
-  }
-}
-.dayTab.active {
-  background: var(--gray-900);
-  color: #fff;
-  border-color: var(--gray-900);
-}
-
-/* No `color` declared here on purpose -- it inherits from .dayTab, which is
-   how the date stays "the same color as the label" at rest AND flips to
-   pure white with it when active. This used to hardcode
-   --color-text-secondary, which won on the active pill too (a declared
-   color on a child always beats an inherited one), leaving dark-gray date
-   text on the solid black fill -- the worst single defect flagged in
-   review. Single-line layout: inline next to the day name, not stacked
-   under it. */
+/* No `color` declared here on purpose -- it inherits from the Pill
+   primitive's own color (secondary tier), which is how the date stays "the
+   same color as the label" at rest AND flips to pure white with it when
+   active. This used to hardcode --color-text-secondary, which won on the
+   active pill too (a declared color on a child always beats an inherited
+   one), leaving dark-gray date text on the solid black fill -- the worst
+   single defect flagged in review. Single-line layout: inline next to the
+   day name, not stacked under it. */
 .dayTabCount {
   display: inline;
   margin-left: var(--space-xs);
@@ -353,6 +268,10 @@
   height: 6px;
   border-radius: 50%;
   background: var(--color-success);
+  /* semantic-exception: `2s` is a decorative animation duration, a
+     different role than --transition-fast (which is for state-change
+     transitions like hover/focus, not a looping pulse) -- not a value on
+     any shared timing scale. */
   animation: pulse 2s ease-in-out infinite;
 }
 
@@ -391,10 +310,10 @@
   display: flex;
   align-items: center;
   gap: var(--space-lg);
-  padding: var(--space-sm) var(--space-md);
-  background: var(--color-surface);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
+  padding: var(--card-padding-data-y) var(--card-padding-data-x);
+  background: var(--card-bg);
+  border-radius: var(--card-radius);
+  border: var(--card-border-width) solid var(--card-border-color);
 }
 
 .depItem.isPast {
@@ -491,11 +410,11 @@
   flex-shrink: 0;
   position: relative;
   background: var(--gray-700);
-  color: #fff;
+  color: var(--color-on-dark);
 }
 .l-107 {
   background: var(--gray-900);
-  color: #fff;
+  color: var(--color-on-dark);
 }
 .l-NE2 {
   background: var(--color-ne2-bg);
@@ -503,13 +422,17 @@
 }
 .l-re {
   background: var(--color-re-bg);
-  color: #fff;
+  color: var(--color-on-dark);
 }
 .l-s {
   background: var(--color-s-bg);
-  color: #fff;
+  color: var(--color-on-dark);
 }
 
+/* semantic-exception: this small realtime-status dot's geometry (8px
+   diameter, -3px corner offset, 1.5px ring) is a one-off decorative
+   indicator local to the line badge, not a reusable size/spacing
+   decision. */
 .rtDot {
   position: absolute;
   bottom: -3px;
@@ -550,14 +473,16 @@
   font-size: var(--font-xs);
   font-weight: 700;
   padding: 1px var(--space-xs);
-  /* Same shape as the app's other status badge, Nav.module.css's .badge
-     (unread count) -- .lineBadge below is a distinct route-number-tile
-     sub-type and deliberately keeps its own radius-sm shape. */
-  border-radius: var(--radius-pill);
+  /* Same shape as the app's Badge primitive (components/ui/Badge) --
+     .lineBadge above is a distinct route-number-tile sub-type and
+     deliberately keeps its own radius-sm shape, so this stays a page-local
+     rule rather than reusing the Badge component (Badge is a hide-at-zero
+     numeric counter; this is an always-visible text status label). */
+  border-radius: var(--badge-radius);
   white-space: nowrap;
   width: fit-content;
   background: var(--color-accent);
-  color: #fff;
+  color: var(--color-on-dark);
 }
 
 .depRight {

@@ -10,6 +10,13 @@
  * almost unchanged; only the section-collapse styles are gone (there's
  * nothing to collapse now -- the picker IS the page) and a few rules were
  * added for the DUS expand toggle and its embedded board.
+ *
+ * The method tab bar and the "expand"/external-link controls now render
+ * through the shared UI primitives (components/ui/Pill, Button,
+ * ExternalLink) instead of page-local .methodTab/.expandBtn/.itemLink
+ * rules -- those rules are deleted from this file; only page-specific
+ * layout (the tab row's flex-wrap, the item card's own fields) remains
+ * here. See DESIGN-STANDARDS.md "Component inventory".
  */
 
 .page {
@@ -40,50 +47,6 @@
   gap: var(--space-sm);
 }
 
-.methodTab {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-pill);
-  padding: var(--space-sm) var(--space-md);
-  font-size: var(--font-sm);
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
-  -webkit-tap-highlight-color: transparent;
-}
-.methodTab svg {
-  width: 16px;
-  height: 16px;
-  display: block;
-}
-.methodTab:focus:not(:focus-visible) {
-  outline: none;
-}
-.methodTab:focus-visible {
-  outline: 1px solid var(--color-text);
-  outline-offset: 2px;
-}
-@media (hover: hover) {
-  .methodTab:hover:not(.methodTabActive) {
-    background: var(--color-surface-hover);
-  }
-}
-/* Active state for PILL-shaped tabs is a solid fill inversion, never an
-   underline (owner decision 2026-07-20: underlines on pills look wrong).
-   The Nav's accent underline applies only to its full-height bar items.
-   Day tabs (LiveBoard.module.css .dayTab.active) use the same fill. */
-.methodTabActive {
-  background: var(--gray-900);
-  color: #fff;
-  border-color: var(--gray-900);
-}
-
 .panel {
   margin-top: var(--space-lg);
 }
@@ -104,11 +67,11 @@
    country-boosted row without a second background tone -- every card here
    shares the one --color-surface fill. */
 .item {
-  border: 1px solid var(--color-border);
-  border-left: 3px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  padding: var(--space-lg);
+  border: var(--card-border-width) solid var(--card-border-color);
+  border-left: var(--accent-bar-width) solid var(--card-border-color);
+  border-radius: var(--card-radius);
+  background: var(--card-bg);
+  padding: var(--card-padding-content);
 }
 
 .itemBoosted {
@@ -149,78 +112,18 @@
 }
 
 .itemNotes {
-  margin-top: 4px;
+  margin-top: var(--space-xs);
   font-size: var(--font-xs);
   /* Same tertiary-text tier as LiveBoard's .depWalk/.depCountdown/.depArrLabel/
      .depSub -- was var(--color-muted), the odd one out. */
   color: var(--color-text-secondary);
 }
 
-.itemLink {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: var(--space-sm);
-  font-size: var(--font-sm);
-  font-weight: 600;
-  color: var(--color-text);
-  text-decoration: none;
-  border-bottom: 1px solid var(--color-text);
-}
-.itemLink svg {
-  /* Matches .chevron svg below -- both are inline icons next to font-sm
-     link-style text. */
-  width: 14px;
-  height: 14px;
-  display: block;
-}
-.itemLink:focus:not(:focus-visible) {
-  outline: none;
-}
-.itemLink:focus-visible {
-  outline: 1px solid var(--color-text);
-  outline-offset: 2px;
-}
-@media (hover: hover) {
-  .itemLink:hover {
-    color: var(--color-text-secondary);
-    border-color: var(--color-text-secondary);
-  }
-}
-
-/* Button (DESIGN-STANDARDS.md #2 Controls): solid --gray-900 pill, white
-   text, --font-sm 600 -- the same style as LiveBoard.module.css's "Locate
-   me" (.locationBanner button), the page's reference Button. This used to
-   be styled as an underlined link, which the standard reserves exclusively
-   for controls that leave the site; an in-page expander must look like a
-   button even though it (like a link) reveals more content, hence the
-   chevron for that affordance instead of underline styling. */
+/* Wraps the Button primitive for the DUS expand toggle: only page-specific
+   layout (top margin separating it from the summary/notes text above) --
+   the button's own look comes entirely from components/ui/Button. */
 .expandBtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
   margin-top: var(--space-sm);
-  background: var(--gray-900);
-  color: #fff;
-  border: none;
-  border-radius: var(--radius-pill);
-  padding: 7px 16px;
-  font-size: var(--font-sm);
-  font-weight: 600;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-.expandBtn:focus:not(:focus-visible) {
-  outline: none;
-}
-.expandBtn:focus-visible {
-  outline: 1px solid var(--gray-900);
-  outline-offset: 2px;
-}
-@media (hover: hover) {
-  .expandBtn:hover {
-    background: var(--gray-800);
-  }
 }
 
 .chevron {
@@ -228,12 +131,19 @@
   transition: transform var(--transition-fast);
 }
 .chevron svg {
-  width: 14px;
-  height: 14px;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
   display: block;
 }
 .chevronOpen {
   transform: rotate(180deg);
+}
+
+/* Wraps the ExternalLink / internal Button-as-link primitive: only the
+   page-specific top margin, same reasoning as .expandBtn above. */
+.itemLinkWrap {
+  margin-top: var(--space-sm);
+  display: inline-block;
 }
 
 .embeddedBoard {

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import styles from "./LiveBoard.module.css";
+import Pill from "../ui/Pill";
 import { shortDate, slashDate } from "../../lib/transport/logic";
 import type { TransportDay } from "../../lib/transport/types";
 
@@ -53,10 +54,10 @@ export default function DayTabs({ days, activeDay, onSelect }: DayTabsProps) {
         const dateSlash = slashDate(d.date);
         const dateShort = shortDate(d.date);
         return (
-          <button
+          <Pill
             key={d.date}
-            type="button"
-            className={`${styles.dayTab} ${i === activeDay ? styles.active : ""}`}
+            tier="secondary"
+            active={i === activeDay}
             onClick={(e) => onSelect(i, e.currentTarget.textContent?.trim() ?? d.day)}
           >
             <span>
@@ -67,7 +68,7 @@ export default function DayTabs({ days, activeDay, onSelect }: DayTabsProps) {
               <span className={styles.dtFull}>{dateSlash}</span>
               <span className={styles.dtAbbr}>{dateShort}</span>
             </span>
-          </button>
+          </Pill>
         );
       })}
     </div>
