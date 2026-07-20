@@ -87,3 +87,30 @@ export interface WalkResponse {
   distanceM: number;
   durationS: number;
 }
+
+// --- "Getting there" (services/companion/static/getting-there.json) -------
+// Shape mirrors docs/getting-there-design.md section 2 exactly. Coarse,
+// hand-maintained travel-method content, unrelated to the live boards above.
+
+export interface GettingThereItem {
+  origin?: string;
+  title?: string;
+  summary: string;
+  duration_hint?: string | null;
+  link: string;
+  link_label: string;
+  countries?: string[];
+  notes?: string | null;
+}
+
+export interface GettingThereMethod {
+  id: string; // free text: "train" | "plane" | "car" | "bus" | ... -- not an enum, see design doc section 3
+  label: string;
+  position: number;
+  items: GettingThereItem[];
+}
+
+export interface GettingThereData {
+  event_id: string;
+  methods: GettingThereMethod[];
+}

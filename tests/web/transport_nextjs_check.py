@@ -179,6 +179,84 @@ def main():
         live_updated_visible = page.get_by_text("Updated", exact=False).first
         check("LIVE indicator: 'Updated ...' timestamp visible after fetch", live_updated_visible.count() > 0)
 
+        # --- "Getting there" section (docs/getting-there-design.md) -------
+
+        page.goto(f"{BASE_URL}/transport?route=zollverein-essen", wait_until="networkidle")
+        page.wait_for_selector("text=Getting there", timeout=8000)
+        page.wait_for_timeout(300)  # let the client-side getting-there.json fetch settle
+
+        tab_texts = [t for t in page.eval_on_selector_all(
+            "button",
+            "els => els.map(e => e.textContent?.trim())",
+        ) if t in ("Train", "Plane", "Car", "Bus")]
+        check(
+            "Getting there: renders exactly the methods present in the data (Train/Plane/Car/Bus)",
+            set(tab_texts) == {"Train", "Plane", "Car", "Bus"},
+            tab_texts,
+        )
+
+        # Default active method is "train" (lowest `position` in the JSON);
+        # its first (unboosted, en-US locale default) row is Cologne, the
+        # data file's own first train entry.
+        first_item_name = page.locator("li", has_text="Direct regional express").first
+        check("Getting there: Train panel shows Cologne as a row", first_item_name.count() > 0)
+
+        nsi_link = page.get_by_role("link", name="Book via NS International")
+        check(
+            "Getting there: Amsterdam row links to NS International with the expected href",
+            nsi_link.get_attribute("href") == "https://www.nsinternational.com/en/germany/train-essen",
+            nsi_link.get_attribute("href"),
+        )
+        check(
+            "Getting there: external link opens in a new tab with rel=noopener noreferrer",
+            nsi_link.get_attribute("target") == "_blank" and "noopener" in (nsi_link.get_attribute("rel") or ""),
+            (nsi_link.get_attribute("target"), nsi_link.get_attribute("rel")),
+        )
+
+        page.get_by_role("button", name="Plane", exact=False).click()
+        page.wait_for_timeout(150)
+        dus_link = page.get_by_role("link", name="Live departure board (Airport to Essen)")
+        check(
+            "Getting there: DUS row deep-links to the live airport board route",
+            dus_link.get_attribute("href") == "/transport?route=dus-airport-essen",
+            dus_link.get_attribute("href"),
+        )
+
+        collapse_btn = page.get_by_role("button", name="Getting there")
+        check("Getting there: section starts expanded on desktop", collapse_btn.get_attribute("aria-expanded") == "true")
+        collapse_btn.click()
+        page.wait_for_timeout(150)
+        check("Getting there: header click collapses the section", collapse_btn.get_attribute("aria-expanded") == "false")
+        check("Getting there: collapsed section hides the method tabs", page.get_by_role("button", name="Train", exact=True).count() == 0)
+
+        # --- Language-based ordering boost (docs/getting-there-design.md #7) ---
+
+        ctx_nl = browser.new_context(locale="nl-NL")
+        page_nl = ctx_nl.new_page()
+        page_nl.goto(f"{BASE_URL}/transport?route=zollverein-essen", wait_until="networkidle")
+        page_nl.wait_for_selector("text=Getting there", timeout=8000)
+        page_nl.wait_for_timeout(400)
+        first_row_nl = page_nl.locator('[class*="itemName"]').first
+        check(
+            "Getting there: nl-NL locale boosts Amsterdam to the top of the Train panel",
+            first_row_nl.inner_text() == "Amsterdam",
+            first_row_nl.inner_text(),
+        )
+        ctx_nl.close()
+
+        ctx_us = browser.new_context(locale="en-US")
+        page_us = ctx_us.new_page()
+        page_us.goto(f"{BASE_URL}/transport?route=zollverein-essen", wait_until="networkidle")
+        page_us.wait_for_selector("text=Getting there", timeout=8000)
+        page_us.wait_for_timeout(400)
+        first_row_us = page_us.locator('[class*="itemName"]').first
+        check(
+            "Getting there: en-US locale applies no boost (Cologne, the data file's own first row, stays first)",
+            first_row_us.inner_text() == "Cologne",
+            first_row_us.inner_text(),
+        )
+        ctx_us.close()
+
         browser.close()
 
     print()

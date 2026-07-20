@@ -1,0 +1,184 @@
+/*
+ * "Getting there" section (docs/getting-there-design.md). Sits below the
+ * live departure boards on /transport, sharing the page's design tokens
+ * (packages/design-tokens/tokens.css) -- kept in its own module rather than
+ * TransportBoard.module.css since it's a self-contained, data-driven block
+ * with no coupling to the live-board realtime state.
+ */
+
+.section {
+  margin-top: var(--space-2xl);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--color-border);
+}
+
+.headerBtn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  color: var(--color-text);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.heading {
+  font-size: var(--font-xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+@media (max-width: 768px) {
+  .heading {
+    font-size: var(--font-lg);
+  }
+}
+
+.chevron {
+  flex-shrink: 0;
+  color: var(--color-muted);
+  transition: transform var(--transition-fast);
+}
+.chevron svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+.headerBtn[aria-expanded="true"] .chevron {
+  transform: rotate(180deg);
+}
+
+.body {
+  margin-top: var(--space-md);
+}
+
+.methodTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.methodTab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: 7px 14px;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+  -webkit-tap-highlight-color: transparent;
+}
+.methodTab svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+@media (hover: hover) {
+  .methodTab:hover:not(.methodTabActive) {
+    background: var(--color-surface-hover);
+  }
+}
+.methodTabActive {
+  background: var(--gray-900);
+  color: #fff;
+  border-color: var(--gray-900);
+}
+
+.items {
+  list-style: none;
+  margin: var(--space-md) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.item {
+  border: 1px solid var(--color-surface-hover);
+  border-left: 3px solid var(--color-surface-hover);
+  border-radius: var(--radius-md);
+  background: var(--gray-50);
+  padding: var(--space-md);
+}
+
+.itemBoosted {
+  border-left-color: var(--gray-900);
+  background: var(--color-surface);
+}
+
+.itemTop {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.itemName {
+  font-size: var(--font-base);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.itemDuration {
+  font-size: var(--font-xs);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.itemSummary {
+  margin-top: 2px;
+  font-size: var(--font-sm);
+  color: var(--color-text-secondary);
+}
+
+.itemNotes {
+  margin-top: 4px;
+  font-size: var(--font-xs);
+  color: var(--color-muted);
+}
+
+.itemLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: var(--space-sm);
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--color-text);
+  text-decoration: none;
+  border-bottom: 1px solid var(--color-text);
+}
+.itemLink svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+}
+@media (hover: hover) {
+  .itemLink:hover {
+    color: var(--color-muted);
+    border-color: var(--color-muted);
+  }
+}
+
+.emptyState {
+  color: var(--color-text-secondary);
+  font-size: var(--font-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .section * {
+    transition: none !important;
+  }
+}

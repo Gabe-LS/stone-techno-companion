@@ -7,6 +7,7 @@
 
 import type {
   Direction,
+  GettingThereItem,
   RealtimeEntry,
   RouteKey,
   TimetableData,
@@ -333,4 +334,65 @@ export function shortDate(date: string): string {
     .split("/")
     .slice(0, 2)
     .join("/");
+}
+
+// --- "Getting there" personalization (docs/getting-there-design.md #7) -----
+
+// A handful of common language tags ship with no region subtag at all
+// (bare "de" rather than "de-DE"). Covers the languages of the cities
+// currently in getting-there.json; anything else falls through to "no boost"
+// rather than guessing.
+const LANGUAGE_COUNTRY_FALLBACK: Record<string, string> = {
+  de: "DE",
+  fr: "FR",
+  nl: "NL",
+  it: "IT",
+  es: "ES",
+};
+
+/**
+ * Infers a visitor's likely country from a BCP-47 language tag (typically
+ * `navigator.language`), for the "Getting there" ordering boost only. A
+ * deliberately weak, zero-backend v1 heuristic -- see design doc section 7
+ * for why this is acceptable and what the documented future upgrade is.
+ * Returns null when nothing can be inferred (never guesses).
+ */
+export function inferCountryFromLanguage(languageTag: string | null | undefined): string | null {
+  if (!languageTag) return null;
+  const parts = languageTag.split("-");
+  if (parts.length >= 2) {
+    const region = parts[1].toUpperCase();
+    // Region subtags are 2-letter country codes or 3-digit UN M49 area
+    // codes; only the former is usable as an ISO 3166-1 alpha-2 boost.
+    if (/^[A-Z]{2}$/.test(region)) return region;
+  }
+  const lang = parts[0].toLowerCase();
+  return LANGUAGE_COUNTRY_FALLBACK[lang] ?? null;
+}
+
+/**
+ * Stable-sorts a method's items so any row whose `countries` includes the
+ * visitor's inferred country comes first; ties keep their original (data
+ * file) order. Returns a NEW array (pure, no mutation) with a parallel
+ * boolean array marking which entries were boosted, for the highlight.
+ */
+export function sortItemsByCountryBoost<T extends GettingThereItem>(
+  items: T[],
+  visitorCountry: string | null,
+): Array<{ item: T; boosted: boolean }> {
+  const decorated = items.map((item, index) => ({
+    item,
+    index,
+    boosted: Boolean(visitorCountry && item.countries?.includes(visitorCountry)),
+  }));
+  decorated.sort((a, b) => {
+    if (a.boosted !== b.boosted) return a.boosted ? -1 : 1;
+    return a.index - b.index;
+  });
+  return decorated.map(({ item, boosted }) => ({ item, boosted }));
+}
+
+/** Display name for an item: `origin` takes precedence over `title` (#2). */
+export function gettingThereItemName(item: GettingThereItem): string {
+  return item.origin ?? item.title ?? "";
 }

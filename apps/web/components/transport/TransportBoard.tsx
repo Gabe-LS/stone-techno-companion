@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import styles from "./TransportBoard.module.css";
 import DayTabs from "./DayTabs";
 import DepartureList from "./DepartureList";
+import GettingThere from "./GettingThere";
 import { ArrowRightIcon, DirectionSwapIcon, NavArrowIcon } from "./icons";
 import { dbg, setDbgTag } from "../../lib/debug";
 import {
@@ -477,6 +478,8 @@ export default function TransportBoard({
           />
         ) : null}
       </div>
+
+      <GettingThere />
     </div>
   );
 }

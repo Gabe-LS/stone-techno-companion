@@ -36,6 +36,94 @@ export function NavArrowIcon() {
   );
 }
 
+// --- "Getting there" method icons (docs/getting-there-design.md #3) -------
+// Simple line icons keyed by getting-there.json's method `id`. An
+// unrecognized id falls back to PinIcon rather than failing to render, so a
+// new method never needs an icon before it can show up.
+
+export function TrainIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="5" y="3" width="14" height="13" rx="4" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M5 11h14" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M8 20l-2 2M16 20l2 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <circle cx="8.5" cy="13.2" r="0.9" fill="currentColor" />
+      <circle cx="15.5" cy="13.2" r="0.9" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function PlaneIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M21 15.5v-2l-8-5V4.5a1.5 1.5 0 0 0-3 0v4l-8 5v2l8-2.5V17l-2.5 1.8V20l3.5-1 3.5 1v-1.2L13 17v-3.5l8 2.5z" />
+    </svg>
+  );
+}
+
+export function CarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4.5 16v-2.2l1.7-4.3A2 2 0 0 1 8.1 8.2h7.8a2 2 0 0 1 1.9 1.3l1.7 4.3V16"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <rect x="3.5" y="16" width="17" height="3.4" rx="1.4" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="7.5" cy="19.4" r="1.3" fill="currentColor" />
+      <circle cx="16.5" cy="19.4" r="1.3" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function BusIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="4" y="4" width="16" height="12.5" rx="2.2" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M4 10.5h16" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="8" cy="19" r="1.3" fill="currentColor" />
+      <circle cx="16" cy="19" r="1.3" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function PinIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 21s-6.5-6.1-6.5-11A6.5 6.5 0 0 1 18.5 10c0 4.9-6.5 11-6.5 11z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="10" r="2.2" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  );
+}
+
+export function ExternalLinkIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M9 6H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3M14 4h6v6M20 4l-9.5 9.5"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function ChevronDownIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function DirectionSwapIcon() {
   return (
     <svg viewBox="5.25 3.25 13.5 17.5" fill="currentColor" aria-hidden="true">
