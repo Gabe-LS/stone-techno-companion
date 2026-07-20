@@ -86,9 +86,174 @@
 
   /* Sticky-header fade */
   --fade-gradient: linear-gradient(to bottom, rgba(255,255,255,1) 0%, rgba(255,255,255,0.9) 20%, rgba(255,255,255,0.75) 35%, rgba(255,255,255,0.5) 55%, rgba(255,255,255,0.15) 78%, rgba(255,255,255,0) 100%);
+
+  /* --- New primitives (apps/web design system extension, 2026-07-20) -----
+     These two are genuinely new raw values with no existing primitive to
+     derive from — every other value below is a var() reference. Both are
+     ported 1:1 from values already hardcoded identically in multiple
+     places (services/companion/static/shared.css's dark-surface text color
+     and .menu-overlay.open background; apps/web's own Nav.module.css and
+     LiveBoard.module.css before this pass), so this only gives an existing,
+     repeated raw value a name — it does not introduce a new visual. */
+  --color-on-dark: #fff;
+  --overlay-scrim: rgba(0, 0, 0, 0.3);
 }
 
 /* Mobile header height override — matches shared.css's @media (max-width: 767px) rule */
 @media (max-width: 767px) {
   :root { --header-h: 54px; }
 }
+
+/*
+ * ===== SEMANTIC COMPONENT LAYER (apps/web only) =====
+ *
+ * Everything below is consumed by apps/web/components/ui/* and by the
+ * app's own page/feature CSS modules. Legacy render.py/chat.html do NOT
+ * read this block (their component CSS lives entirely in
+ * services/companion/static/shared.css and render.py's inline <style>) —
+ * unlike the primitives above, these names are NOT ported back there.
+ *
+ * Every value derives from a primitive above via var(), EXCEPT the ones
+ * called out in the comments as new raw values — each of those is
+ * documented at its declaration with why no primitive fit and what
+ * existing (often duplicated) literal it replaces.
+ *
+ * See apps/web/DESIGN-STANDARDS.md "Component inventory" for which UI
+ * primitive consumes which group of tokens.
+ */
+:root {
+  /* --- Control heights --- */
+  /* Compact controls (icon buttons, chips): lands exactly on the existing
+     4px spacing scale, so no new value. */
+  --control-h-sm: var(--space-2xl); /* 32px */
+  /* Standard controls (buttons, tab rows, list rows): NEW raw value — 40px
+     is not on the 4/8/12/16/24/32 spacing scale, but it is not invented
+     here either. It matches services/companion/static/shared.css's own
+     documented dd-option/chat member-row height ("40px" is named in that
+     file's comments), so this names an already-established control height
+     rather than picking a new one. */
+  --control-h-md: 40px;
+
+  /* --- Accent bars (left-edge "boosted/active" indicator strips) --- */
+  /* NEW raw value: 3px. Before this pass, Nav.module.css's
+     .mobileLinkActive and MethodPicker.module.css's .itemBoosted each
+     hardcoded an identical, unrelated "3px" left-border independently —
+     this names the pattern once so a third use doesn't reinvent it. */
+  --accent-bar-width: 3px;
+
+  /* --- Button (solid dark reference style; DESIGN-STANDARDS.md #2) --- */
+  --btn-bg: var(--gray-900);
+  --btn-text: var(--color-on-dark);
+  --btn-hover-bg: var(--gray-800);
+  --btn-active-opacity: 0.8; /* matched the pre-existing LiveBoard "Locate me" :active rule */
+  --btn-disabled-opacity: 0.7; /* matched the pre-existing LiveBoard "Locate me" :disabled rule */
+  --btn-radius: var(--radius-pill);
+  /* NEW raw value: 7px. Not on the spacing scale (would round to 8px), but
+     it was already the exact, identical vertical padding independently
+     hardcoded on both LiveBoard's "Locate me" button and MethodPicker's
+     "expand" button — naming it, not inventing it. */
+  --btn-padding-y: 7px;
+  --btn-padding-x: var(--space-lg);
+  --btn-font-size: var(--font-sm);
+  --btn-font-weight: 600;
+  /* NEW raw value: 6px, icon-to-label gap. Matches the pre-existing,
+     independently-duplicated gap in MethodPicker's .methodTab and
+     .expandBtn. */
+  --btn-gap: 6px;
+
+  /* --- IconButton (round hit target for a single glyph) --- */
+  --icon-btn-padding: 6px; /* matches the pre-existing LiveBoard .dirToggleBtn padding */
+  --icon-btn-radius: var(--radius-pill);
+  --icon-btn-color: var(--color-text-secondary);
+  --icon-btn-hover-color: var(--color-text);
+  --icon-btn-hover-bg: var(--color-surface-hover);
+  --icon-btn-active-bg: var(--color-surface-hover);
+
+  /* --- Pill / tab (two tiers; DESIGN-STANDARDS.md #2) --- */
+  --pill-bg: var(--color-surface);
+  --pill-color: var(--color-text-secondary);
+  --pill-border: var(--color-border);
+  --pill-radius: var(--radius-pill);
+  --pill-hover-bg: var(--color-surface-hover);
+  --pill-active-bg: var(--gray-900);
+  --pill-active-color: var(--color-on-dark);
+  /* Primary tier (page-level method/section pickers): heavier padding, one line. */
+  --pill-primary-padding-y: var(--space-sm);
+  --pill-primary-padding-x: var(--space-md);
+  --pill-primary-font-size: var(--font-sm);
+  /* Secondary tier (in-panel day/period pickers): lighter padding than primary. */
+  --pill-secondary-padding-y: var(--space-xs);
+  --pill-secondary-padding-x: var(--space-sm);
+  --pill-secondary-font-size: var(--font-sm);
+
+  /* --- Badge (numbered, hidden at zero; DESIGN-STANDARDS.md Nav badge) --- */
+  --badge-size: 18px; /* matches the pre-existing Nav.module.css unread-count badge */
+  --badge-bg: var(--color-accent);
+  --badge-color: var(--color-on-dark);
+  --badge-font-size: var(--font-xs);
+  --badge-radius: var(--radius-pill);
+
+  /* --- Focus ring (one convention for every interactive element) --- */
+  --focus-ring-width: 1px;
+  --focus-ring-offset: 2px;
+  /* Color is deliberately NOT tokenized here: DESIGN-STANDARDS.md #2 calls
+     for "1px currentColor equivalent per component family" — a dark-surface
+     control (Nav, cmd-bar) rings in var(--color-on-dark), a light-surface
+     control rings in var(--color-text); each component's own CSS sets the
+     `outline-color`, only width/offset are shared. */
+
+  /* --- Icon sizes --- */
+  --icon-size-sm: 14px; /* matches the pre-existing chevron / itemLink svg size */
+  --icon-size-md: 16px; /* matches the pre-existing methodTab svg size */
+
+  /* --- Divider --- */
+  --divider-color: var(--color-border);
+  --divider-width: 1px;
+
+  /* --- Card (two densities; DESIGN-STANDARDS.md #3) --- */
+  --card-bg: var(--color-surface);
+  --card-border-color: var(--color-border);
+  --card-border-width: 1px;
+  --card-radius: var(--radius-md);
+  --card-padding-content: var(--space-lg); /* content-card density */
+  --card-padding-data-y: var(--space-sm); /* data-row density */
+  --card-padding-data-x: var(--space-md);
+
+  /* --- Toast / notification (app-wide style; matches CLAUDE.md's toast
+     behavior description — style only here, the word-based duration timing
+     is a JS behavior added when the Toast primitive is wired up) --- */
+  --toast-bg: var(--gray-900);
+  --toast-color: var(--color-on-dark);
+  --toast-radius: var(--radius-pill);
+  --toast-shadow: var(--shadow-lg);
+  --toast-max-width: min(360px, 90vw); /* matches shared.css's .toast exactly */
+  --toast-padding-y: var(--space-md);
+  --toast-padding-x: var(--space-xl);
+  --toast-font-size: var(--font-sm);
+  --toast-bottom-offset: 80px; /* matches shared.css's .toast `bottom: 80px` exactly */
+
+  /* --- Input (predicted need: chat message box, sync PIN entry, forms) --- */
+  --input-bg: var(--color-bg);
+  --input-border-color: var(--color-border);
+  --input-border-width: 1px;
+  --input-radius: var(--radius-md);
+  --input-padding-y: var(--space-sm);
+  --input-padding-x: var(--space-md);
+  --input-focus-border-color: var(--color-text);
+
+  /* --- Overlay / scrim (menu backdrops, modal backdrops) --- */
+  --overlay-bg: var(--overlay-scrim);
+}
+
+/*
+ * z-scale review (2026-07-20): the primitive scale above --z-sticky(10) /
+ * --z-header(40) / --z-menu-overlay(47) / --z-menu(49) / --z-modal(100) /
+ * --z-popup(200) / --z-toast(300) — already covers every layer predicted
+ * from docs/parity/lineup.md + docs/parity/timetable.md + the chat section
+ * of CLAUDE.md: sticky grid/filter chrome, the header, the mobile nav
+ * overlay+panel, in-page dropdowns/action-sheets (z-modal tier — an action
+ * sheet is presented the same as a modal), popups (artist popup, meetup
+ * card popovers), and toast/notifications always on top. No new z tier is
+ * added; component CSS should reuse one of these seven rather than invent
+ * a number.
+ */
