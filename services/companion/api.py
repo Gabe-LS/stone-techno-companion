@@ -32,6 +32,12 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 UUID_RE = re.compile(r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$")
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{6,32}$")
 PIN_RE = re.compile(r"^\d{6}$")
+# Lineup data read API (docs/api/lineup-data-api.md): event/artist ids come
+# from the pipeline's lineup.db (services/data), not from this server, so they
+# are validated against a permissive, path-traversal-safe shape (no slashes
+# or dots) rather than a fixed format like UUID_RE.
+EVENT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+LINEUP_ARTIST_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
 
 _rate_limits: dict[str, list[tuple[float, str]]] = defaultdict(list)
 _rate_lock = threading.Lock()
@@ -43,6 +49,7 @@ RATE_LIMITS = {
     "sync_pin": (12, 3600),
     "push_subscribe": (30, 3600),
     "ics": (30, 60),
+    "lineup_data": (600, 3600),
 }
 
 _sync_pins: dict[str, tuple[str, float]] = {}
@@ -285,6 +292,11 @@ async def _prune_expired_sessions() -> None:
         except Exception:
             logger.exception("Failed to prune expired sessions")
 
+
+# Static JSON files emitted by services/data/scraper/lineup_api_json.py, served as-is
+# (hybrid strategy: pipeline generates, this app fronts with explicit routes +
+# Cache-Control: no-cache, mirroring /bios.json/manifest.json/etc below).
+LINEUP_API_DIR = STATIC_DIR / "api" / "v1"
 
 TIMETABLE_PATH = STATIC_DIR / "timetable.json"
 _timetable: dict | None = None
@@ -1386,6 +1398,54 @@ async def transport_walk(request: Request, lat: float, lng: float):
 async def public_transport_redirect():
     # Old URL of the transport page; permanent redirect keeps old links alive
     return RedirectResponse("/transport", status_code=301)
+
+
+def _serve_lineup_json(file_path: Path) -> FileResponse:
+    if file_path.exists():
+        return FileResponse(
+            file_path,
+            media_type="application/json",
+            headers={"Cache-Control": "no-cache"},
+        )
+    raise HTTPException(404, "Not found")
+
+
+@app.get("/api/v1/events/{event_id}")
+async def get_lineup_event(event_id: str, request: Request):
+    _check_rate(_get_client_ip(request), "lineup_data")
+    if not EVENT_ID_RE.match(event_id):
+        raise HTTPException(404, "Not found")
+    return _serve_lineup_json(LINEUP_API_DIR / "events" / f"{event_id}.json")
+
+
+@app.get("/api/v1/events/{event_id}/lineup")
+async def get_lineup_data(event_id: str, request: Request):
+    _check_rate(_get_client_ip(request), "lineup_data")
+    if not EVENT_ID_RE.match(event_id):
+        raise HTTPException(404, "Not found")
+    return _serve_lineup_json(LINEUP_API_DIR / "events" / event_id / "lineup.json")
+
+
+@app.get("/api/v1/events/{event_id}/timetable")
+async def get_lineup_timetable(event_id: str, request: Request):
+    _check_rate(_get_client_ip(request), "lineup_data")
+    if not EVENT_ID_RE.match(event_id):
+        raise HTTPException(404, "Not found")
+    return _serve_lineup_json(LINEUP_API_DIR / "events" / event_id / "timetable.json")
+
+
+@app.get("/api/v1/events/{event_id}/artists/{artist_id}")
+async def get_lineup_artist(event_id: str, artist_id: str, request: Request):
+    _check_rate(_get_client_ip(request), "lineup_data")
+    if not EVENT_ID_RE.match(event_id) or not LINEUP_ARTIST_ID_RE.match(artist_id):
+        raise HTTPException(404, "Not found")
+    # Artist detail is global data (same bio/links/sets regardless of which
+    # event's page asks for it, docs/api/lineup-data-api.md section 1), but
+    # the route is event-scoped, so an unknown event_id 404s here even though
+    # the artist file itself is not stored per-event.
+    if not (LINEUP_API_DIR / "events" / f"{event_id}.json").exists():
+        raise HTTPException(404, "Not found")
+    return _serve_lineup_json(LINEUP_API_DIR / "artists" / f"{artist_id}.json")
 
 
 @app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
