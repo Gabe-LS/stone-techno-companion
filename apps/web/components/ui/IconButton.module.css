@@ -1,0 +1,40 @@
+/*
+ * IconButton: a proper round hit target for a single glyph
+ * (DESIGN-STANDARDS.md #2) -- not a bare icon that only changes color on
+ * hover. Ported from the pre-existing LiveBoard.module.css .dirToggleBtn,
+ * generalized for reuse (the direction-swap arrow was its only caller).
+ */
+.iconButton {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: var(--icon-btn-radius);
+  padding: var(--icon-btn-padding);
+  color: var(--icon-btn-color);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  -webkit-tap-highlight-color: transparent;
+}
+.iconButton svg {
+  display: block;
+}
+.iconButton:active {
+  color: var(--icon-btn-hover-color);
+  background: var(--icon-btn-active-bg);
+}
+.iconButton:focus:not(:focus-visible) {
+  outline: none;
+}
+.iconButton:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-text);
+  outline-offset: var(--focus-ring-offset);
+}
+@media (hover: hover) {
+  .iconButton:hover {
+    color: var(--icon-btn-hover-color);
+    background: var(--icon-btn-hover-bg);
+  }
+}

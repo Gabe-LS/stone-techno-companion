@@ -1,0 +1,21 @@
+/*
+ * Badge: a numbered count chip, hidden entirely at zero (Badge.tsx returns
+ * null rather than rendering a "0"). Ported from Nav.module.css's
+ * unread-count badge. Deliberately has NO position rules -- placement
+ * (e.g. pinned to a parent button's corner) is the consumer's layout
+ * concern, applied via the `className` prop.
+ */
+.badge {
+  display: inline-block;
+  min-width: var(--badge-size);
+  height: var(--badge-size);
+  padding: 0 var(--space-xs);
+  border-radius: var(--badge-radius);
+  background: var(--badge-bg);
+  color: var(--badge-color);
+  font-size: var(--badge-font-size);
+  font-weight: 700;
+  line-height: var(--badge-size);
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+}

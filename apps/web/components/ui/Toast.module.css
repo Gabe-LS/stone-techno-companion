@@ -1,0 +1,30 @@
+/*
+ * Toast: the app-wide notification style described in CLAUDE.md ("word-
+ * based duration ... balanced text, max 360px"). This pass ports the
+ * VISUAL style only, matching shared.css's .toast/.toast.show pattern
+ * (fixed, bottom-centered, opacity fade); the word-based duration timer and
+ * show/hide triggering are wired up when a page first needs to fire a
+ * toast, per the task's "style only for now" scope.
+ */
+.toast {
+  position: fixed;
+  bottom: var(--toast-bottom-offset);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--toast-bg);
+  color: var(--toast-color);
+  padding: var(--toast-padding-y) var(--toast-padding-x);
+  border-radius: var(--toast-radius);
+  box-shadow: var(--toast-shadow);
+  font-size: var(--toast-font-size);
+  z-index: var(--z-toast);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  pointer-events: none;
+  max-width: var(--toast-max-width);
+  text-align: center;
+  text-wrap: balance;
+}
+.show {
+  opacity: 1;
+}

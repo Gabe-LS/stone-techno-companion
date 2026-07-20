@@ -1,0 +1,60 @@
+/*
+ * Pill (DESIGN-STANDARDS.md #2 Controls): two tiers, both the same solid
+ * fill-inversion active state, NEVER an underline (owner decision
+ * 2026-07-20). Primary = page-level method/section pickers (heavier
+ * padding, one line). Secondary = in-panel day/period pickers (lighter
+ * padding than primary, single line, flexes to fill its row).
+ */
+.pill {
+  position: relative;
+  border: 1px solid var(--pill-border);
+  border-radius: var(--pill-radius);
+  background: var(--pill-bg);
+  color: var(--pill-color);
+  font-family: var(--font-family);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+  -webkit-tap-highlight-color: transparent;
+}
+.pill:focus:not(:focus-visible) {
+  outline: none;
+}
+.pill:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-text);
+  outline-offset: var(--focus-ring-offset);
+}
+@media (hover: hover) {
+  .pill:not(.active):hover {
+    background: var(--pill-hover-bg);
+  }
+}
+.active {
+  background: var(--pill-active-bg);
+  color: var(--pill-active-color);
+  border-color: var(--pill-active-bg);
+}
+
+.primary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--btn-gap);
+  padding: var(--pill-primary-padding-y) var(--pill-primary-padding-x);
+  font-size: var(--pill-primary-font-size);
+}
+.primary svg {
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
+  display: block;
+}
+
+.secondary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  padding: var(--pill-secondary-padding-y) var(--pill-secondary-padding-x);
+  font-size: var(--pill-secondary-font-size);
+}

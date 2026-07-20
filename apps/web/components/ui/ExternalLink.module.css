@@ -1,0 +1,33 @@
+/*
+ * ExternalLink (DESIGN-STANDARDS.md #2): underlined, --color-text, ALWAYS
+ * with the external-link icon, rel="noopener noreferrer". "Nothing else may
+ * use this style" -- this is the only place in apps/web that sets
+ * text-decoration: underline (see tests/web/css_standards_check.py, which
+ * enforces exactly that).
+ */
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--color-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.link svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  display: block;
+  flex-shrink: 0;
+}
+.link:focus:not(:focus-visible) {
+  outline: none;
+}
+.link:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-text);
+  outline-offset: var(--focus-ring-offset);
+}
+@media (hover: hover) {
+  .link:hover {
+    color: var(--color-text-secondary);
+  }
+}

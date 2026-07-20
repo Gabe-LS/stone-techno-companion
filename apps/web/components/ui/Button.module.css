@@ -1,0 +1,55 @@
+/*
+ * Button (DESIGN-STANDARDS.md #2 Controls): solid --gray-900 pill, white
+ * text, --font-sm 600. "This is the only button style" -- every in-page
+ * action (Locate me, expanders, future primary actions) renders through
+ * this one component. Consumers needing extra layout (fixed min-width,
+ * flex-shrink, margins) pass their own className, merged alongside .button.
+ *
+ * Polymorphic: renders <a> when Button.tsx receives an `href` (an in-page
+ * navigation styled as a button, e.g. a future internal "getting there"
+ * link -- DESIGN-STANDARDS.md #2, "if it stays on the page, it looks like a
+ * button"), otherwise a <button type="button">.
+ */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--btn-gap);
+  background: var(--btn-bg);
+  color: var(--btn-text);
+  border: none;
+  border-radius: var(--btn-radius);
+  padding: var(--btn-padding-y) var(--btn-padding-x);
+  font-family: var(--font-family);
+  font-size: var(--btn-font-size);
+  font-weight: var(--btn-font-weight);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--transition-fast);
+}
+.button svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  display: block;
+}
+.button:active:not(:disabled) {
+  opacity: var(--btn-active-opacity);
+}
+.button:disabled {
+  opacity: var(--btn-disabled-opacity);
+  cursor: default;
+}
+.button:focus:not(:focus-visible) {
+  outline: none;
+}
+.button:focus-visible {
+  outline: var(--focus-ring-width) solid var(--btn-bg);
+  outline-offset: var(--focus-ring-offset);
+}
+@media (hover: hover) {
+  .button:not(:disabled):hover {
+    background: var(--btn-hover-bg);
+  }
+}
