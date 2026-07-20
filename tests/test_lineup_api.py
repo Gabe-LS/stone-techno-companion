@@ -14,7 +14,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "services" / "companion"))
+sys.path.insert(
+    0, str(Path(__file__).resolve().parent.parent / "services" / "companion")
+)
 
 import api  # noqa: E402
 
@@ -84,3 +86,129 @@ class TestBiosCacheControl:
         r = client.get("/bios.json")
         assert r.status_code == 200
         assert r.headers["cache-control"] == "no-cache"
+
+
+class TestLineupDataApi:
+    """GET /api/v1/events/{event_id}[/lineup|/timetable|/artists/{artist_id}].
+
+    Static JSON files served straight off disk (docs/api/lineup-data-api.md,
+    hybrid strategy). Point LINEUP_API_DIR at a scratch tree per test and
+    write only the fixture files each test needs.
+    """
+
+    EVENT_JSON = (
+        '{"id":"stone-techno-2026","name":"Stone Techno","short_name":"ST26",'
+        '"edition":"2026","timezone":"Europe/Berlin","start_date":null,'
+        '"end_date":null,"address":null,"website":null,'
+        '"source_url":"https://www.stone-techno.com/","latitude":null,"longitude":null}'
+    )
+    LINEUP_JSON = '{"event_id":"stone-techno-2026","days":[]}'
+    TIMETABLE_JSON = '{"event_id":"stone-techno-2026","floors":[],"days":[]}'
+    ARTIST_JSON = (
+        '{"id":"3fa85f64-5717-4562-b3fc-2c963f66afa6","name":"Test Artist",'
+        '"photo":"","bio_html":"","links":[],"sets":[]}'
+    )
+
+    def _seed(self, tmp_path, monkeypatch, event_id="stone-techno-2026"):
+        monkeypatch.setattr(api, "LINEUP_API_DIR", tmp_path)
+        events_dir = tmp_path / "events"
+        events_dir.mkdir(parents=True)
+        (events_dir / f"{event_id}.json").write_text(self.EVENT_JSON)
+        event_subdir = events_dir / event_id
+        event_subdir.mkdir()
+        (event_subdir / "lineup.json").write_text(self.LINEUP_JSON)
+        (event_subdir / "timetable.json").write_text(self.TIMETABLE_JSON)
+        artists_dir = tmp_path / "artists"
+        artists_dir.mkdir()
+        (artists_dir / "3fa85f64-5717-4562-b3fc-2c963f66afa6.json").write_text(
+            self.ARTIST_JSON
+        )
+
+    def test_event_unknown_is_404(self, tmp_path, monkeypatch):
+        self._seed(tmp_path, monkeypatch)
+        r = client.get("/api/v1/events/no-such-event")
+        assert r.status_code == 404
+
+    def test_event_found_shape_and_cache_header(self, tmp_path, monkeypatch):
+        self._seed(tmp_path, monkeypatch)
+        r = client.get("/api/v1/events/stone-techno-2026")
+        assert r.status_code == 200
+        assert r.headers["cache-control"] == "no-cache"
+        body = r.json()
+        assert body["id"] == "stone-techno-2026"
+        assert set(body.keys()) >= {"id", "name", "short_name", "edition", "timezone"}
+
+    def test_lineup_unknown_event_is_404(self, tmp_path, monkeypatch):
+        self._seed(tmp_path, monkeypatch)
+        r = client.get("/api/v1/events/no-such-event/lineup")
+        assert r.status_code == 404
+
+    def test_lineup_found_shape_and_cache_header(self, tmp_path, monkeypatch):
+        self._seed(tmp_path, monkeypatch)
+        r = client.get("/api/v1/events/stone-techno-2026/lineup")
+        assert r.status_code == 200
+        assert r.headers["cache-control"] == "no-cache"
+        body = r.json()
+        assert body["event_id"] == "stone-techno-2026"
+        assert "days" in body
+
+    def test_timetable_unknown_event_is_404(self, tmp_path, monkeypatch):
+        self._seed(tmp_path, monkeypatch)
+        r = client.get("/api/v1/events/no-such-event/timetable")
+        assert r.status_code == 404
+
+    def test_timetable_found_shape_and_cache_header(self, tmp_path, monkeypatch):
+        self._seed(tmp_path, monkeypatch)
+        r = client.get("/api/v1/events/stone-techno-2026/timetable")
+        assert r.status_code == 200
+        assert r.headers["cache-control"] == "no-cache"
+        body = r.json()
+        assert body["event_id"] == "stone-techno-2026"
+        assert "floors" in body and "days" in body
+
+    def test_timetable_missing_file_is_404(self, tmp_path, monkeypatch):
+        # An event with no timed schedule never gets a timetable.json written
+        # (generate_lineup_api_json only emits it when has_timetable=True).
+        self._seed(tmp_path, monkeypatch)
+        (tmp_path / "events" / "stone-techno-2026" / "timetable.json").unlink()
+        r = client.get("/api/v1/events/stone-techno-2026/timetable")
+        assert r.status_code == 404
+
+    def test_artist_unknown_event_is_404(self, tmp_path, monkeypatch):
+        self._seed(tmp_path, monkeypatch)
+        r = client.get(
+            "/api/v1/events/no-such-event/artists/3fa85f64-5717-4562-b3fc-2c963f66afa6"
+        )
+        assert r.status_code == 404
+
+    def test_artist_unknown_artist_is_404(self, tmp_path, monkeypatch):
+        self._seed(tmp_path, monkeypatch)
+        r = client.get("/api/v1/events/stone-techno-2026/artists/no-such-artist")
+        assert r.status_code == 404
+
+    def test_artist_found_shape_and_cache_header(self, tmp_path, monkeypatch):
+        self._seed(tmp_path, monkeypatch)
+        r = client.get(
+            "/api/v1/events/stone-techno-2026/artists/3fa85f64-5717-4562-b3fc-2c963f66afa6"
+        )
+        assert r.status_code == 200
+        assert r.headers["cache-control"] == "no-cache"
+        body = r.json()
+        assert body["id"] == "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+        assert set(body.keys()) >= {"id", "name", "photo", "bio_html", "links", "sets"}
+
+    def test_event_id_invalid_shape_is_404(self, tmp_path, monkeypatch):
+        # Fails EVENT_ID_RE (uppercase not allowed in the slug shape) --
+        # rejected before any filesystem lookup happens.
+        self._seed(tmp_path, monkeypatch)
+        r = client.get("/api/v1/events/Stone_Techno_2026")
+        assert r.status_code == 404
+
+    def test_rate_limited(self, tmp_path, monkeypatch):
+        self._seed(tmp_path, monkeypatch)
+        codes = [
+            client.get("/api/v1/events/stone-techno-2026").status_code
+            for _ in range(601)
+        ]
+        assert codes[0] == 200
+        assert codes[-1] == 429

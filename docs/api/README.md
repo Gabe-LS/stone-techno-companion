@@ -41,10 +41,11 @@ against `UUID_RE` (422) and rate-limits (30 req/60s); `GET /bios.json` now sets
   gets its own OpenAPI contract only when chat itself is ported to Next.js.
 - **WebSocket endpoints**: not representable in OpenAPI, see the appendix below for
   the two WS surfaces that exist today.
-- **The future lineup-data read API**: a new JSON API over artists/schedule/stages
-  /events (replacing today's `lineup.html`/`bios.json`/`timetable.json` side-file
-  convention) is being designed in parallel in `docs/api/lineup-data-api.md`. It is a
-  separate contract, not part of this file.
+- **The lineup-data read API**: a JSON API over artists/schedule/stages/events
+  (additive to, not a replacement of, today's `lineup.html`/`bios.json`/
+  `timetable.json`), designed in `docs/api/lineup-data-api.md` and implemented per
+  its own contract, `docs/api/lineup-data-openapi.yaml`. Separate contract, not
+  part of this file.
 
 ## Contract-first rule
 
