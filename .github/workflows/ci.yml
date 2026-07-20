@@ -44,3 +44,12 @@ jobs:
       # collection never picks them up.
       - name: Run core test suite
         run: python -m pytest tests/ -q --ignore=tests/test_notifications.py
+
+      # Pure file-reading enforcement of apps/web/DESIGN-STANDARDS.md (raw
+      # hex colors, raw px on design-scale properties, stray underline
+      # usage) -- no browser or dev server needed, so it runs unconditionally
+      # here alongside the Playwright-based tests/web/transport_nextjs_check.py
+      # (which does need a live dev server + backend and is run separately,
+      # outside CI, same as the other standalone Playwright scripts above).
+      - name: Check apps/web CSS design-token standards
+        run: python tests/web/css_standards_check.py
