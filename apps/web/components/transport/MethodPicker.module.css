@@ -42,6 +42,7 @@
 }
 
 .methodTab {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -62,15 +63,36 @@
   height: 16px;
   display: block;
 }
+.methodTab:focus:not(:focus-visible) {
+  outline: none;
+}
+.methodTab:focus-visible {
+  outline: 1px solid var(--color-text);
+  outline-offset: 2px;
+}
 @media (hover: hover) {
   .methodTab:hover:not(.methodTabActive) {
     background: var(--color-surface-hover);
   }
 }
+/* Unified active-state convention with Nav.module.css's .navLinkActive: an
+   accent underline below the control (same 2px height/color/mechanism),
+   not an inverted fill. Day tabs (LiveBoard.module.css .dayTab.active) use
+   the identical ::after so both tab tiers read as one family. */
 .methodTabActive {
-  background: var(--gray-900);
-  color: #fff;
-  border-color: var(--gray-900);
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+.methodTabActive::after {
+  content: "";
+  position: absolute;
+  left: var(--space-md);
+  right: var(--space-md);
+  bottom: -1px;
+  height: 2px;
+  background: var(--color-accent);
+  border-radius: var(--radius-sm);
 }
 
 .panel {
@@ -129,7 +151,9 @@
 .itemNotes {
   margin-top: 4px;
   font-size: var(--font-xs);
-  color: var(--color-muted);
+  /* Same tertiary-text tier as LiveBoard's .depWalk/.depCountdown/.depArrLabel/
+     .depSub -- was var(--color-muted), the odd one out. */
+  color: var(--color-text-secondary);
 }
 
 .itemLink {
@@ -144,9 +168,18 @@
   border-bottom: 1px solid var(--color-text);
 }
 .itemLink svg {
-  width: 13px;
-  height: 13px;
+  /* Matches .chevron svg below -- both are inline icons next to font-sm
+     link-style text. */
+  width: 14px;
+  height: 14px;
   display: block;
+}
+.itemLink:focus:not(:focus-visible) {
+  outline: none;
+}
+.itemLink:focus-visible {
+  outline: 1px solid var(--color-text);
+  outline-offset: 2px;
 }
 @media (hover: hover) {
   .itemLink:hover {
@@ -173,6 +206,13 @@
   cursor: pointer;
   border-bottom: 1px solid var(--color-text);
   -webkit-tap-highlight-color: transparent;
+}
+.expandBtn:focus:not(:focus-visible) {
+  outline: none;
+}
+.expandBtn:focus-visible {
+  outline: 1px solid var(--color-text);
+  outline-offset: 2px;
 }
 @media (hover: hover) {
   .expandBtn:hover {
@@ -201,7 +241,11 @@
   border-top: 1px solid var(--color-border);
 }
 
+/* Same treatment as LiveBoard.module.css's .emptyState -- one no-data
+   message style across both curated rows and the live board. */
 .emptyState {
+  text-align: center;
+  padding: var(--space-xl) var(--space-lg);
   color: var(--color-text-secondary);
   font-size: var(--font-sm);
 }
