@@ -1,0 +1,22 @@
+.page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: var(--space-2xl) var(--space-lg);
+}
+
+.title {
+  font-size: var(--font-2xl);
+  margin: 0 0 var(--space-md);
+  color: var(--color-text);
+}
+
+.body {
+  font-size: var(--font-base);
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--space-md);
+}
+
+.note {
+  font-size: var(--font-sm);
+  color: var(--color-muted);
+}
