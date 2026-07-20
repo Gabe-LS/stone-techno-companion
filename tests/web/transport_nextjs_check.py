@@ -2,6 +2,14 @@
 Standalone Playwright verification for the Next.js /transport port
 (apps/web/app/transport/page.tsx + components/transport/*).
 
+Covers the unified method-picker layout (docs/getting-there-design.md,
+"Decision: unified method layout"): ONE top-level tab bar (Train | Plane |
+Car | Bus | Local transit) replaces the old two-section page (live boards on
+top, a separate collapsible "Getting there" section below). Train/Car/Bus
+render curated rows; Plane renders curated rows with the Duesseldorf airport
+row expanding inline into the live airport board; Local transit renders the
+live tram board full-panel, unchanged in behavior.
+
 Not part of the pytest suite (the Next.js app has no pytest integration);
 run directly, same convention as tests/transport_*_check.py for the legacy
 page. Must run OUTSIDE the command sandbox (headless Chromium needs Mach-port
@@ -15,6 +23,14 @@ Prerequisites (both already running, this script does not start them):
     NODE_EXTRA_CA_CERTS="$(mkcert -CAROOT)/rootCA.pem" set so the dev
     server's /timetable-transport.json and /api/transport/* rewrites can
     reach the backend over its mkcert-signed HTTPS cert.
+
+The festival window (docs/getting-there-design.md smart-default rule) is
+derived from timetable-transport.json's own day dates -- currently
+08.07.2026 (the day before the first day present, 09.07.2026) through
+12.07.2026 inclusive. The checks below use ?date=/&time= overrides to probe
+both sides of that window deterministically, plus one live check against the
+real wall clock (today, outside the window, so smart-default-picks-Train is
+directly observable without any override).
 
 Usage:
   STC_WEB_BASE_URL=http://localhost:3100 python tests/web/transport_nextjs_check.py
@@ -40,8 +56,23 @@ def check(label, condition, detail=""):
         print(f"FAIL {label}  {detail}")
 
 
-def route_title_text(page):
-    return page.locator("main").inner_text()
+def active_tab_label(page):
+    el = page.locator('[role="tab"][aria-selected="true"]')
+    return el.first.inner_text().strip() if el.count() > 0 else None
+
+
+def board_text(page):
+    """Text of the live board's route-title span, if a board is mounted.
+
+    Scoped to [class*="routeTitleMain"] rather than a generic "div with
+    Essen Hbf" filter: in the unified layout, outer ancestor divs (the page
+    wrapper, the panel) also contain "Essen Hbf" text (the h1 "Transport" or
+    a curated Plane row's summary mentioning "Essen Hbf"), so a broad
+    has_text filter's .first no longer reliably lands on the board's own
+    title.
+    """
+    loc = page.locator('[class*="routeTitleMain"]')
+    return loc.first.inner_text() if loc.count() > 0 else ""
 
 
 def main():
@@ -49,39 +80,146 @@ def main():
         browser = p.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": 1280, "height": 900})
 
-        # --- Section 1: the four routes + legacy alias -----------------
+        # --- Section 1: route slugs select the right method tab -----------
 
-        cases = [
-            ("", "Zollverein", "Essen Hbf"),
-            ("?route=zollverein-essen", "Zollverein", "Essen Hbf"),
-            ("?route=essen-zollverein", "Essen Hbf", "Zollverein"),
-            ("?route=dus-airport-essen", None, "Essen Hbf"),  # from = Düsseldorf airport stop name
-            ("?route=essen-dus-airport", "Essen Hbf", None),
-            ("?route=duesseldorf", None, "Essen Hbf"),  # legacy alias == dus-airport-essen
-            ("?route=bogus", "Zollverein", "Essen Hbf"),  # unknown slug falls back to default
+        route_cases = [
+            ("?route=zollverein-essen", "Local transit", "Zollverein", "Essen Hbf"),
+            ("?route=essen-zollverein", "Local transit", "Essen Hbf", "Zollverein"),
+            ("?route=dus-airport-essen", "Plane", None, "Essen Hbf"),
+            ("?route=essen-dus-airport", "Plane", "Essen Hbf", None),
+            ("?route=duesseldorf", "Plane", None, "Essen Hbf"),  # legacy alias == dus-airport-essen
         ]
-
-        for qs, expect_from, expect_to in cases:
+        for qs, expect_tab, expect_from, expect_to in route_cases:
             page.goto(f"{BASE_URL}/transport{qs}", wait_until="networkidle")
-            page.wait_for_selector("li", state="attached", timeout=8000)
-            text = page.locator("div").filter(has_text="Essen Hbf").first.inner_text()
-            title = page.title()
+            page.wait_for_selector('[role="tab"][aria-selected="true"]', timeout=8000)
+            page.wait_for_timeout(200)
+            tab = active_tab_label(page)
+            check(f"route {qs} selects the {expect_tab} tab", tab == expect_tab, tab)
+            text = board_text(page)
             ok = True
-            detail = f"title={title!r}"
             if expect_from:
                 ok = ok and expect_from in text.split("\n")[0]
             if expect_to:
                 ok = ok and expect_to in text
-            check(f"route {qs or '(bare)'} renders expected title", ok, detail)
+            check(f"route {qs} renders the expected board title", ok, text)
 
         # dus-airport-essen and its legacy alias must render identically
         page.goto(f"{BASE_URL}/transport?route=dus-airport-essen", wait_until="networkidle")
+        page.wait_for_timeout(300)
         title_a = page.title()
         page.goto(f"{BASE_URL}/transport?route=duesseldorf", wait_until="networkidle")
+        page.wait_for_timeout(300)
         title_b = page.title()
         check("legacy alias 'duesseldorf' matches 'dus-airport-essen'", title_a == title_b, f"{title_a!r} vs {title_b!r}")
 
-        # --- Section 6: day tabs ------------------------------------------
+        # Plane tab's Duesseldorf row starts expanded when reached via a route slug
+        page.goto(f"{BASE_URL}/transport?route=dus-airport-essen", wait_until="networkidle")
+        page.wait_for_timeout(300)
+        dus_toggle = page.get_by_role("button", name="Live departure board (Airport to Essen)")
+        check(
+            "route=dus-airport-essen: airport row is pre-expanded (aria-expanded=true)",
+            dus_toggle.get_attribute("aria-expanded") == "true",
+            dus_toggle.get_attribute("aria-expanded"),
+        )
+        check("route=dus-airport-essen: live board departure rows are visible", page.locator("li").count() > 0)
+
+        # --- Smart default: outside the festival window (real wall clock) -
+
+        page.goto(f"{BASE_URL}/transport", wait_until="networkidle")
+        page.wait_for_selector('[role="tab"][aria-selected="true"]', timeout=8000)
+        page.wait_for_timeout(300)
+        tab = active_tab_label(page)
+        check(
+            "smart default: bare /transport today (outside the festival window) opens Train",
+            tab == "Train",
+            tab,
+        )
+
+        # An unrecognized ?route= is treated exactly like no param at all
+        # (docs/parity/transport.md #26) -- it too falls through to the
+        # smart default, not to a hardcoded board.
+        page.goto(f"{BASE_URL}/transport?route=bogus", wait_until="networkidle")
+        page.wait_for_selector('[role="tab"][aria-selected="true"]', timeout=8000)
+        page.wait_for_timeout(300)
+        tab = active_tab_label(page)
+        check("smart default: unrecognized ?route= falls back like no param (opens Train today)", tab == "Train", tab)
+
+        # --- Smart default: inside the festival window (date override) ----
+
+        page.goto(f"{BASE_URL}/transport?date=10.07.2026&time=14:00", wait_until="networkidle")
+        page.wait_for_selector('[role="tab"][aria-selected="true"]', timeout=8000)
+        page.wait_for_timeout(300)
+        tab = active_tab_label(page)
+        check(
+            "smart default: a festival-window date (10.07.2026) opens Local transit",
+            tab == "Local transit",
+            tab,
+        )
+        check("smart default in-window: live board is mounted", "Essen Hbf" in board_text(page))
+
+        # --- ?method= is shareable, and reload restores it -----------------
+
+        for method_id, expect_tab, expect_marker in [
+            ("train", "Train", "Cologne"),
+            ("car", "Car", "UNESCO Welterbe Zollverein"),
+            ("bus", "Bus", "FlixBus"),
+            ("local-transit", "Local transit", "Essen Hbf"),
+        ]:
+            page.goto(f"{BASE_URL}/transport?method={method_id}", wait_until="networkidle")
+            page.wait_for_selector('[role="tab"][aria-selected="true"]', timeout=8000)
+            page.wait_for_timeout(300)
+            tab = active_tab_label(page)
+            check(f"?method={method_id} selects the {expect_tab} tab", tab == expect_tab, tab)
+            check(f"?method={method_id} panel shows expected content", expect_marker in page.locator("main").inner_text())
+
+        # route slug wins over ?method= when both are present
+        page.goto(f"{BASE_URL}/transport?route=zollverein-essen&method=train", wait_until="networkidle")
+        page.wait_for_selector('[role="tab"][aria-selected="true"]', timeout=8000)
+        page.wait_for_timeout(300)
+        tab = active_tab_label(page)
+        check("route slug wins over ?method= when both are present", tab == "Local transit", tab)
+
+        # Clicking a tab writes ?method= (shareable), and reload restores it
+        page.goto(f"{BASE_URL}/transport", wait_until="networkidle")
+        page.wait_for_timeout(300)
+        page.get_by_role("tab", name="Bus", exact=True).click()
+        page.wait_for_timeout(200)
+        check("tab click writes ?method=bus to the URL", "method=bus" in page.url, page.url)
+        page.reload(wait_until="networkidle")
+        page.wait_for_timeout(300)
+        check("reload restores the Bus tab from ?method=", active_tab_label(page) == "Bus")
+
+        # Switching tabs shows exactly one panel at a time
+        page.goto(f"{BASE_URL}/transport?method=train", wait_until="networkidle")
+        page.wait_for_timeout(300)
+        check("Train tab: Cologne row visible", "Cologne" in page.locator("main").inner_text())
+        page.get_by_role("tab", name="Car", exact=True).click()
+        page.wait_for_timeout(200)
+        main_text = page.locator("main").inner_text()
+        check("switching to Car tab hides the Train panel", "Cologne" not in main_text)
+        check("Car tab shows its own content", "UNESCO Welterbe Zollverein" in main_text)
+
+        # --- Plane tab: DUS row expands inline into the live board --------
+
+        page.goto(f"{BASE_URL}/transport?method=plane", wait_until="networkidle")
+        page.wait_for_timeout(300)
+        dus_toggle = page.get_by_role("button", name="Live departure board (Airport to Essen)")
+        check("Plane tab: DUS row starts collapsed", dus_toggle.get_attribute("aria-expanded") == "false")
+        check("Plane tab: no live board rows before expanding", page.locator('[class*="depList"] li').count() == 0)
+        check("Plane tab: CGN row still a coarse (non-expanding) row", "Cologne Bonn Airport" in page.locator("main").inner_text())
+
+        dus_toggle.click()
+        page.wait_for_timeout(300)
+        dus_toggle = page.get_by_role("button", name="Live departure board (Airport to Essen)")
+        check("Plane tab: DUS row expands on click (aria-expanded=true)", dus_toggle.get_attribute("aria-expanded") == "true")
+        check("Plane tab: expanding DUS shows live board rows", page.locator('[class*="depList"] li').count() > 0)
+        check("Plane tab: expanding DUS updates the URL to the route slug", "route=dus-airport-essen" in page.url, page.url)
+
+        dus_toggle.click()
+        page.wait_for_timeout(200)
+        check("Plane tab: collapsing DUS removes the route slug, restores ?method=plane", "method=plane" in page.url and "route" not in page.url, page.url)
+
+        # --- Section 6: day tabs (Local transit / Plane's embedded board) -
 
         page.goto(f"{BASE_URL}/transport?route=zollverein-essen", wait_until="networkidle")
         page.wait_for_timeout(300)
@@ -89,13 +227,8 @@ def main():
             "button:has(> span > span)",
             "els => els.map(e => e.textContent)",
         )
-        # Filter to actual day-tab buttons (contain a slash date once rendered)
         day_tabs = [t for t in tab_texts if "/" in t]
-        check(
-            "Zollverein board has 3 day tabs (Fri/Sat/Sun)",
-            len(day_tabs) == 3,
-            day_tabs,
-        )
+        check("Zollverein board has 3 day tabs (Fri/Sat/Sun)", len(day_tabs) == 3, day_tabs)
         check(
             "day tab dates use slashes, never dots",
             all("." not in t.split("2026")[0][-3:] for t in day_tabs) and all("." not in t for t in day_tabs),
@@ -122,6 +255,7 @@ def main():
         # --- Section 1: swap icon flips direction + rewrites the URL, no reload ---
 
         page.goto(f"{BASE_URL}/transport?route=zollverein-essen", wait_until="networkidle")
+        page.wait_for_timeout(300)
         page.evaluate("window.__stc_test_marker = true")
         swap_btn = page.get_by_role("button", name="Show the opposite direction")
         swap_btn.click()
@@ -133,9 +267,10 @@ def main():
         check("swap: round-trips back to zollverein-essen", "route=zollverein-essen" in page.url, page.url)
 
         page.goto(f"{BASE_URL}/transport?route=dus-airport-essen", wait_until="networkidle")
+        page.wait_for_timeout(300)
         page.get_by_role("button", name="Show the opposite direction").click()
         page.wait_for_timeout(200)
-        check("swap: dus-airport-essen -> essen-dus-airport", "route=essen-dus-airport" in page.url, page.url)
+        check("swap: dus-airport-essen -> essen-dus-airport (embedded board)", "route=essen-dus-airport" in page.url, page.url)
 
         # --- Section 4/7: mocked realtime -- delay (red) + canceled (struck) + LIVE ---
 
@@ -173,68 +308,34 @@ def main():
         delayed_color = delayed_time_el.evaluate("el => getComputedStyle(el).color")
         check("delayed row: time text is red (--color-delay)", delayed_color == "rgb(185, 28, 28)", delayed_color)
 
-        live_indicator_visible = page.evaluate(
-            "() => { const el = document.querySelector('span'); return true; }"
-        )
         live_updated_visible = page.get_by_text("Updated", exact=False).first
         check("LIVE indicator: 'Updated ...' timestamp visible after fetch", live_updated_visible.count() > 0)
 
-        # --- "Getting there" section (docs/getting-there-design.md) -------
+        # --- Train/Car/Bus/Plane curated content (docs/getting-there-design.md) ---
 
-        page.goto(f"{BASE_URL}/transport?route=zollverein-essen", wait_until="networkidle")
-        page.wait_for_selector("text=Getting there", timeout=8000)
-        page.wait_for_timeout(300)  # let the client-side getting-there.json fetch settle
+        page.goto(f"{BASE_URL}/transport?method=train", wait_until="networkidle")
+        page.wait_for_timeout(300)
 
-        tab_texts = [t for t in page.eval_on_selector_all(
-            "button",
-            "els => els.map(e => e.textContent?.trim())",
-        ) if t in ("Train", "Plane", "Car", "Bus")]
-        check(
-            "Getting there: renders exactly the methods present in the data (Train/Plane/Car/Bus)",
-            set(tab_texts) == {"Train", "Plane", "Car", "Bus"},
-            tab_texts,
-        )
-
-        # Default active method is "train" (lowest `position` in the JSON);
-        # its first (unboosted, en-US locale default) row is Cologne, the
-        # data file's own first train entry.
         first_item_name = page.locator("li", has_text="Direct regional express").first
-        check("Getting there: Train panel shows Cologne as a row", first_item_name.count() > 0)
+        check("Train tab: Cologne row present (data file's own first row)", first_item_name.count() > 0)
 
         nsi_link = page.get_by_role("link", name="Book via NS International")
         check(
-            "Getting there: Amsterdam row links to NS International with the expected href",
+            "Train tab: Amsterdam row links to NS International with the expected href",
             nsi_link.get_attribute("href") == "https://www.nsinternational.com/en/germany/train-essen",
             nsi_link.get_attribute("href"),
         )
         check(
-            "Getting there: external link opens in a new tab with rel=noopener noreferrer",
+            "Train tab: external link opens in a new tab with rel=noopener noreferrer",
             nsi_link.get_attribute("target") == "_blank" and "noopener" in (nsi_link.get_attribute("rel") or ""),
             (nsi_link.get_attribute("target"), nsi_link.get_attribute("rel")),
         )
-
-        page.get_by_role("button", name="Plane", exact=False).click()
-        page.wait_for_timeout(150)
-        dus_link = page.get_by_role("link", name="Live departure board (Airport to Essen)")
-        check(
-            "Getting there: DUS row deep-links to the live airport board route",
-            dus_link.get_attribute("href") == "/transport?route=dus-airport-essen",
-            dus_link.get_attribute("href"),
-        )
-
-        collapse_btn = page.get_by_role("button", name="Getting there")
-        check("Getting there: section starts expanded on desktop", collapse_btn.get_attribute("aria-expanded") == "true")
-        collapse_btn.click()
-        page.wait_for_timeout(150)
-        check("Getting there: header click collapses the section", collapse_btn.get_attribute("aria-expanded") == "false")
-        check("Getting there: collapsed section hides the method tabs", page.get_by_role("button", name="Train", exact=True).count() == 0)
 
         # --- Language-based ordering boost (docs/getting-there-design.md #7) ---
 
         ctx_nl = browser.new_context(locale="nl-NL")
         page_nl = ctx_nl.new_page()
-        page_nl.goto(f"{BASE_URL}/transport?route=zollverein-essen", wait_until="networkidle")
-        page_nl.wait_for_selector("text=Getting there", timeout=8000)
+        page_nl.goto(f"{BASE_URL}/transport?method=train", wait_until="networkidle")
         page_nl.wait_for_timeout(400)
         first_row_nl = page_nl.locator('[class*="itemName"]').first
         check(
@@ -246,8 +347,7 @@ def main():
 
         ctx_us = browser.new_context(locale="en-US")
         page_us = ctx_us.new_page()
-        page_us.goto(f"{BASE_URL}/transport?route=zollverein-essen", wait_until="networkidle")
-        page_us.wait_for_selector("text=Getting there", timeout=8000)
+        page_us.goto(f"{BASE_URL}/transport?method=train", wait_until="networkidle")
         page_us.wait_for_timeout(400)
         first_row_us = page_us.locator('[class*="itemName"]').first
         check(
