@@ -430,10 +430,17 @@ export default function LiveBoard({ route, initialDirection, dateOverride, timeO
 
         <DayTabs days={days} activeDay={activeDay} onSelect={onTabClick} />
 
-        <div className={`${styles.liveIndicator} ${realtimeActive ? styles.active : ""}`}>
-          <span className={styles.liveDot} />
-          <span className={styles.liveUpdated}>{liveUpdatedText || " "}</span>
-        </div>
+        {/* Rendered only when viewing today: on any other day realtime can
+            never activate, and the empty row was a 14px ghost gap between
+            the day tabs and the list (DESIGN-STANDARDS.md section 4). On
+            today it stays mounted even while inactive so the sticky header
+            does not jump when the LIVE label appears. */}
+        {isToday && (
+          <div className={`${styles.liveIndicator} ${realtimeActive ? styles.active : ""}`}>
+            <span className={styles.liveDot} />
+            <span className={styles.liveUpdated}>{liveUpdatedText || " "}</span>
+          </div>
+        )}
       </div>
 
       <div>
