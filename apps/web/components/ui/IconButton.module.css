@@ -20,6 +20,12 @@
 }
 .iconButton svg {
   display: block;
+  /* The primitive owns a legible default icon size; callers may pick a
+     different icon-size token but must never shrink below --icon-size-sm.
+     Added after a legacy em-based override rendered the direction-swap
+     glyph at 4x6px. */
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
 }
 .iconButton:active {
   color: var(--icon-btn-hover-color);

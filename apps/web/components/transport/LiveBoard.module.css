@@ -167,12 +167,6 @@
 .dirToggle {
   margin-left: 2px;
 }
-.dirToggle svg {
-  height: 0.42em;
-  width: auto;
-  display: block;
-  transform: translateY(0.11em);
-}
 
 /* Card (DESIGN-STANDARDS.md #3 Containers): --color-surface background, 1px
    --color-border, --radius-md -- same as every other card/row on the page.
