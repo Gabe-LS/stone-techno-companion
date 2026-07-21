@@ -54,6 +54,11 @@
 .variantInline svg {
   height: 0.52em;
   width: auto;
+  /* Optical alignment to the neighbor text's x-height band: flex centers
+     against the full line box, which sits slightly above where inline
+     glyphs (like the route separator) rest. Measured delta 1.7px at
+     font-lg, expressed in em so it scales with the text. */
+  transform: translateY(0.095em);
 }
 .iconButton:active {
   color: var(--icon-btn-hover-color);
