@@ -10,6 +10,10 @@ const nextConfig: NextConfig = {
   // Hide the floating dev-tools button; it reads as a mystery UI element
   // during design review and never ships to production anyway.
   devIndicators: false,
+  // Dev requests arrive as localhost (IPv6 ::1) or 127.0.0.1 depending on
+  // the browser's resolver; without both allowed, the 127.0.0.1 path gets
+  // Next's cross-origin dev degradation (broken HMR, stale-looking pages).
+  allowedDevOrigins: ["localhost", "127.0.0.1"],
   // apps/web has its own lockfile, so Turbopack would otherwise infer
   // apps/web as the project root and refuse to resolve files outside it
   // (e.g. packages/design-tokens/tokens.css, imported by app/layout.tsx).
