@@ -411,7 +411,7 @@ export default function LiveBoard({ route, initialDirection, dateOverride, timeO
               {view ? view.route.to : "Essen Hbf"}
             </span>
             {showReverse && (
-              <IconButton className={styles.dirToggle} size="sm" ariaLabel="Show the opposite direction" onClick={toggleDirection}>
+              <IconButton className={styles.dirToggle} size="xs" ariaLabel="Show the opposite direction" onClick={toggleDirection}>
                 <DirectionSwapIcon />
               </IconButton>
             )}

@@ -30,6 +30,10 @@
   width: var(--icon-size-sm);
   height: var(--icon-size-sm);
 }
+.sizeXs svg {
+  width: var(--icon-size-xs);
+  height: var(--icon-size-xs);
+}
 .iconButton:active {
   color: var(--icon-btn-hover-color);
   background: var(--icon-btn-active-bg);

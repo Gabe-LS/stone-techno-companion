@@ -5,8 +5,8 @@ interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 
   children: ReactNode;
   ariaLabel: string;
   className?: string;
-  /** Glyph size: md (default) or sm for icons sitting inline with text. */
-  size?: "sm" | "md";
+  /** Glyph size: md (default), sm, or xs for subtle glyphs inline with text. */
+  size?: "xs" | "sm" | "md";
 }
 
 /** A round icon-only hit target with the standard hover/active/focus chrome. */
@@ -18,7 +18,8 @@ export default function IconButton({ children, ariaLabel, className, onClick, si
     if (e.detail > 0) e.currentTarget.blur();
     onClick?.(e);
   }
-  const cls = [styles.iconButton, size === "sm" ? styles.sizeSm : "", className || ""].filter(Boolean).join(" ");
+  const sizeCls = size === "xs" ? styles.sizeXs : size === "sm" ? styles.sizeSm : "";
+  const cls = [styles.iconButton, sizeCls, className || ""].filter(Boolean).join(" ");
   return (
     <button
       type="button"
