@@ -203,7 +203,7 @@
      `outline-color`, only width/offset are shared. */
 
   /* --- Icon sizes --- */
-  --icon-size-xs: 12px; /* subtle inline glyphs next to text (floor: never smaller) */
+  --icon-size-xs: 10px; /* subtle inline glyphs next to text; usability comes from the IconButton hit target (26px+), not the glyph size */
   --icon-size-sm: 14px; /* matches the pre-existing chevron / itemLink svg size */
   --icon-size-md: 16px; /* matches the pre-existing methodTab svg size */
 

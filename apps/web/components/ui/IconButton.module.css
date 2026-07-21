@@ -30,6 +30,11 @@
   width: var(--icon-size-sm);
   height: var(--icon-size-sm);
 }
+.sizeXs {
+  /* Smaller glyph, same usable hit area: pad up so the button stays at
+     26px regardless of glyph size. */
+  padding: var(--space-sm);
+}
 .sizeXs svg {
   width: var(--icon-size-xs);
   height: var(--icon-size-xs);
