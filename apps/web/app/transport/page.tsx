@@ -2,16 +2,41 @@ import type { Metadata } from "next";
 import { LOCAL_TRANSIT_METHOD_ID, explicitRouteSlug, resolveRouteSlug } from "../../lib/transport/logic";
 import MethodPicker from "../../components/transport/MethodPicker";
 
-// Static placeholder, overwritten client-side on load and on every direction
-// toggle to "<from> -> <to> * Transport" (docs/parity/transport.md #229).
-// Kept a static string here (not derived from the request's ?route=) on
-// purpose, for parity with the legacy page's own pre-JS <title>.
-export const metadata: Metadata = {
-  title: "107 / NE2 — Zollverein → Hbf",
-};
-
 interface TransportPageProps {
   searchParams: Promise<{ route?: string; method?: string; date?: string; time?: string }>;
+}
+
+// The tab title derives from the URL, nowhere else: Next re-applies metadata
+// on every soft navigation (direction swap, method change both rewrite the
+// query), so a client-side document.title would lose the race against it,
+// which is exactly the stale-title bug this replaced. Station display names
+// mirror timetable-transport.json's route.from/to for the two live-board
+// itineraries; method labels mirror getting-there.json's labels.
+const ROUTE_TITLES: Record<string, { from: string; to: string }> = {
+  zollverein: { from: "Zollverein", to: "Essen Hbf" },
+  duesseldorf: { from: "DUS Airport", to: "Essen Hbf" },
+};
+const METHOD_TITLES: Record<string, string> = {
+  train: "Train",
+  plane: "Plane",
+  car: "Car",
+  bus: "Bus",
+  [LOCAL_TRANSIT_METHOD_ID]: "Local transit",
+};
+
+export async function generateMetadata({ searchParams }: TransportPageProps): Promise<Metadata> {
+  const sp = await searchParams;
+  const explicit = explicitRouteSlug(sp.route ?? null);
+  if (explicit) {
+    const names = ROUTE_TITLES[explicit.route];
+    if (names) {
+      const from = explicit.direction === "inbound" ? names.to : names.from;
+      const to = explicit.direction === "inbound" ? names.from : names.to;
+      return { title: `${from} → ${to} · Transport` };
+    }
+  }
+  const methodLabel = sp.method ? METHOD_TITLES[sp.method] : undefined;
+  return { title: methodLabel ? `${methodLabel} · Transport` : "Transport" };
 }
 
 export default async function TransportPage({ searchParams }: TransportPageProps) {

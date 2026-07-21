@@ -357,14 +357,8 @@ export default function MethodPicker({
 
   const activeMethod = gtData?.methods.find((m) => m.id === resolvedMethodId);
 
-  // Title for panels with no live board (LiveBoard sets its own title while
-  // mounted, for both Local transit and an expanded Plane/DUS board).
-  useEffect(() => {
-    if (!resolvedMethodId) return;
-    if (resolvedMethodId === LOCAL_TRANSIT_METHOD_ID) return;
-    if (resolvedMethodId === "plane" && dusExpanded) return;
-    document.title = `${activeMethod?.label ?? resolvedMethodId} · Transport`;
-  }, [resolvedMethodId, dusExpanded, activeMethod]);
+  // Tab title: owned by generateMetadata in app/transport/page.tsx (URL is
+  // the single source of truth); no client-side document.title anywhere.
 
   return (
     <div className={styles.page}>

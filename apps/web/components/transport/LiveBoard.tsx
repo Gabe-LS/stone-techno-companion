@@ -364,10 +364,10 @@ export default function LiveBoard({ route, initialDirection, dateOverride, timeO
 
   const view: TransportViewBlock | null = data ? curViewBlock(data, route, direction) : null;
 
-  useEffect(() => {
-    if (!view) return;
-    document.title = `${view.route.from} → ${view.route.to} · Transport`;
-  }, [view]);
+  // Tab title: owned entirely by generateMetadata in app/transport/page.tsx,
+  // derived from the URL on every soft navigation. No client-side
+  // document.title here: it loses the race against Next's metadata re-apply
+  // (the stale-title-after-swap bug).
 
   // --- Auto-scroll to the "next" departure row (section 6) -------------------
 
