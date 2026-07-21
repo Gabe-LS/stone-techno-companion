@@ -39,6 +39,22 @@
   width: var(--icon-size-xs);
   height: var(--icon-size-xs);
 }
+
+/* Inline variant (owner decision 2026-07-21): a glyph that belongs to the
+   text next to it, like a punctuation mark. NO circular chrome: hover and
+   active only recolor. The hit area stays real but invisible (padding), and
+   the glyph is sized relative to the surrounding text (x-height-ish), so it
+   scales with whatever text it sits beside. font-size: inherit makes the em
+   sizing track the neighbor text. */
+.variantInline {
+  font-size: inherit;
+  padding: var(--space-sm);
+  border-radius: 0;
+}
+.variantInline svg {
+  height: 0.52em;
+  width: auto;
+}
 .iconButton:active {
   color: var(--icon-btn-hover-color);
   background: var(--icon-btn-active-bg);
@@ -54,5 +70,18 @@
   .iconButton:hover {
     color: var(--icon-btn-hover-color);
     background: var(--icon-btn-hover-bg);
+  }
+}
+
+/* Inline-variant chrome suppression: MUST stay after the .iconButton hover
+   and active rules above (equal specificity, source order decides). */
+.variantInline:active {
+  background: none;
+  color: var(--icon-btn-hover-color);
+}
+@media (hover: hover) {
+  .variantInline:hover {
+    background: none;
+    color: var(--icon-btn-hover-color);
   }
 }
