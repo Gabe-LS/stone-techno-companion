@@ -31,6 +31,28 @@ const nextConfig: NextConfig = {
       { source: "/chat/api/:path*", destination: `${BACKEND_ORIGIN}/chat/api/:path*` },
       { source: "/timetable-transport.json", destination: `${BACKEND_ORIGIN}/timetable-transport.json` },
       { source: "/getting-there.json", destination: `${BACKEND_ORIGIN}/getting-there.json` },
+      // PWA shell artifacts (docs/parity/pwa-shell.md). sw.js and
+      // manifest.json must have exactly ONE source of truth --
+      // services/companion/static/ -- for as long as the legacy FastAPI app
+      // is still live: copying either file into apps/web would fork the
+      // single-worker/single-manifest invariants (docs/invariants.md INV-3,
+      // INV-4) the instant one side updates and the other doesn't. In dev,
+      // proxy straight through so `next dev` serves the exact same bytes the
+      // legacy site does, at the same paths, so a byte-diff against the
+      // backend (see tests/web/pwa_shell_check.py) is meaningful. favicon.svg
+      // /favicon.png are proxied for the same single-source-of-truth reason
+      // (manifest.json's icon list points at them); favicon.ico is left to
+      // Next's own file-convention route (app/favicon.ico) since the backend
+      // doesn't serve one. At production cutover (docs/parity/pwa-shell.md
+      // "Cutover checklist" steps 2-4), this becomes a same-origin *serving*
+      // decision behind Caddy instead of a Next.js rewrite -- Caddy can route
+      // these paths straight to the FastAPI backend, or the front end can
+      // start serving them itself byte-for-byte identical, with no change
+      // needed here.
+      { source: "/sw.js", destination: `${BACKEND_ORIGIN}/sw.js` },
+      { source: "/manifest.json", destination: `${BACKEND_ORIGIN}/manifest.json` },
+      { source: "/favicon.svg", destination: `${BACKEND_ORIGIN}/favicon.svg` },
+      { source: "/favicon.png", destination: `${BACKEND_ORIGIN}/favicon.png` },
     ];
   },
 };
