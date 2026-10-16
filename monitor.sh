@@ -13,10 +13,13 @@
 # --quiet prints nothing when everything is OK (cron-friendly: the log only
 # grows when something needs attention). --strict exits 1 on WARN too.
 #
-# Alerts: any FAIL (or WARN with --strict) fires a push notification via
-# ntfy.sh to the private topic below, plus a macOS notification when run
-# interactively. To receive pushes: install the ntfy app (iOS/Android) and
-# subscribe to the topic. Test the pipeline with: ./monitor.sh --test-alert
+# Alerts: any FAIL (or WARN with --strict) fires a push notification via the
+# self-hosted ntfy (topic below), plus a macOS notification when run
+# interactively. Publishing needs a token: put the line
+# "Authorization: Bearer tk_..." in $NTFY_AUTH_HEADER (never commit it; the
+# QNAP container gets it from its mounted key dir). Anonymous access to the
+# topic is denied, so subscribe in the ntfy app as the admin user.
+# Test the pipeline with: ./monitor.sh --test-alert
 # NOTE: the monitor only runs while this Mac is awake — pair it with an
 # external uptime service for coverage when the Mac sleeps (see runbook).
 
@@ -34,7 +37,15 @@ SITE="https://stonetechno.deftlab.dev"
 HOST="stonetechno.deftlab.dev"
 VPS="root@213.136.81.15"
 VPS_DIR="/root/services/stone-techno"
-NTFY_TOPIC="stc26-ops-2c8faa31e3be"   # private: knowing the name = receiving the alerts
+NTFY_URL="${NTFY_URL:-https://ntfy.deftlab.dev/stc-monitor}"
+NTFY_AUTH_HEADER="${NTFY_AUTH_HEADER:-$HOME/.ssh/ntfy-auth-header}"
+
+# $1 = title, $2 = body, $3 = ntfy tags. Fails (non-zero) on a missing token or an HTTP error.
+ntfy_post() {
+    [ -r "$NTFY_AUTH_HEADER" ] || { echo "ntfy: no token at $NTFY_AUTH_HEADER" >&2; return 1; }
+    curl -sf -m 10 -H @"$NTFY_AUTH_HEADER" -H "Title: $1" -H "Priority: high" -H "Tags: $3" \
+        -d "$2" "$NTFY_URL" >/dev/null
+}
 
 QUIET=false
 STRICT=false
@@ -43,11 +54,9 @@ for arg in "$@"; do
         --quiet) QUIET=true ;;
         --strict) STRICT=true ;;
         --test-alert)
-            curl -s -m 10 -H "Title: Stone Techno monitor test" -H "Priority: high" \
-                -H "Tags: white_check_mark" -d "Test alert — the pipeline works." \
-                "https://ntfy.sh/$NTFY_TOPIC" >/dev/null \
-                && echo "Test alert sent to ntfy.sh/$NTFY_TOPIC" \
-                || echo "ERROR: could not reach ntfy.sh"
+            ntfy_post "Stone Techno monitor test" "Test alert — the pipeline works." white_check_mark \
+                && echo "Test alert sent to $NTFY_URL" \
+                || echo "ERROR: could not send to $NTFY_URL"
             command -v osascript >/dev/null && osascript -e \
                 'display notification "Test alert — the pipeline works." with title "Stone Techno monitor"' || true
             exit 0
@@ -57,8 +66,7 @@ done
 
 send_alert() {
     # $1 = summary line, $2 = body
-    curl -s -m 10 -H "Title: $1" -H "Priority: high" -H "Tags: rotating_light" \
-        -d "$2" "https://ntfy.sh/$NTFY_TOPIC" >/dev/null || true
+    ntfy_post "$1" "$2" rotating_light || true
     command -v osascript >/dev/null && osascript -e \
         "display notification \"$1\" with title \"Stone Techno monitor\"" 2>/dev/null || true
 }

@@ -2,7 +2,10 @@
 
 Runs `monitor.sh` hourly from the always-on NAS. External probes (HTTP,
 TLS, latency) plus VPS internal checks over SSH; failures push to the
-phone via ntfy.sh.
+phone via the self-hosted ntfy (`ntfy.deftlab.dev`, topic `stc-monitor`).
+The publish token goes in `ssh/ntfy-auth-header` next to the SSH key
+(one line: `Authorization: Bearer tk_...`); the entrypoint copies it into
+the container with the keys.
 
 The container **auto-updates `monitor.sh` from GitHub** before each run,
 so pushing a fix to the repo is enough (no manual copy, no rebuild). If

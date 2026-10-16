@@ -21,7 +21,7 @@ crontab -e
 0 * * * * cd "/Users/gabrielelosurdo/Documents/Developer/Scripts/Personal/Stone Techno Companion" && ./monitor.sh --quiet >> logs/monitor.log 2>&1
 ```
 
-**Alerts**: any FAIL fires a phone push via ntfy.sh (topic `stc26-ops-2c8faa31e3be` — install the ntfy app and subscribe to it; the topic name is the only credential, don't share it) plus a macOS notification. Test with `./monitor.sh --test-alert`.
+**Alerts**: any FAIL fires a phone push via the self-hosted ntfy (`https://ntfy.deftlab.dev`, topic `stc-monitor` — in the ntfy app, add that server and subscribe while logged in as admin; anonymous access to the topic is denied) plus a macOS notification. Publishing uses a write-only token for the `stc-monitor` user, read from `$NTFY_AUTH_HEADER` (default `~/.ssh/ntfy-auth-header`; on the QNAP it lives in the mounted `ssh/` dir) and never committed. Test with `./monitor.sh --test-alert`.
 
 **Coverage gap**: the monitor runs on the Mac, so it stops when the Mac sleeps — during the festival, back it with an external uptime service. Recommended free setup (UptimeRobot or similar, 5-min interval): one HTTP check on `https://stonetechno.deftlab.dev/line-up` (expect 200) and one KEYWORD check on `https://stonetechno.deftlab.dev/chat/api/config` expecting `msg_char_limit` in the body (a plain 200 check is fooled by the catch-all serving HTML). Point its alerts at your email / the UptimeRobot app.
 
