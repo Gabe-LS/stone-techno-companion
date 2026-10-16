@@ -20,12 +20,12 @@ if [ ! -f /root/.ssh/id_ed25519 ] && [ ! -f /root/.ssh/id_rsa ]; then
     echo "Generate one with: ssh-keygen -t ed25519 -f ssh/id_ed25519 -N ''"
 fi
 
-# monitor.sh calls `ssh root@209.38.244.136` with no options, so pin the
+# monitor.sh calls `ssh root@213.136.81.15` with no options, so pin the
 # key and first-connection host key policy here. A user-provided config in
 # the mounted key dir wins.
 if [ ! -f /root/.ssh/config ]; then
     cat > /root/.ssh/config <<'EOF'
-Host 209.38.244.136
+Host 213.136.81.15
     User root
     IdentityFile /root/.ssh/id_ed25519
     StrictHostKeyChecking accept-new

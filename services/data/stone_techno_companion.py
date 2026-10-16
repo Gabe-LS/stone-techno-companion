@@ -42,7 +42,7 @@ DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "output"
 DB_PATH = PROJECT_ROOT / "lineup.db"
 PHOTOS_DIR = DEFAULT_OUTPUT_DIR / "photos"
 OVERRIDES_PATH = PROJECT_ROOT / "scraper" / "overrides.toml"
-VPS_HOST = "root@209.38.244.136"
+VPS_HOST = "root@213.136.81.15"
 VPS_STATIC_DIR = "/root/services/stone-techno/services/companion/static/"
 
 DEFAULT_EVENT_ID = "stone-techno-2026"

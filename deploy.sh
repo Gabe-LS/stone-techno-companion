@@ -13,7 +13,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-VPS="root@209.38.244.136"
+VPS="root@213.136.81.15"
 VPS_DIR="/root/services/stone-techno"
 LOCAL_BACKUPS="backups"
 LOCAL_ENV="services/companion/.env"

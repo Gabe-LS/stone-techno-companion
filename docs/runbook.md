@@ -2,7 +2,7 @@
 
 Incident procedures for the live event. Facts verified against `deploy.sh`, `services/companion/chat_moderation.py`, and the push invariants in CLAUDE.md (July 2026).
 
-- **VPS**: `root@209.38.244.136`, app dir `/root/services/stone-techno`, container `stone-techno`
+- **VPS**: `root@213.136.81.15`, app dir `/root/services/stone-techno`, container `stone-techno`
 - **Site**: https://stonetechno.deftlab.dev — TLS terminated by Caddy on the VPS
 - **Admin panel**: https://stonetechno.deftlab.dev/chat/admin
 
@@ -28,9 +28,9 @@ crontab -e
 Manual equivalents when digging into a specific failure:
 
 ```bash
-ssh root@209.38.244.136 "docker ps --filter name=stone-techno"          # container up + (healthy)?
-ssh root@209.38.244.136 "docker exec stone-techno curl -sf http://localhost:8080/chat/api/config"  # chat API alive?
-ssh root@209.38.244.136 "docker logs stone-techno --tail 200"           # look for [MOD], [PUSH], VAPID lines
+ssh root@213.136.81.15 "docker ps --filter name=stone-techno"          # container up + (healthy)?
+ssh root@213.136.81.15 "docker exec stone-techno curl -sf http://localhost:8080/chat/api/config"  # chat API alive?
+ssh root@213.136.81.15 "docker logs stone-techno --tail 200"           # look for [MOD], [PUSH], VAPID lines
 ```
 
 ## Push notifications not arriving
@@ -43,7 +43,7 @@ ssh root@209.38.244.136 "docker logs stone-techno --tail 200"           # look f
 ## Server down / unhealthy
 
 ```bash
-ssh root@209.38.244.136
+ssh root@213.136.81.15
 cd /root/services/stone-techno/services/companion
 docker compose ps
 docker logs stone-techno --tail 200   # find the crash reason first
@@ -63,7 +63,7 @@ Note: a failed chat module import crashes the server at startup **by design** (f
   Resets the VPS worktree to that commit, rebuilds the container, and health-checks it (container only — the target may predate the chat API). Code only: data and `.env` are untouched. Manual equivalent:
 
   ```bash
-  ssh root@209.38.244.136
+  ssh root@213.136.81.15
   cd /root/services/stone-techno
   git reset --hard <known-good-commit>
   cd services/companion && docker compose up -d --build --force-recreate
