@@ -32,7 +32,7 @@ fi
 
 SITE="https://stonetechno.deftlab.dev"
 HOST="stonetechno.deftlab.dev"
-VPS="root@209.38.244.136"
+VPS="root@213.136.81.15"
 VPS_DIR="/root/services/stone-techno"
 NTFY_TOPIC="stc26-ops-2c8faa31e3be"   # private: knowing the name = receiving the alerts
 
