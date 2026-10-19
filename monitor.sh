@@ -6,6 +6,9 @@
 # Prints one OK/WARN/FAIL line per check. Exit code: 0 = all OK (warnings
 # allowed with --strict off), 1 = at least one FAIL (or WARN with --strict).
 #
+# Not scheduled anywhere since 2026-10-19 (off-season; the QNAP container was
+# retired, see monitoring/qnap/README.md). Run it by hand from the Mac.
+#
 # Run hourly from this Mac (needs ssh access to the VPS):
 #   crontab -e
 #   0 * * * * cd "/Users/gabrielelosurdo/Documents/Developer/Scripts/Personal/Stone Techno Companion" && ./monitor.sh --quiet >> logs/monitor.log 2>&1

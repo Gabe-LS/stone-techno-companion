@@ -14,16 +14,11 @@ Incident procedures for the live event. Facts verified against `deploy.sh`, `ser
                       # log errors last hour. Exit 1 on any FAIL.
 ```
 
-Run it hourly via cron (`--quiet` prints only when something needs attention):
+**Scheduled monitoring (since 2026-10-19, off-season):** `monitor.sh` is not scheduled anywhere; run it by hand from the Mac. The only automatic check is the external uptime check `apps/stone-techno` (Gatus on the NAS, repo `contabo-uptime`): lineup page, title and TLS expiry, a silent ntfy alert on topic `contabo-uptime` after 3 failures in a row. Status at https://status.densitymedia.com. The QNAP monitor container was retired (see `monitoring/qnap/README.md`); rebuild the in-depth checks before the next festival per `docs/roadmap.md` ("Monitoring for the next season").
 
-```bash
-crontab -e
-0 * * * * cd "/Users/gabrielelosurdo/Documents/Developer/Scripts/Personal/Stone Techno Companion" && ./monitor.sh --quiet >> logs/monitor.log 2>&1
-```
+**Alerts** (when `monitor.sh` runs): any FAIL fires a phone push via the self-hosted ntfy (`https://ntfy.deftlab.dev`, topic `stc-monitor` — in the ntfy app, add that server and subscribe while logged in as admin; anonymous access to the topic is denied) plus a macOS notification. Publishing uses a write-only token for the `stc-monitor` user, read from `$NTFY_AUTH_HEADER` (default `~/.ssh/ntfy-auth-header`; on the QNAP it lives in the mounted `ssh/` dir) and never committed. Test with `./monitor.sh --test-alert`.
 
-**Alerts**: any FAIL fires a phone push via the self-hosted ntfy (`https://ntfy.deftlab.dev`, topic `stc-monitor` — in the ntfy app, add that server and subscribe while logged in as admin; anonymous access to the topic is denied) plus a macOS notification. Publishing uses a write-only token for the `stc-monitor` user, read from `$NTFY_AUTH_HEADER` (default `~/.ssh/ntfy-auth-header`; on the QNAP it lives in the mounted `ssh/` dir) and never committed. Test with `./monitor.sh --test-alert`.
-
-**Coverage gap**: the monitor runs on the Mac, so it stops when the Mac sleeps — during the festival, back it with an external uptime service. Recommended free setup (UptimeRobot or similar, 5-min interval): one HTTP check on `https://stonetechno.deftlab.dev/line-up` (expect 200) and one KEYWORD check on `https://stonetechno.deftlab.dev/chat/api/config` expecting `msg_char_limit` in the body (a plain 200 check is fooled by the catch-all serving HTML). Point its alerts at your email / the UptimeRobot app.
+**Coverage gap**: until the next-season rebuild, nothing automatic checks the chat API, WebSocket, transport, POIs, DB integrity, VAPID or moderation. Before the festival, add them to Gatus (external) and to an errors-only cron on the VPS (internal), as planned in the roadmap. Note for the Gatus chat check: assert `msg_char_limit` in the body of `/chat/api/config`, since a plain 200 check is fooled by the catch-all serving HTML.
 
 Manual equivalents when digging into a specific failure:
 
@@ -113,7 +108,7 @@ The frontend's `dbg()` console logging is off by default in production. To diagn
 
 - **Live**: `docker logs stone-techno` on the VPS (json-file driver, capped 10 MB x 5).
 - **Archived**: every `deploy.sh` run saves the outgoing container's log to local `logs/docker-{timestamp}.log` before `--force-recreate` destroys it (newest 15 kept).
-- **Monitor history**: `logs/monitor.log` (hourly cron; only writes when something is non-OK; self-rotates at 512 KB keeping the newest 256 KB).
+- **Monitor history**: `logs/monitor.log` (hourly cron; only writes when something is non-OK; self-rotates at 512 KB keeping the newest 256 KB). No longer written since the scheduled monitor was retired (2026-10-19); the QNAP copy up to that date stays in `/share/Container/stc-monitor/logs/monitor.log`.
 - **Backup retention** (backups are separate from logs, in `backups/`): VPS keeps the 5 newest `data.bak.*` and `.env.bak.*`; local `backups/` keeps the 15 newest deploy dirs. All pruned automatically by `deploy.sh`.
 
 Useful filters:

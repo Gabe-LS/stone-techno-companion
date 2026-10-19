@@ -168,6 +168,17 @@ change.
     `tests/notif_badge_browser_check.py`, transport `*_check.py` scripts)
   - [ ] Stand up the new e2e layer for the Next.js front (empty/smoke-test only at this
     stage; it grows with each ported surface in Stage 3)
+- [ ] **Monitoring for the next season** (due before ST27; the QNAP monitor was retired
+  2026-10-19, see `monitoring/qnap/README.md`)
+  - [ ] External checks into Gatus (repo `contabo-uptime`, `docs/checks.md`): chat API
+    config (assert `msg_char_limit`), static files, WebSocket upgrade path, `bios.json`,
+    `/api/me`, transport timetable, POIs. The live departures check needs today's date in
+    its URL, which Gatus cannot template: add a dateless health route or skip it
+  - [ ] Internal checks as an errors-only cron on the VPS (like `/root/backups/check-backups.sh`):
+    container health, DB `quick_check`, VAPID, OpenAI moderation reachability (moderation
+    fails closed), error-log count. Alert once when a problem appears, not every hour
+  - [ ] Not needed: disk, memory, load (Netdata on the VPS), TLS and VPS reachability (Gatus)
+  - [ ] No SSH key to the VPS on the NAS, and no code fetched at run time
 
 **Exit criteria**
 

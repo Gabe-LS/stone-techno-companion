@@ -1,6 +1,20 @@
 # Health monitor on QNAP (Container Station)
 
-Runs `monitor.sh` hourly from the always-on NAS. External probes (HTTP,
+> **Retired on 2026-10-19 (off-season).** What was removed: the `stc-monitor` container on
+> the NAS, its private key `ssh/id_ed25519`, and the matching `stc-monitor@qnap` line in the
+> VPS `/root/.ssh/authorized_keys`. Kept: the NAS folder `/share/Container/stc-monitor/` with
+> its logs and the ntfy token (user `stc-monitor`, write-only on its own topic).
+>
+> Why: the container held a root SSH key to the VPS and ran `monitor.sh` fetched from GitHub
+> at every run, so a compromised NAS or repo meant root on the VPS. It also alerted at high
+> priority on a single failure, every hour, which conflicts with the errors-only, low-noise
+> monitoring now in place (repo `contabo-uptime`).
+>
+> Do not bring this setup back as is. Before the next festival, follow `docs/roadmap.md`
+> ("Monitoring for the next season"): external checks in Gatus, internal checks as an
+> errors-only cron on the VPS, no SSH key on the NAS. The text below describes the old setup.
+
+Ran `monitor.sh` hourly from the always-on NAS. External probes (HTTP,
 TLS, latency) plus VPS internal checks over SSH; failures push to the
 phone via the self-hosted ntfy (`ntfy.deftlab.dev`, topic `stc-monitor`).
 The publish token goes in `ssh/ntfy-auth-header` next to the SSH key
